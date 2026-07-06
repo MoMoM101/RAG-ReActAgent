@@ -1,0 +1,42 @@
+# Local tool data
+.codegraph/
+.superpowers/
+
+# Environment
+.env
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Data (keep test db out of repo)
+data/test_*.db
+data/test_*
+
+# Node
+node_modules/
+dist/
+dist-ssr
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Docker
+docker-compose.override.yml

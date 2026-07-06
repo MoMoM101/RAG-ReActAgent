@@ -1,0 +1,16 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent", "api", "config", "embedding", "llm", "memory", "models", "rag", "reranker", "textdb", "utils", "vectordb"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"

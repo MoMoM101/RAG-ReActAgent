@@ -1,0 +1,48 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.0
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6334
+      - DATABASE_URL=sqlite+aiosqlite:///./data/rag_agent.db
+      - QDRANT_PATH=./data/qdrant
+      - UPLOAD_DIR=./data/uploads
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      - qdrant
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+
+volumes:
+  qdrant_data:
+  backend_data:

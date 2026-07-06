@@ -1,0 +1,84 @@
+from datetime import datetime, timezone
+from sqlalchemy import String, Text, DateTime, Enum as SAEnum, Boolean, JSON, Integer, func
+from sqlalchemy.orm import Mapped, mapped_column
+from .database import Base
+import enum
+
+
+class DocStatus(str, enum.Enum):
+    uploaded = "uploaded"
+    parsing = "parsing"
+    chunking = "chunking"
+    embedding = "embedding"
+    indexing = "indexing"
+    ready = "ready"
+    failed = "failed"
+
+
+class Document(Base):
+    __tablename__ = "documents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    file_size: Mapped[int] = mapped_column(nullable=False)
+    file_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[DocStatus] = mapped_column(SAEnum(DocStatus), default=DocStatus.uploaded, index=True)
+    chunk_count: Mapped[int] = mapped_column(default=0)
+    embedding_model: Mapped[str] = mapped_column(String(100), nullable=True)
+    embedding_dim: Mapped[int] = mapped_column(nullable=True)
+    error_message: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunk_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), default="New Chat")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), index=True)
+    last_extracted_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=True)
+    tool_call_id: Mapped[str] = mapped_column(String(100), nullable=True)
+    tool_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    tool_args: Mapped[str] = mapped_column(Text, nullable=True)
+    sources: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class UserMemory(Base):
+    __tablename__ = "user_memories"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    memory_type: Mapped[str] = mapped_column(String(20), default="fact", nullable=False)
+    deprecated: Mapped[bool] = mapped_column(Boolean, default=False)
+    embedding_model: Mapped[str] = mapped_column(String(100), nullable=True)
+    conversation_id: Mapped[str] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    memory_ids: Mapped[list] = mapped_column(JSON, nullable=True, default=list)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
