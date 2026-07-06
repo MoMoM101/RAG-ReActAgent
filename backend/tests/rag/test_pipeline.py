@@ -1,8 +1,10 @@
 import pytest
-from rag.pipeline import ingest_document
+from sqlalchemy import select
+
 from models.database import async_session
 from models.orm import Document
-from sqlalchemy import select
+from rag.pipeline import ingest_document
+
 
 @pytest.mark.asyncio
 async def test_ingest_txt_file(tmp_path, monkeypatch):
@@ -35,7 +37,7 @@ async def test_duplicate_detection(tmp_path, monkeypatch):
 
     try:
         await ingest_document("dup1.txt", content, ".txt")
-    except:
+    except Exception:
         pass  # Expected if no API key
 
     # Second upload with same content should raise ValueError

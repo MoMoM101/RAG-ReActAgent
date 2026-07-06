@@ -1,29 +1,32 @@
-import os
 import logging
-from pathlib import Path
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
 from config import settings
-from models.database import init_db
 from limiter import limiter
+from models.database import init_db
 
 logger = logging.getLogger(__name__)
 
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import select, update
 
 from models.database import async_session
-from models.orm import Document, DocStatus
-from sqlalchemy import select, update
+from models.orm import DocStatus, Document
 
 
 async def _cleanup_stuck_documents():
     """Mark documents stuck in intermediate states > 30 min as failed."""
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+    cutoff = datetime.now(UTC) - timedelta(minutes=30)
     stuck_statuses = (DocStatus.parsing, DocStatus.chunking, DocStatus.embedding, DocStatus.indexing)
     async with async_session() as session:
         result = await session.execute(
@@ -85,7 +88,6 @@ async def lifespan(app: FastAPI):
     # Clean up documents stuck in intermediate states > 30 min
     await _cleanup_stuck_documents()
     # Preload reranker model in background
-    import os
     if settings.hf_endpoint:
         os.environ["HF_ENDPOINT"] = settings.hf_endpoint
     from reranker.factory import preload_reranker_async
@@ -110,6 +112,7 @@ async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 # Structured request logging
 from middleware.logging import RequestIDMiddleware
+
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 
@@ -127,18 +130,23 @@ async def health():
     return {"status": "ok"}
 
 from api.documents import router as documents_router
+
 app.include_router(documents_router)
 
 from api.chat import router as chat_router
+
 app.include_router(chat_router)
 
 from api.conversations import router as conversations_router
+
 app.include_router(conversations_router)
 
 from api.settings import router as settings_router
+
 app.include_router(settings_router)
 
 from api.memories import router as memories_router
+
 app.include_router(memories_router)
 
 if __name__ == "__main__":

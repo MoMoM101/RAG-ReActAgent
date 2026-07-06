@@ -1,16 +1,18 @@
 """Session-end memory extraction — runs after conversation completes."""
 
 import json
-import asyncio
+from datetime import UTC
 
 
 async def extract_session_memories(conversation_id: str):
     """增量提取会话记忆 — 只提取未提取过的消息。"""
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
+
+        from sqlalchemy import func, select, update
+
         from models.database import async_session
-        from models.orm import Message, Conversation
-        from sqlalchemy import select, update, func
+        from models.orm import Conversation, Message
 
         async with async_session() as session:
             # 获取 last_extracted_at
@@ -57,7 +59,7 @@ async def extract_session_memories(conversation_id: str):
             await session.execute(
                 update(Conversation)
                 .where(Conversation.id == conversation_id)
-                .values(last_extracted_at=datetime.now(timezone.utc))
+                .values(last_extracted_at=datetime.now(UTC))
             )
             await session.commit()
 
@@ -71,8 +73,8 @@ async def extract_session_memories(conversation_id: str):
 
 async def _extract_with_llm(conversation_text: str) -> list[dict]:
     """用 LLM 从对话文本中提取结构化记忆。"""
-    from llm.factory import create_llm
     from llm.base import ChatMessage
+    from llm.factory import create_llm
 
     system_prompt = """你是记忆提取器。从对话中提取**仅用户**的个人信息，以 JSON 数组返回。
 

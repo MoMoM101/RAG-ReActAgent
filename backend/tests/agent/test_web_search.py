@@ -1,8 +1,10 @@
 """Web search tool tests — _search_bing and _search_ddgs with mocked HTTP."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from agent.tools import WebSearchTool, ToolResult, RetryableError
+
+from agent.tools import RetryableError, ToolResult, WebSearchTool
 
 
 class TestSearchBing:
@@ -13,9 +15,8 @@ class TestSearchBing:
     @pytest.mark.asyncio
     async def test_bing_timeout_raises_retryable(self, tool):
         """asyncio.TimeoutError → RetryableError."""
-        import asyncio
 
-        with patch("asyncio.wait_for", AsyncMock(side_effect=asyncio.TimeoutError("timed out"))):
+        with patch("asyncio.wait_for", AsyncMock(side_effect=TimeoutError("timed out"))):
             with pytest.raises(RetryableError, match="Bing"):
                 await tool._search_bing("test query", 3)
 
@@ -26,9 +27,8 @@ class TestSearchBing:
 
         with patch("asyncio.wait_for", AsyncMock(
             side_effect=httpx.ConnectError("connection refused")
-        )):
-            with pytest.raises(RetryableError, match="Bing"):
-                await tool._search_bing("test query", 3)
+        )), pytest.raises(RetryableError, match="Bing"):
+            await tool._search_bing("test query", 3)
 
     @pytest.mark.asyncio
     async def test_bing_200_parses_results(self, tool):

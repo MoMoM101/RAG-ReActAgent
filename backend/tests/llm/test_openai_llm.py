@@ -1,7 +1,8 @@
 import pytest
+
 from config import settings
+from llm.base import ChatMessage, LLMResponse
 from llm.openai_llm import OpenAILLM
-from llm.base import ChatMessage, LLMResponse, ToolCall
 
 
 def _api_key_valid() -> bool:

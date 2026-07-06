@@ -1,5 +1,5 @@
 from .base import BaseEmbedding
-from .openai_embed import OpenAIEmbedding
 from .factory import create_embedding
+from .openai_embed import OpenAIEmbedding
 
 __all__ = ["BaseEmbedding", "OpenAIEmbedding", "create_embedding"]

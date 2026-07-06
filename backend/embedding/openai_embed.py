@@ -1,5 +1,7 @@
 from openai import AsyncOpenAI
+
 from config import settings
+
 from .base import BaseEmbedding
 
 # Some providers limit batch size (Qwen v4: 10, v3: 20, others vary)

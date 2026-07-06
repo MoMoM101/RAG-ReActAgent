@@ -7,9 +7,10 @@ os.environ["UPLOAD_DIR"] = "./data/test_uploads"
 
 import pytest
 import pytest_asyncio
-from models.database import init_db, engine
 from sqlalchemy import text as sa_text
-from llm.base import BaseLLM, LLMResponse, ToolCall
+
+from llm.base import BaseLLM, LLMResponse
+from models.database import engine, init_db
 
 
 class FakeLLM(BaseLLM):

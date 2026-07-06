@@ -1,8 +1,6 @@
 """Memory save pre-intercept — regex extraction + LLM confirmation via tool calling."""
 
-import json
 import re
-
 
 # 误触发噪音词
 _NOISE_WORDS = {"外卖", "快递", "电话", "车", "说", "讲", "看一下",
@@ -83,8 +81,8 @@ BATCH_MEMORY_TOOL = {
 
 async def confirm_memory(candidate: str) -> bool:
     """用 LLM (tool calling) 确认候选记忆是否值得保存。"""
-    from llm.factory import create_llm
     from llm.base import ChatMessage
+    from llm.factory import create_llm
 
     system_prompt = """你是记忆保存确认器。判断信息是否值得存入长期记忆。
 
@@ -124,8 +122,8 @@ async def confirm_candidates_batch(candidates: list[tuple[str, str]]) -> list[tu
         confirmed = await confirm_memory(candidates[0][0])
         return [candidates[0]] if confirmed else []
 
-    from llm.factory import create_llm
     from llm.base import ChatMessage
+    from llm.factory import create_llm
 
     items_text = "\n".join(
         f"{i+1}. [{mem_type}] {content}"

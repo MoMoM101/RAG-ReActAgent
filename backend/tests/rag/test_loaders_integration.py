@@ -1,5 +1,4 @@
-import pytest
-from rag.loaders import load_pdf, load_docx, load_xlsx, load_image, load_document, LOADERS
+from rag.loaders import LOADERS, load_document, load_docx, load_image, load_pdf, load_xlsx
 
 
 class TestLoadDocx:

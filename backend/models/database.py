@@ -1,6 +1,7 @@
 from sqlalchemy import text as sa_text
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+
 from config import settings
 
 engine = create_async_engine(settings.database_url, echo=False)
@@ -12,7 +13,6 @@ class Base(DeclarativeBase):
 
 
 async def init_db():
-    import models.orm  # noqa: ensure models loaded
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # 迁移：为旧 user_memories 表新增字段（先检查列是否存在）

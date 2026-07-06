@@ -1,5 +1,7 @@
 import pytest
-from rag.loaders import load_txt, load_md, load_csv, load_document
+
+from rag.loaders import load_csv, load_document, load_md, load_txt
+
 
 def test_load_txt(tmp_path):
     f = tmp_path / "test.txt"

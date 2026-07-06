@@ -1,4 +1,5 @@
 import pytest
+
 from textdb.sqlite_fts import SQLiteFTS5
 
 

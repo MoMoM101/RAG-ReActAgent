@@ -4,15 +4,17 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
+
+from sqlalchemy import select
+
+from config import settings
 from embedding.factory import create_embedding
-from vectordb.factory import create_vectordb
-from vectordb.base import VectorSearchResult
-from textdb.sqlite_fts import SQLiteFTS5
-from textdb.base import TextSearchResult
 from models.database import async_session
 from models.orm import Document
-from sqlalchemy import select
-from config import settings
+from textdb.base import TextSearchResult
+from textdb.sqlite_fts import SQLiteFTS5
+from vectordb.base import VectorSearchResult
+from vectordb.factory import create_vectordb
 
 logger = logging.getLogger(__name__)
 
@@ -110,12 +112,12 @@ def _chunk_quality_score(text: str) -> float:
     if len(stripped) < 30:
         return 0.1  # Too short to be useful
 
-    lines = [l.strip() for l in stripped.split("\n") if l.strip()]
+    lines = [ln.strip() for ln in stripped.split("\n") if ln.strip()]
     if not lines:
         return 0.2
 
     # 1. Content density: chars per line. Headers have very low density.
-    avg_line_len = sum(len(l) for l in lines) / len(lines)
+    avg_line_len = sum(len(ln) for ln in lines) / len(lines)
     if avg_line_len < 20:
         return 0.3  # Very sparse — likely TOC, headers, or lists
 

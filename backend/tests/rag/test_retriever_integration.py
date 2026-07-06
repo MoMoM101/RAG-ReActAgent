@@ -1,4 +1,5 @@
 import pytest
+
 from config import settings
 
 TEST_DOC_ID = "test-retriever-integration-doc"
@@ -41,8 +42,8 @@ async def _ensure_collection_dim(db) -> int | None:
 async def test_hybrid_search_hits_qdrant():
     """Search returns results from Qdrant semantic search."""
     from rag.retriever import hybrid_search
-    from vectordb.qdrant import QdrantVectorDB
     from textdb.sqlite_fts import SQLiteFTS5
+    from vectordb.qdrant import QdrantVectorDB
 
     chunk_id = "550e8400-e29b-41d4-a716-44665544a001"
 
@@ -72,8 +73,8 @@ async def test_hybrid_search_hits_qdrant():
 async def test_hybrid_search_hits_fts5():
     """FTS5 keyword search finds exact match that semantic search might miss."""
     from rag.retriever import hybrid_search
-    from vectordb.qdrant import QdrantVectorDB
     from textdb.sqlite_fts import SQLiteFTS5
+    from vectordb.qdrant import QdrantVectorDB
 
     db = QdrantVectorDB()
     if await _ensure_collection_dim(db) is None:
@@ -107,7 +108,9 @@ async def test_hybrid_search_empty_documents():
 
 # ── Dedup tests ──────────────────────────
 
-from rag.retriever import _dedup_results, RetrievalResult
+from datetime import UTC
+
+from rag.retriever import RetrievalResult, _dedup_results
 
 
 @pytest.mark.asyncio
@@ -121,9 +124,10 @@ async def test_dedup_single_result():
 @pytest.mark.asyncio
 async def test_dedup_different_docs_similar_text():
     """Similar text from different docs: newer doc's chunk wins."""
+    from datetime import datetime, timedelta
+
     from models.database import async_session
     from models.orm import Document
-    from datetime import datetime, timezone, timedelta
 
     doc1_id = "test-dedup-doc-1"
     doc2_id = "test-dedup-doc-2"
@@ -131,10 +135,10 @@ async def test_dedup_different_docs_similar_text():
     async with async_session() as session:
         session.add(Document(id=doc1_id, filename="a.txt", file_hash="h1",
                              file_size=100, file_type=".txt", status="ready",
-                             created_at=datetime.now(timezone.utc) - timedelta(days=1)))
+                             created_at=datetime.now(UTC) - timedelta(days=1)))
         session.add(Document(id=doc2_id, filename="b.txt", file_hash="h2",
                              file_size=100, file_type=".txt", status="ready",
-                             created_at=datetime.now(timezone.utc)))
+                             created_at=datetime.now(UTC)))
         await session.commit()
 
     # These texts differ by 1 character → difflib ratio ≈ 0.93 (> 0.85 threshold)
@@ -157,9 +161,10 @@ async def test_dedup_different_docs_similar_text():
 @pytest.mark.asyncio
 async def test_dedup_different_text_kept():
     """Different content from different docs: both kept."""
+    from datetime import datetime
+
     from models.database import async_session
     from models.orm import Document
-    from datetime import datetime, timezone
 
     doc1_id = "test-dedup-doc-3"
     doc2_id = "test-dedup-doc-4"
@@ -167,10 +172,10 @@ async def test_dedup_different_text_kept():
     async with async_session() as session:
         session.add(Document(id=doc1_id, filename="a.txt", file_hash="h3",
                              file_size=100, file_type=".txt", status="ready",
-                             created_at=datetime.now(timezone.utc)))
+                             created_at=datetime.now(UTC)))
         session.add(Document(id=doc2_id, filename="b.txt", file_hash="h4",
                              file_size=100, file_type=".txt", status="ready",
-                             created_at=datetime.now(timezone.utc)))
+                             created_at=datetime.now(UTC)))
         await session.commit()
 
     r1 = RetrievalResult(chunk_id="c1", document_id=doc1_id,

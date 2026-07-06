@@ -1,4 +1,5 @@
 from config import settings
+
 from .base import BaseEmbedding
 from .openai_embed import OpenAIEmbedding
 

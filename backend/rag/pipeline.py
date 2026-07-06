@@ -1,18 +1,20 @@
 import asyncio
-import uuid
 import hashlib
-import time
 import logging
+import time
+import uuid
+
 from sqlalchemy import select
+
+from config import settings
+from embedding.factory import create_embedding
 from models.database import async_session
-from models.orm import Document, DocStatus
+from models.orm import DocStatus, Document
 from rag.loaders import load_document
 from rag.splitter import split_text
-from embedding.factory import create_embedding
-from vectordb.factory import create_vectordb
-from textdb.sqlite_fts import SQLiteFTS5
 from storage.files import save_upload
-from config import settings
+from textdb.sqlite_fts import SQLiteFTS5
+from vectordb.factory import create_vectordb
 
 logger = logging.getLogger(__name__)
 

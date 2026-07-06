@@ -1,8 +1,10 @@
 """Session-end memory extraction tests — _extract_with_llm and extract_session_memories."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from llm.base import LLMResponse, ChatMessage
+
+import pytest
+
+from llm.base import LLMResponse
 
 
 def _make_tool_call(name, args, call_id="call_1"):

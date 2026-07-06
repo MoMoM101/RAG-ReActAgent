@@ -3,15 +3,16 @@
 import ast
 import asyncio
 import logging
-from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
+from sqlalchemy import select
+
 from models.database import async_session
 from models.orm import Document
-from sqlalchemy import select
 
 
 class RetryableError(Exception):
@@ -108,9 +109,9 @@ class SearchDocsTool(BaseTool):
     }
 
     async def execute(self, query: str, top_k: int = 0, document_id: str = "") -> ToolResult:
+        from config import settings
         from rag.retriever import hybrid_search
         from reranker.factory import is_reranker_ready
-        from config import settings
 
         try:
             results = await hybrid_search(
@@ -446,8 +447,8 @@ class WebSearchTool(BaseTool):
                     ),
                     timeout=12,
                 )
-        except asyncio.TimeoutError:
-            raise RetryableError("Bing 搜索超时")
+        except TimeoutError as e:
+            raise RetryableError("Bing 搜索超时") from e
         except Exception as e:
             raise RetryableError(f"Bing 网络错误: {e}") from e
 
@@ -501,7 +502,7 @@ class WebSearchTool(BaseTool):
         for module_name in ("ddgs", "duckduckgo_search"):
             try:
                 mod = __import__(module_name, fromlist=["DDGS"])
-                DDGS = getattr(mod, "DDGS")
+                DDGS = mod.DDGS
                 break
             except ImportError:
                 continue
@@ -530,8 +531,8 @@ class WebSearchTool(BaseTool):
                 success=True,
                 data={"count": len(results), "results": results},
             )
-        except asyncio.TimeoutError:
-            raise RetryableError("DDG 搜索超时")
+        except TimeoutError as e:
+            raise RetryableError("DDG 搜索超时") from e
         except Exception as e:
             _raise_if_retryable(e, "WebSearch-DDG")
             return ToolResult(success=False, error=str(e)[:200])

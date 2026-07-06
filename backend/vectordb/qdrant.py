@@ -1,10 +1,18 @@
 import asyncio
+
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PointStruct,
+    VectorParams,
+)
 
 from config import settings
-from .base import BaseVectorDB, VectorSearchResult
 
+from .base import BaseVectorDB, VectorSearchResult
 
 # ── Singleton client: all collections share one QdrantClient ──
 _client: QdrantClient | None = None

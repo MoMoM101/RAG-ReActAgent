@@ -1,6 +1,6 @@
 from rag.retriever import _rrf_fusion
-from vectordb.base import VectorSearchResult
 from textdb.base import TextSearchResult
+from vectordb.base import VectorSearchResult
 
 
 def test_rrf_fusion_basic():

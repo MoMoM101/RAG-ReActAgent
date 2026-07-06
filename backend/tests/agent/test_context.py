@@ -1,6 +1,6 @@
-import pytest
 import tiktoken
-from agent.context import _estimate_tokens, ContextManager
+
+from agent.context import ContextManager, _estimate_tokens
 from llm.base import ChatMessage
 
 

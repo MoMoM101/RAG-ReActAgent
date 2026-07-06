@@ -1,13 +1,14 @@
-import io
 import logging
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 
 def load_pdf(file_path: str) -> str:
     import fitz  # PyMuPDF
+
     from config import settings
 
     doc = fitz.open(file_path)

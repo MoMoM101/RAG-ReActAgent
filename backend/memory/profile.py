@@ -2,8 +2,10 @@
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from sqlalchemy import select
+
 from models.database import async_session
 from models.orm import UserProfile
 
@@ -35,7 +37,7 @@ async def _save(data: dict):
         if row:
             row.profile_data = data
             row.version += 1
-            row.generated_at = datetime.now(timezone.utc)
+            row.generated_at = datetime.now(UTC)
         else:
             s.add(UserProfile(profile_data=data, memory_ids=[], version=1))
         await s.commit()
@@ -88,8 +90,8 @@ async def _index_profile(data: dict):
     """
     global PROFILE_COLLECTION
     try:
-        from vectordb.qdrant import QdrantVectorDB
         from embedding.factory import create_embedding
+        from vectordb.qdrant import QdrantVectorDB
 
         # 展开为可搜索的文本片段
         texts: list[str] = []
@@ -131,7 +133,6 @@ async def _index_profile(data: dict):
         await vdb.upsert(points)
 
         # 原子切换指针
-        old_name = PROFILE_COLLECTION
         PROFILE_COLLECTION = new_name
 
         # 删除旧的 + 同名前缀残留（含裸名 + _* 变体）
@@ -150,9 +151,10 @@ async def _index_profile(data: dict):
 def _persist_profile_collection(name: str):
     """将 profile collection 名持久化，重启后恢复。"""
     try:
-        from config import settings
-        from pathlib import Path
         import json as _json
+        from pathlib import Path
+
+        from config import settings
         ptr_file = Path(settings.qdrant_path) / "active_collections.json"
         existing = {}
         if ptr_file.exists():
@@ -192,7 +194,7 @@ async def append_facts(items: list[str], source: str = "session") -> dict:
         if not await _is_similar(item, existing):
             data.setdefault("facts", []).append({
                 "content": item, "source": source,
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
             })
             existing.append(item)
             new_count += 1
@@ -251,7 +253,7 @@ async def handle_session_extract(extracted: list[dict]) -> dict:
             if not await _is_similar(content, texts):
                 data.setdefault("facts", []).append({
                     "content": content, "source": "session",
-                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "ts": datetime.now(UTC).isoformat(),
                 })
                 new_count += 1
     if len(data.get("facts", [])) > MAX_FACTS:
@@ -371,7 +373,7 @@ async def update_item(item_id: str, content: str) -> dict | None:
             return None
         if isinstance(items[index], dict):
             items[index]["content"] = content
-            items[index]["ts"] = datetime.now(timezone.utc).isoformat()
+            items[index]["ts"] = datetime.now(UTC).isoformat()
         else:
             items[index] = content
     else:

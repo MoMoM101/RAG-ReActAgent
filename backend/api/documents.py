@@ -1,15 +1,17 @@
-import os
 import asyncio
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks, Request
+import json
+import os
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from models.database import get_db, async_session
-from models.orm import Document, DocStatus
-from rag.pipeline import ingest_document, _process_document
+
 from config import settings
 from limiter import limiter
-import json
-from fastapi.responses import StreamingResponse
+from models.database import async_session, get_db
+from models.orm import DocStatus, Document
+from rag.pipeline import _process_document, ingest_document
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -50,7 +52,7 @@ async def upload_document(
             background=True,
         )
     except ValueError as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(409, str(e)) from e
 
     doc = (await db.execute(select(Document).where(Document.id == doc_id))).scalar_one()
     return {
@@ -87,9 +89,9 @@ async def list_documents(db: AsyncSession = Depends(get_db)):
 
 @router.delete("/{doc_id}")
 async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
-    from vectordb.factory import create_vectordb
-    from textdb.sqlite_fts import SQLiteFTS5
     from storage.files import delete_file
+    from textdb.sqlite_fts import SQLiteFTS5
+    from vectordb.factory import create_vectordb
 
     result = await db.execute(select(Document).where(Document.id == doc_id))
     doc = result.scalar_one_or_none()
@@ -146,6 +148,8 @@ async def get_document_chunks(doc_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 import re
+
+
 def _desegment_cjk(text: str) -> str:
     """Undo _segment_cjk spacing for display: ' 项 目 ' → '项目'"""
     # Collapse whitespace around CJK characters
@@ -192,7 +196,7 @@ async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
         doc.status = DocStatus.failed
         doc.error_message = str(e)
         await db.commit()
-        raise HTTPException(500, f"Reprocessing failed: {e}")
+        raise HTTPException(500, f"Reprocessing failed: {e}") from e
 
     return {"status": "reprocessed", "id": doc_id}
 
@@ -213,7 +217,7 @@ async def document_progress(doc_id: str):
                 if doc:
                     yield f"data: {{\"status\": \"{doc.status.value}\"}}\n\n"
                 else:
-                    yield f"data: {{\"status\": \"not_found\"}}\n\n"
+                    yield "data: {\"status\": \"not_found\"}\n\n"
                     return
 
             # 推送进度事件
@@ -223,7 +227,7 @@ async def document_progress(doc_id: str):
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     if event.get("status") in ("ready", "failed"):
                         break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield "data: {\"status\": \"timeout\"}\n\n"
                     break
         finally:

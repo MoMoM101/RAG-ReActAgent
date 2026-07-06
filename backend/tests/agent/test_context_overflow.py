@@ -1,8 +1,10 @@
 """Context overflow degradation path + _process_dropped tests."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
-from llm.base import LLMResponse, ChatMessage, ToolCall
+
+import pytest
+
+from llm.base import LLMResponse, ToolCall
 from tests.conftest import FakeLLM
 
 
@@ -143,7 +145,7 @@ class TestContextOverflowDegradation:
             from agent.loop import run_agent_loop
 
             with pytest.raises(ValueError, match="not a context error"):
-                async for event in run_agent_loop(self.QUERY, []):
+                async for _event in run_agent_loop(self.QUERY, []):
                     pass
 
     def test_is_context_error_patterns(self):

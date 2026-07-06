@@ -1,4 +1,5 @@
 import pytest
+
 from reranker.base import BaseReranker
 
 

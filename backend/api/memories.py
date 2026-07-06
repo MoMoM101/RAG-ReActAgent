@@ -1,5 +1,7 @@
 """API for listing and updating user memories."""
 
+from datetime import UTC
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -12,9 +14,9 @@ class UpdateMemoryRequest(BaseModel):
 
 def _flatten_profile(profile: dict) -> list[dict]:
     """展开画像为带 id 的扁平列表，供前端展示。"""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     items = []
     if profile.get("name"):
         items.append({"id": "name:0", "content": f"用户名: {profile['name']}",
@@ -82,7 +84,8 @@ async def delete_memory(memory_id: str):
 
 @router.delete("")
 async def clear_all_memories():
-    from sqlalchemy import select, delete
+    from sqlalchemy import delete, select
+
     from models.database import async_session
     from models.orm import UserMemory
     from vectordb.qdrant import QdrantVectorDB
@@ -96,6 +99,6 @@ async def clear_all_memories():
             await session.execute(delete(UserMemory))
             await session.commit()
 
-    from memory.profile import _save, _empty
+    from memory.profile import _empty, _save
     await _save(_empty())
     return {"status": "cleared", "count": len(all_ids)}

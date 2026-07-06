@@ -1,8 +1,9 @@
 """记忆拦截测试 — 正则提取 + 噪音过滤。"""
 
 import pytest
+
+from agent.intercept import extract_memory_candidate, extract_memory_candidates
 from llm.base import LLMResponse
-from agent.intercept import extract_memory_candidates, extract_memory_candidate
 
 
 class TestIdentityExtraction:

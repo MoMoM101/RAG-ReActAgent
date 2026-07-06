@@ -75,7 +75,6 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
-import os
 import secrets
 from pathlib import Path
 

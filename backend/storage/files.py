@@ -1,6 +1,6 @@
 import os
-import shutil
 from pathlib import Path
+
 from config import settings
 
 UPLOAD_DIR = Path(settings.upload_dir).resolve()

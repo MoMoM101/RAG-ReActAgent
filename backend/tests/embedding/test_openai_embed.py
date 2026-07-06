@@ -1,6 +1,7 @@
 import pytest
-from embedding.openai_embed import OpenAIEmbedding
+
 from config import settings
+from embedding.openai_embed import OpenAIEmbedding
 
 
 def _api_key_is_set() -> bool:

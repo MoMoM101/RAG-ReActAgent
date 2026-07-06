@@ -1,4 +1,5 @@
 from config import settings
+
 from .base import BaseOCR
 from .paddle_ocr import DoctrOCREngine
 

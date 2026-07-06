@@ -1,6 +1,7 @@
 """意图分类规则边界测试 — 纯函数，不依赖 LLM。"""
 
 import pytest
+
 from agent.classifier import _rule_match
 
 

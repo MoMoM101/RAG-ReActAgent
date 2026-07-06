@@ -1,7 +1,7 @@
 from config import settings
+
 from .base import BaseLLM
 from .openai_llm import OpenAILLM
-
 
 OPENAI_COMPATIBLE = {"openai", "deepseek", "zhipu", "moonshot", "qwen", "groq", "ollama", "custom"}
 

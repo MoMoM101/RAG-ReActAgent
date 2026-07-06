@@ -1,9 +1,11 @@
 import asyncio
+import os
 import threading
 import time
-import os
 from pathlib import Path
+
 from sentence_transformers import CrossEncoder
+
 from .base import BaseReranker
 
 
@@ -38,7 +40,7 @@ class CrossEncoderReranker(BaseReranker):
             try:
                 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
                 if not cached:
-                    print(f"[Reranker] 正在下载模型，首次需 1-2 分钟...", flush=True)
+                    print("[Reranker] 正在下载模型，首次需 1-2 分钟...", flush=True)
                 start = time.time()
                 self._model = CrossEncoder(self._model_name)
                 elapsed = time.time() - start
@@ -47,7 +49,7 @@ class CrossEncoderReranker(BaseReranker):
             except Exception as e:
                 print(f"[Reranker] 加载失败: {e}", flush=True)
                 if not cached:
-                    print(f"[Reranker] 请在 .env 设置 hf_endpoint=https://hf-mirror.com", flush=True)
+                    print("[Reranker] 请在 .env 设置 hf_endpoint=https://hf-mirror.com", flush=True)
                 self._ready = False
 
         threading.Thread(target=_load, daemon=True).start()

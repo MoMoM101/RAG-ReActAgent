@@ -1,4 +1,5 @@
 from config import settings
+
 from .base import BaseReranker
 from .cross_encoder import CrossEncoderReranker
 

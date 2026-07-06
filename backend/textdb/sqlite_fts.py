@@ -1,6 +1,8 @@
 import re
 from typing import Any
+
 from models.database import async_session
+
 from .base import BaseTextDB, TextSearchResult
 
 

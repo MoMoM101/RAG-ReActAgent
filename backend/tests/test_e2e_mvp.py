@@ -1,6 +1,8 @@
 import os
+
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
+
 from main import app
 
 needs_embedding = pytest.mark.skipif(

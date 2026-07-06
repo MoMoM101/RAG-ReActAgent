@@ -1,9 +1,11 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from sqlalchemy import delete
+
 from agent.tools import CalculatorTool
 from models.database import async_session
-from models.orm import Document, DocStatus
+from models.orm import DocStatus, Document
 
 
 class TestListDocumentsTool:
@@ -183,7 +185,7 @@ class TestToolRegistryRetry:
 
     @pytest.mark.asyncio
     async def test_retryable_triggers_retry(self):
-        from agent.tools import ToolRegistry, BaseTool, ToolResult, RetryableError
+        from agent.tools import BaseTool, RetryableError, ToolRegistry, ToolResult
 
         call_count = [0]
 
@@ -210,7 +212,7 @@ class TestToolRegistryRetry:
     @pytest.mark.asyncio
     async def test_business_error_no_retry(self):
         """ToolResult(success=False) should NOT trigger retry."""
-        from agent.tools import ToolRegistry, BaseTool, ToolResult
+        from agent.tools import BaseTool, ToolRegistry, ToolResult
 
         call_count = [0]
 
@@ -234,7 +236,7 @@ class TestToolRegistryRetry:
     @pytest.mark.asyncio
     async def test_max_retries_exhausted(self):
         """Continuous RetryableError -> fail after max_retries+1 attempts."""
-        from agent.tools import ToolRegistry, BaseTool, ToolResult, RetryableError
+        from agent.tools import BaseTool, RetryableError, ToolRegistry
 
         call_count = [0]
 
@@ -259,7 +261,7 @@ class TestToolRegistryRetry:
     @pytest.mark.asyncio
     async def test_none_strategy_no_retry_on_retryable(self):
         """retry_strategy='none' should NOT retry even on RetryableError."""
-        from agent.tools import ToolRegistry, BaseTool, ToolResult, RetryableError
+        from agent.tools import BaseTool, RetryableError, ToolRegistry
 
         call_count = [0]
 
@@ -284,9 +286,9 @@ class TestToolRegistryRetry:
 
 class TestIsRetryableException:
     def test_asyncio_timeout_error(self):
-        import asyncio
+
         from agent.tools import _is_retryable_exception
-        assert _is_retryable_exception(asyncio.TimeoutError()) is True
+        assert _is_retryable_exception(TimeoutError()) is True
 
     def test_builtin_connection_error(self):
         from agent.tools import _is_retryable_exception
@@ -297,7 +299,6 @@ class TestIsRetryableException:
         assert _is_retryable_exception(TimeoutError()) is True
 
     def test_sqlalchemy_errors(self):
-        import importlib
         from agent.tools import _is_retryable_exception
 
         try:
@@ -344,12 +345,13 @@ class TestIsRetryableException:
         assert _is_retryable_exception(Exception("generic")) is False
 
     def test_raise_if_retryable_raises(self):
+
         import pytest as _pytest
-        from agent.tools import _raise_if_retryable, RetryableError
-        import asyncio
+
+        from agent.tools import RetryableError, _raise_if_retryable
 
         with _pytest.raises(RetryableError):
-            _raise_if_retryable(asyncio.TimeoutError(), "test_tool")
+            _raise_if_retryable(TimeoutError(), "test_tool")
 
     def test_raise_if_retryable_noop(self):
         from agent.tools import _raise_if_retryable
@@ -357,9 +359,10 @@ class TestIsRetryableException:
 
     def test_retryable_error_wraps_original(self):
         import asyncio
+
         from agent.tools import RetryableError
 
-        original = asyncio.TimeoutError("timed out")
+        original = TimeoutError("timed out")
         try:
             raise RetryableError(f"[test_tool] {original}") from original
         except RetryableError as e:

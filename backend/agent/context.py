@@ -2,8 +2,10 @@
 
 import hashlib
 import logging
-import tiktoken
 from pathlib import Path
+
+import tiktoken
+
 from llm.base import ChatMessage
 
 logger = logging.getLogger(__name__)

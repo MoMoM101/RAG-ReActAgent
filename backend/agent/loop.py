@@ -3,12 +3,13 @@
 import json
 import logging
 import time
-from llm.base import ChatMessage, ToolCall
-from llm.factory import create_llm
-from agent.tools import registry, ToolResult
+
 from agent.context import ContextManager
 from agent.context_window import get_window, is_context_error
+from agent.tools import ToolResult, registry
 from config import settings
+from llm.base import ChatMessage
+from llm.factory import create_llm
 
 logger = logging.getLogger(__name__)
 _MIN_CONTEXT_WINDOW = 16000
@@ -33,12 +34,13 @@ async def run_agent_loop(
     yield {"event": "status", "data": {"message": "正在分析问题..."}}
 
     # 1.5. 记忆前置拦截 — 正则提取 + 批量 LLM 确认
-    from agent.intercept import extract_memory_candidates, confirm_candidates_batch
+    from agent.intercept import confirm_candidates_batch, extract_memory_candidates
     from memory.profile import handle_intercept
     candidates = extract_memory_candidates(user_message)
     # LLM 分类器提取的 save_to_profile
     for item in (hint.save_to_profile or []):
-        c = item.get("content", ""); t = item.get("type", "fact")
+        c = item.get("content", "")
+        t = item.get("type", "fact")
         if c and (c, t) not in candidates:
             candidates.append((c, t))
     saved = []
@@ -72,7 +74,8 @@ async def run_agent_loop(
         f"- {t['function']['name']}: {t['function']['description']}"
         for t in tools
     )
-    from memory.profile import get_profile as get_profile_data, format_profile
+    from memory.profile import format_profile
+    from memory.profile import get_profile as get_profile_data
     profile_data = await get_profile_data()
     profile_text = format_profile(profile_data)
     system_msg = ChatMessage(
@@ -103,8 +106,6 @@ async def run_agent_loop(
                     f"\n[历史摘要] 早期对话要点: {history_summary}"
                 )
             if dropped_queries and _first_attempt:
-                from agent.session_extract import _extract_with_llm as _batch_extract
-                from memory.profile import handle_session_extract
                 import asyncio as _asyncio
                 _asyncio.create_task(_process_dropped(dropped_queries))
             _first_attempt = False
@@ -260,9 +261,9 @@ async def run_agent_loop(
 async def _process_dropped(queries: list[str]):
     """后台处理被裁剪丢弃的用户消息，提取画像信息。"""
     try:
-        from agent.intercept import extract_memory_candidates, confirm_candidates_batch
-        from memory.profile import handle_intercept
+        from agent.intercept import confirm_candidates_batch, extract_memory_candidates
         from agent.session_extract import _extract_with_llm
+        from memory.profile import handle_intercept
 
         # 1. 正则提取
         candidates = []

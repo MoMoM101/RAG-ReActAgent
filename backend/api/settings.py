@@ -3,11 +3,12 @@ import json
 import logging
 import os
 import re
-import shutil
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
+
 from config import settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -198,11 +199,15 @@ class TestConnectionRequest(BaseModel):
 async def test_connection(req: TestConnectionRequest):
     """Test LLM or embedding connectivity with provided config."""
     import time
+
     from openai import AsyncOpenAI
 
     # Treat masked/placeholder keys as empty — fallback to configured keys
     if req.kind == "embedding":
-        api_key = req.api_key if (req.api_key and "***" not in req.api_key) else (settings.embedding_api_key or settings.llm_api_key)
+        api_key = (
+            req.api_key if (req.api_key and "***" not in req.api_key)
+            else (settings.embedding_api_key or settings.llm_api_key)
+        )
         base_url = req.base_url or settings.embedding_base_url or settings.llm_base_url
         model = req.model or settings.embedding_model
     else:
@@ -244,10 +249,11 @@ async def _detect_dimension_mismatch() -> dict:
     即使 API 连接失败也返回可用信息（ok=False），不抛异常。
     """
     from openai import AsyncOpenAI
-    from vectordb.qdrant import QdrantVectorDB
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
+
     from models.database import async_session
     from models.orm import Document
+    from vectordb.qdrant import QdrantVectorDB
 
     api_key = settings.embedding_api_key or settings.llm_api_key
     base_url = settings.embedding_base_url or settings.llm_base_url
@@ -307,6 +313,7 @@ async def check_dimension():
 async def _get_actual_embedding_dim() -> int:
     """用当前配置连接 embedding 服务，返回实际向量维度。"""
     from openai import AsyncOpenAI
+
     from config import settings
 
     api_key = settings.embedding_api_key or settings.llm_api_key
@@ -319,14 +326,14 @@ async def _get_actual_embedding_dim() -> int:
 async def _reset_qdrant_collections(new_dim: int) -> None:
     """清空所有 Qdrant collection。双缓冲模式：创建新 collection → 切换指针 → 删旧。"""
     import uuid as _uuid_new
-    from vectordb.qdrant import QdrantVectorDB
+
     from config import settings
+    from vectordb.qdrant import QdrantVectorDB
 
     # rag_chunks: 创建新空 collection
     new_chunks_name = f"{settings.qdrant_collection}_{_uuid_new.uuid4().hex[:8]}"
     chunks_db_new = QdrantVectorDB(collection_name=new_chunks_name)
     await chunks_db_new.create_collection(new_dim)
-    old_chunks_name = settings.qdrant_active_collection or settings.qdrant_collection
     settings.qdrant_active_collection = new_chunks_name
 
     # user_profile: 创建新空 collection
@@ -334,7 +341,6 @@ async def _reset_qdrant_collections(new_dim: int) -> None:
     new_profile_name = f"user_profile_{_uuid_new.uuid4().hex[:8]}"
     profile_db_new = QdrantVectorDB(collection_name=new_profile_name)
     await profile_db_new.create_collection(new_dim)
-    old_profile_name = profile_mod.PROFILE_COLLECTION
     profile_mod.PROFILE_COLLECTION = new_profile_name
 
     # 持久化指针
@@ -365,9 +371,10 @@ async def _ensure_profile_collection_dim(target_dim: int) -> None:
     当画像数据为空时 _index_profile 会提前返回，此时旧 collection（旧维度）残留在磁盘上。
     此函数强制创建正确维度的空 collection 并清理旧数据。
     """
-    import uuid as _uuid
     import json as _json
+    import uuid as _uuid
     from pathlib import Path
+
     import memory.profile as profile_mod
     from vectordb.qdrant import QdrantVectorDB
 
@@ -405,9 +412,10 @@ import re as _re_module
 
 async def _get_sample_text() -> str | None:
     """获取最长的一段文本作为 pre-flight 样本。优先 raw_text，降级 FTS5。"""
+    from sqlalchemy import select
+
     from models.database import async_session
     from models.orm import Document
-    from sqlalchemy import select
 
     # 1. 尝试从 Document.raw_text 获取
     async with async_session() as session:
@@ -446,7 +454,7 @@ async def _preflight_chunk_size(
     from rag.splitter import split_text
 
     chunk_size = initial_size
-    for attempt in range(10):
+    for _attempt in range(10):
         chunks = split_text(sample_text, chunk_size, settings.chunk_overlap)
         if not chunks:
             return chunk_size
@@ -518,18 +526,19 @@ async def rebuild_collections():
 
     async def _do_rebuild():
         global _rebuild_lock
-        from rag.progress import progress
-        from rag.splitter import split_text
-        from embedding.factory import create_embedding, reset_embedding
-        from vectordb.qdrant import QdrantVectorDB
-        from textdb.sqlite_fts import SQLiteFTS5
-        from memory.profile import _index_profile, _load
-        from models.database import async_session, engine
-        from models.orm import Document, DocStatus
+        import uuid as _uuid
+
         from sqlalchemy import select
         from sqlalchemy import text as sa_text
-        from qdrant_client.models import PointStruct
-        import uuid as _uuid
+
+        from embedding.factory import create_embedding, reset_embedding
+        from memory.profile import _index_profile, _load
+        from models.database import async_session, engine
+        from models.orm import DocStatus, Document
+        from rag.progress import progress
+        from rag.splitter import split_text
+        from textdb.sqlite_fts import SQLiteFTS5
+        from vectordb.qdrant import QdrantVectorDB
 
         rebuild_id = "rebuild"
         V2_SUFFIX = "_v2"
@@ -703,7 +712,6 @@ async def rebuild_collections():
             # 4b. 画像: 双缓冲重建 + 空数据兜底（确保旧 collection 被清理）
             # _index_profile 和 _ensure_profile_collection_dim 分开 try，前者失败不阻断后者
             try:
-                import memory.profile as profile_mod
                 profile_data = await _load()
                 await _index_profile(profile_data)
             except Exception:
@@ -794,11 +802,11 @@ async def rebuild_status():
 @router.post("/clear-all-data")
 async def clear_all_data():
     """清空所有数据（文档/切片/向量/记忆/对话/画像），重建空 collection。"""
-    import os
+    from sqlalchemy import delete, func, select
+
     from config import settings
-    from sqlalchemy import select, func, delete
     from models.database import async_session, engine
-    from models.orm import Document, Conversation, Message, UserMemory, UserProfile
+    from models.orm import Conversation, Document, Message, UserMemory, UserProfile
 
     new_dim = await _get_actual_embedding_dim()
 
@@ -862,8 +870,8 @@ async def rebuild_progress():
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     if event.get("status") in ("completed", "failed"):
                         break
-                except asyncio.TimeoutError:
-                    yield f"data: {{\"status\": \"timeout\"}}\n\n"
+                except TimeoutError:
+                    yield "data: {\"status\": \"timeout\"}\n\n"
                     break
         finally:
             progress.unsubscribe("rebuild", q)

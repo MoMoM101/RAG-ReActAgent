@@ -1,10 +1,9 @@
 """Structured logging with request_id tracking."""
 
 import json
-import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -26,7 +25,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 def _log_request(request_id: str, method: str, path: str, status: int, elapsed_ms: int):
     record = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "rid": request_id,
         "method": method,
         "path": path,
@@ -35,8 +34,9 @@ def _log_request(request_id: str, method: str, path: str, status: int, elapsed_m
     }
     # Write one JSON line per request to a log file
     try:
-        from config import settings
         from pathlib import Path
+
+        from config import settings
         log_dir = Path(settings.upload_dir).parent / "logs"
         log_dir.mkdir(exist_ok=True)
         log_file = log_dir / "access.log"

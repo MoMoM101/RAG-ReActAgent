@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+
 from .base import BaseOCR
 
 
@@ -9,6 +10,7 @@ def _patch_doctr_download():
     try:
         import re
         import urllib.request
+
         import doctr.utils.data as _data
 
         _gh_mirror = "https://gh.idayer.com"
@@ -76,7 +78,7 @@ class DoctrOCREngine(BaseOCR):
 
     def preload_async(self):
         """Check and download models in background."""
-        print(f"[OCR] 正在检查模型...", flush=True)
+        print("[OCR] 正在检查模型...", flush=True)
 
         def _download():
             try:
@@ -108,7 +110,6 @@ class DoctrOCREngine(BaseOCR):
     def recognize(self, image) -> str:
         if not self._ready or self._model is None:
             return ""
-        import numpy as np
 
         # doctr expects RGB numpy array
         if len(image.shape) == 3 and image.shape[2] == 3:
@@ -131,6 +132,7 @@ class DoctrOCREngine(BaseOCR):
     def recognize_from_bytes(self, data: bytes, dpi: int = 200) -> str:
         import cv2
         import numpy as np
+
         from ocr.preprocess import preprocess
         arr = np.frombuffer(data, np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)

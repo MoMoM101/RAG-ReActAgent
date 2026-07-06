@@ -1,9 +1,11 @@
 """Agent Loop 核心测试 — Mock LLM 注入，验证关键路径。"""
 
-import pytest
 from unittest.mock import AsyncMock, patch
-from llm.base import LLMResponse, ToolCall, ChatMessage
+
+import pytest
+
 from agent.tools import ToolResult
+from llm.base import ChatMessage, LLMResponse, ToolCall
 
 
 def _make_tool_call(name: str, args: dict, call_id: str = "call_1") -> ToolCall:

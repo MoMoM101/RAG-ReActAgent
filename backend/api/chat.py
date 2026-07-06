@@ -1,15 +1,18 @@
 import json
 import uuid
-from fastapi import APIRouter, Depends, Request, HTTPException
+from datetime import UTC
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
 from pydantic import BaseModel, Field
-from models.database import get_db, async_session
-from models.orm import Conversation, Message
-from llm.base import ChatMessage, ToolCall
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from agent.loop import run_agent_loop
 from limiter import limiter
+from llm.base import ChatMessage, ToolCall
+from models.database import async_session, get_db
+from models.orm import Conversation, Message
 
 router = APIRouter(tags=["chat"])
 
@@ -73,10 +76,10 @@ async def _save_messages(
 
     # Touch conversation updated_at
     async with async_session() as db2:
-        from datetime import datetime, timezone
+        from datetime import datetime
         await db2.execute(
             update(Conversation).where(Conversation.id == conv_id).values(
-                updated_at=datetime.now(timezone.utc)
+                updated_at=datetime.now(UTC)
             )
         )
         await db2.commit()
@@ -140,11 +143,13 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
         conv_id = conv.id
         # 打开旧会话：增量提取未处理的消息
         import asyncio as _asyncio
+
         from agent.session_extract import extract_session_memories
         _asyncio.create_task(extract_session_memories(conv_id))
     else:
         # 新会话：对上一段会话做记忆提取
         import asyncio as _asyncio
+
         from agent.session_extract import extract_session_memories
         prev = await db.execute(
             select(Conversation.id).order_by(Conversation.updated_at.desc()).limit(1)
@@ -169,7 +174,7 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
     # Pass 1: build history list, keeping a map of message index for args lookup
     history: list[ChatMessage] = []
     db_msg_by_idx: dict[int, Message] = {}  # for looking up tool_args later
-    for idx, m in enumerate(messages_db):
+    for _idx, m in enumerate(messages_db):
         if m.role == "tool":
             history.append(ChatMessage(
                 role="tool", content=m.content,
@@ -216,10 +221,10 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
     await db.commit()
 
     # Touch conversation updated_at
-    from datetime import datetime, timezone
+    from datetime import datetime
     await db.execute(
         update(Conversation).where(Conversation.id == conv_id).values(
-            updated_at=datetime.now(timezone.utc)
+            updated_at=datetime.now(UTC)
         )
     )
     await db.commit()

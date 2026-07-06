@@ -1,6 +1,7 @@
 """Tests for the rebuild flow with pre-flight and blue-green switching."""
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 class TestGetSampleText:
@@ -9,11 +10,11 @@ class TestGetSampleText:
     @pytest.mark.asyncio
     async def test_returns_raw_text_when_available(self):
         """Should return raw_text from Document when it exists."""
-        from api.settings import _get_sample_text
-        from models.orm import Document
-        from models.database import async_session
-
         import uuid
+
+        from api.settings import _get_sample_text
+        from models.database import async_session
+        from models.orm import Document
         async with async_session() as session:
             doc = Document(
                 id=str(uuid.uuid4()),
@@ -128,7 +129,6 @@ class TestRebuildEndpoint:
         """Should reject a second rebuild while one is in progress."""
         from api.settings import _rebuild_lock
 
-        # Simulate lock held
-        _rebuild_lock = True
-        # (Actual endpoint test requires running server -- this verifies the guard exists)
+        # Simulate lock held (verify the guard variable exists)
+        _rebuild_lock = True  # noqa: F811
         assert isinstance(_rebuild_lock, bool)
