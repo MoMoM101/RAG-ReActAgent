@@ -27,7 +27,13 @@ async def _ensure_collection_dim(db) -> int | None:
     """Check collection dimension matches embedding API. Returns dim or None if mismatch."""
     from embedding.factory import create_embedding
     emb = create_embedding()
-    actual_dim = len(await emb.embed_query("dim check"))
+    try:
+        actual_dim = len(await emb.embed_query("dim check"))
+    except Exception as e:
+        type_name = type(e).__name__
+        if type_name in ("APITimeoutError", "APIConnectionError"):
+            pytest.skip(f"Embedding API unavailable: {type_name}")
+        raise
     if await db.collection_exists():
         existing_dim = await db.get_collection_dim()
         if existing_dim and existing_dim != actual_dim:
@@ -85,7 +91,13 @@ async def test_hybrid_search_hits_fts5():
     await fts.insert(chunk_id, TEST_DOC_ID, "XYZ-9000 型号规格参数详细说明")
 
     try:
-        results = await hybrid_search("XYZ-9000", top_k=3)
+        try:
+            results = await hybrid_search("XYZ-9000", top_k=3)
+        except Exception as e:
+            type_name = type(e).__name__
+            if type_name in ("APITimeoutError", "APIConnectionError"):
+                pytest.skip(f"Embedding API unavailable: {type_name}")
+            raise
         assert len(results) > 0
     finally:
         await fts.delete_by_chunks([chunk_id])
@@ -102,7 +114,13 @@ async def test_hybrid_search_empty_documents():
     if await _ensure_collection_dim(db) is None:
         pytest.skip("Qdrant collection dimension mismatch with embedding API")
 
-    results = await hybrid_search("不可能匹配的罕见查询词 zuihao12345", top_k=3)
+    try:
+        results = await hybrid_search("不可能匹配的罕见查询词 zuihao12345", top_k=3)
+    except Exception as e:
+        type_name = type(e).__name__
+        if type_name in ("APITimeoutError", "APIConnectionError"):
+            pytest.skip(f"Embedding API unavailable: {type_name}")
+        raise
     assert isinstance(results, list)
 
 
