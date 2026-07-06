@@ -37,6 +37,15 @@ class TestCrossEncoderReranker:
             return
 
         reranker = CrossEncoderReranker("BAAI/bge-reranker-v2-m3")
+        reranker.preload_async()
+        # Wait up to 120s for model to load (download on first run)
+        import asyncio
+        deadline = asyncio.get_event_loop().time() + 120
+        while not reranker.ready:
+            if asyncio.get_event_loop().time() > deadline:
+                pytest.skip("Reranker model load timed out")
+            await asyncio.sleep(1)
+
         docs = [
             "Python is a programming language",
             "The weather is nice today",
@@ -46,3 +55,22 @@ class TestCrossEncoderReranker:
         assert len(results) == 3
         scores = {i: s for i, s in results}
         assert scores[0] > scores[1] or scores[2] > scores[1]
+
+    @pytest.mark.asyncio
+    async def test_reranker_unready_returns_neutral_scores(self):
+        """When model is not ready, rerank() returns neutral 0.5 scores for all docs."""
+        from reranker.cross_encoder import CrossEncoderReranker
+        reranker = CrossEncoderReranker("BAAI/bge-reranker-v2-m3")
+        # Do NOT call preload_async — simulate unready state
+        docs = ["doc a", "doc b", "doc c"]
+        results = await reranker.rerank("query", docs)
+        assert len(results) == 3
+        assert all(score == 0.5 for _, score in results)
+
+    @pytest.mark.asyncio
+    async def test_reranker_empty_docs(self):
+        """Empty document list returns empty result."""
+        from reranker.cross_encoder import CrossEncoderReranker
+        reranker = CrossEncoderReranker("BAAI/bge-reranker-v2-m3")
+        results = await reranker.rerank("query", [])
+        assert results == []
