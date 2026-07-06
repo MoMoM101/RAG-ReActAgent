@@ -5,6 +5,7 @@ import { ChunkViewer } from "./ChunkViewer";
 import { useConfirm } from "../shared/ConfirmDialog";
 import { useToastStore } from "../../stores/toastStore";
 import { TrashIcon, RefreshIcon } from "../shared/Icons";
+import { Skeleton } from "../shared/Skeleton";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   ready:     { label: "ready", cls: "ready" },
@@ -71,9 +72,7 @@ export function DocumentList() {
 
         {loading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="skeleton" style={{ height: 48, borderRadius: "var(--radius)" }} />
-            ))}
+            <Skeleton height={48} count={3} />
           </div>
         ) : documents.length === 0 ? (
           <div className="chat-empty" style={{ minHeight: 200 }}>

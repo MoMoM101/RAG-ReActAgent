@@ -7,6 +7,7 @@ import { SettingsPage } from "./components/settings/SettingsPage";
 import { MemoryList } from "./components/memories/MemoryList";
 import { ToastContainer } from "./components/shared/Toast";
 import { ConfirmProvider } from "./components/shared/ConfirmDialog";
+import { ErrorBoundary } from "./components/shared/ErrorBoundary";
 
 export default function App() {
   useEffect(() => {
@@ -22,14 +23,16 @@ export default function App() {
   return (
     <ConfirmProvider>
       <BrowserRouter>
-        <Routes>
-          <Route element={<MainLayout />}>
-            <Route path="/" element={<ChatPanel />} />
-            <Route path="/documents" element={<DocumentList />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/memories" element={<MemoryList />} />
-          </Route>
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route element={<MainLayout />}>
+              <Route path="/" element={<ChatPanel />} />
+              <Route path="/documents" element={<DocumentList />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/memories" element={<MemoryList />} />
+            </Route>
+          </Routes>
+        </ErrorBoundary>
       </BrowserRouter>
       <ToastContainer />
     </ConfirmProvider>

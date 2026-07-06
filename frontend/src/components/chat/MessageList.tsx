@@ -2,6 +2,7 @@ import { useChatStore } from "../../stores/chatStore";
 import { MessageBubble } from "./MessageBubble";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { BrainIcon, ArrowDownIcon } from "../shared/Icons";
+import { Skeleton } from "../shared/Skeleton";
 
 export function MessageList() {
   const messages = useChatStore((s) => s.messages);
@@ -61,8 +62,8 @@ export function MessageList() {
     <>
       <div ref={containerRef} className="chat-messages" onScroll={handleScroll}>
         {loadingHistory && (
-          <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 12, padding: 20 }}>
-            加载中...
+          <div style={{ padding: 20 }}>
+            <Skeleton height={40} count={3} />
           </div>
         )}
         {messages.map((msg) => (

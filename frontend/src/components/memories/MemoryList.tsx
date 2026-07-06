@@ -3,6 +3,7 @@ import { listMemories, updateMemory, deleteMemory, clearAllMemories, type Memory
 import { useConfirm } from "../shared/ConfirmDialog";
 import { useToastStore } from "../../stores/toastStore";
 import { TrashIcon, EditIcon } from "../shared/Icons";
+import { Skeleton } from "../shared/Skeleton";
 
 export function MemoryList() {
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
@@ -94,7 +95,7 @@ export function MemoryList() {
       </div>
       <div className="settings-content">
         {loading ? (
-          <p style={{ color: "var(--muted)" }}>加载中...</p>
+          <Skeleton height={48} count={4} />
         ) : memories.length === 0 ? (
           <p style={{ color: "var(--muted)", fontSize: 14 }}>
             暂无记忆。当 AI 在对话中调用 save_to_memory 保存信息后，这里会显示。

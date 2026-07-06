@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import type { DocumentChunks } from "../../types/document";
 import { useDocumentStore } from "../../stores/documentStore";
 import { CloseIcon } from "../shared/Icons";
+import { Skeleton } from "../shared/Skeleton";
 
 interface Props { docId: string; onClose: () => void }
 
@@ -27,9 +28,7 @@ export function ChunkViewer({ docId, onClose }: Props) {
         </div>
         <div className="modal-body">
           {loading
-            ? Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="skeleton" style={{ height: 60, marginBottom: 8, borderRadius: "var(--radius)" }} />
-              ))
+            ? <Skeleton height={60} count={3} />
           : error
             ? <p style={{ color: "var(--danger)", fontSize: 13 }}>{error}</p>
           : !data || data.chunks.length === 0

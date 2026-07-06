@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getSettings, updateSettings, checkDimension, rebuildCollections, clearAllData, testConnection, subscribeRebuildProgress, getRebuildStatus, type SettingsResponse, type TestConnectionResult, type DimensionCheckResult, type RebuildProgressEvent } from "../../api/settings";
 import { useToastStore } from "../../stores/toastStore";
 import { CheckIcon } from "../shared/Icons";
+import { Skeleton } from "../shared/Skeleton";
 
 /* ── Provider presets ────────────────────────────── */
 
@@ -319,9 +320,11 @@ export function SettingsPage() {
         <div className="settings-content">
           {loading ? (
             <>
-              <div className="skeleton" style={{ height: 40, width: 120, marginBottom: 24 }} />
-              <div className="skeleton" style={{ height: 250, marginBottom: 16, borderRadius: "var(--radius)" }} />
-              <div className="skeleton" style={{ height: 220, borderRadius: "var(--radius)" }} />
+              <Skeleton height={40} width={120} />
+              <div style={{ marginBottom: 24 }} />
+              <Skeleton height={250} />
+              <div style={{ marginBottom: 16 }} />
+              <Skeleton height={220} />
             </>
           ) : (
             <p style={{ color: "var(--danger)" }}>无法加载配置，请检查后端服务</p>
