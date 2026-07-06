@@ -159,17 +159,17 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
         conv_id = conv.id
 
     # Load history
-    result = await db.execute(
+    hist_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conv_id)
         .order_by(Message.created_at.asc())
     )
-    messages = result.scalars().all()
+    messages_db: list[Message] = list(hist_result.scalars().all())
 
     # Pass 1: build history list, keeping a map of message index for args lookup
     history: list[ChatMessage] = []
     db_msg_by_idx: dict[int, Message] = {}  # for looking up tool_args later
-    for idx, m in enumerate(messages):
+    for idx, m in enumerate(messages_db):
         if m.role == "tool":
             history.append(ChatMessage(
                 role="tool", content=m.content,
@@ -195,9 +195,10 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
                     pass
             for j in range(i - 1, -1, -1):
                 if history[j].role == "assistant":
-                    if history[j].tool_calls is None:
-                        history[j].tool_calls = []
-                    history[j].tool_calls.insert(0, ToolCall(
+                    target_msg = history[j]
+                    if target_msg.tool_calls is None:
+                        target_msg.tool_calls = []
+                    target_msg.tool_calls.insert(0, ToolCall(
                         id=msg.tool_call_id,
                         name=msg.tool_name,
                         arguments=args,

@@ -124,7 +124,8 @@ def _init_settings() -> Settings:
     """加载配置，自动处理 secret_key 生成和 API Key 解密。"""
     s = Settings()
 
-    env_path = Path(s.model_config.get("env_file", ".env"))
+    env_file = s.model_config.get("env_file", ".env")
+    env_path = Path(str(env_file)) if not isinstance(env_file, Path) else env_file
 
     # secret_key 为默认值时自动生成随机密钥（写入前检查避免多 worker 竞争）
     if s.secret_key == "change-me-in-production":

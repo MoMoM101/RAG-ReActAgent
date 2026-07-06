@@ -223,13 +223,13 @@ async def test_connection(req: TestConnectionRequest):
             return {"ok": False, "latency_ms": int((time.time() - t0) * 1000), "detail": str(e)[:300]}
     else:
         try:
-            resp = await client.chat.completions.create(
+            chat_resp = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "hi"}],
                 max_tokens=5,
             )
             latency_ms = int((time.time() - t0) * 1000)
-            reply = resp.choices[0].message.content.strip() if resp.choices else ""
+            reply = (chat_resp.choices[0].message.content or "").strip() if chat_resp.choices else ""
             return {"ok": True, "latency_ms": latency_ms, "detail": reply}
         except Exception as e:
             return {"ok": False, "latency_ms": int((time.time() - t0) * 1000), "detail": str(e)[:300]}
@@ -369,6 +369,7 @@ async def _ensure_profile_collection_dim(target_dim: int) -> None:
     import json as _json
     from pathlib import Path
     import memory.profile as profile_mod
+    from vectordb.qdrant import QdrantVectorDB
 
     # 如果 _index_profile 已经创建了新 collection 且 PROFILE_COLLECTION 指向正确维度，直接返回
     current_coll = profile_mod.PROFILE_COLLECTION

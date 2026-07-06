@@ -181,7 +181,7 @@ async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
 
     # Reset status and retry (_process_document handles internal cleanup)
     doc.status = DocStatus.uploaded
-    doc.error_message = None
+    doc.error_message = None  # type: ignore[assignment]
     await db.commit()
 
     try:

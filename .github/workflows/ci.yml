@@ -25,18 +25,23 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install mypy
+
+      - name: Type check with mypy
+        run: python -m mypy . --config-file ../pyproject.toml
 
       - name: Lint with ruff
         run: |
           pip install ruff
-          ruff check agent/ api/ --config ../pyproject.toml
+          ruff check . --config ../pyproject.toml
 
       - name: Run tests with coverage
         run: |
           pip install pytest-cov
-          pytest tests/ --ignore=tests/rag --ignore=tests/reranker --ignore=tests/embedding \
-            --ignore=tests/llm --ignore=tests/vectordb \
-            --cov=agent --cov-report=term-missing -v
+          pytest tests/ -v \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-fail-under=60
 
   lint:
     runs-on: ubuntu-latest
@@ -45,4 +50,4 @@ jobs:
       - name: ruff check
         uses: astral-sh/ruff-action@v1
         with:
-          src: "backend/agent backend/api"
+          src: "backend"

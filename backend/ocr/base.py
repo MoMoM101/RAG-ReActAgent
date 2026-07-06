@@ -8,3 +8,7 @@ class BaseOCR(ABC):
         Returns extracted text string.
         """
         ...
+
+    def recognize_from_bytes(self, data: bytes, dpi: int = 200) -> str:
+        """Recognize text from image bytes. Override in subclasses that support this."""
+        return ""

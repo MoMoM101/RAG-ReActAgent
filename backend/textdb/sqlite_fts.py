@@ -1,4 +1,5 @@
 import re
+from typing import Any
 from models.database import async_session
 from .base import BaseTextDB, TextSearchResult
 
@@ -30,11 +31,11 @@ class SQLiteFTS5(BaseTextDB):
             await conn.exec_driver_sql(sql)
             await session.commit()
 
-    async def _query(self, sql: str) -> list:
+    async def _query(self, sql: str) -> list[Any]:
         async with async_session() as session:
             conn = await session.connection()
             result = await conn.exec_driver_sql(sql)
-            return result.fetchall()
+            return list(result.fetchall())
 
     async def insert(self, chunk_id: str, document_id: str, text: str) -> None:
         cid = _safe_id(chunk_id)

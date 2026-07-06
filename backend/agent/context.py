@@ -76,7 +76,7 @@ class ContextManager:
             return system_msgs + ([others[last_user_idx]] if last_user_idx is not None else []), "", []
 
         remaining = budget - anchor_tokens
-        kept = []
+        kept: list[ChatMessage] = []
         dropped_summary_parts: list[str] = []
 
         i = len(others) - 1

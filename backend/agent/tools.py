@@ -70,15 +70,15 @@ class ToolResult:
 class BaseTool(ABC):
     name: str
     description: str
-    parameters: dict  # JSON Schema
+    parameters: dict[str, Any]  # JSON Schema
     max_retries: int = 3
     retry_backoff: float = 1.0
     retry_strategy: str = "exponential"  # "exponential" | "none"
 
     @abstractmethod
-    async def execute(self, **kwargs) -> ToolResult: ...
+    async def execute(self, **kwargs: Any) -> ToolResult: ...
 
-    def to_llm_schema(self) -> dict:
+    def to_llm_schema(self) -> dict[str, Any]:
         return {
             "type": "function",
             "function": {
@@ -193,6 +193,8 @@ class ToolRegistry:
                     )
         else:
             raise ValueError(f"Unknown retry_strategy: {tool.retry_strategy}")
+        # Satisfy mypy: all paths above return or raise
+        return ToolResult(success=False, error="unreachable")
 
 
 class CalculatorTool(BaseTool):

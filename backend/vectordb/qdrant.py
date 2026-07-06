@@ -34,7 +34,7 @@ class QdrantVectorDB(BaseVectorDB):
             info = await asyncio.to_thread(self.client.get_collection, self.collection)
             if info and info.config and info.config.params:
                 vp = info.config.params.vectors
-                if hasattr(vp, "size"):
+                if vp is not None and hasattr(vp, "size"):
                     return vp.size
         except Exception:
             pass
@@ -80,9 +80,9 @@ class QdrantVectorDB(BaseVectorDB):
         )
         return [
             VectorSearchResult(
-                chunk_id=r.id,
-                document_id=r.payload.get("document_id", ""),
-                text=r.payload.get("text", ""),
+                chunk_id=str(r.id),
+                document_id=(r.payload or {}).get("document_id", ""),
+                text=(r.payload or {}).get("text", ""),
                 score=r.score,
             )
             for r in results

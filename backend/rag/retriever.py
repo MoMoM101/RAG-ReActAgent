@@ -46,12 +46,12 @@ def _rrf_fusion(
             scores[r.chunk_id] = (rrf_score, r.document_id, r.text, "semantic")
 
     # Keyword scores
-    for rank, r in enumerate(text_results):
+    for rank, tr in enumerate(text_results):
         rrf_score = 1.0 / (rrf_k + rank + 1)
-        if r.chunk_id in scores:
-            scores[r.chunk_id] = (scores[r.chunk_id][0] + rrf_score, r.document_id, r.text, "hybrid")
+        if tr.chunk_id in scores:
+            scores[tr.chunk_id] = (scores[tr.chunk_id][0] + rrf_score, tr.document_id, tr.text, "hybrid")
         else:
-            scores[r.chunk_id] = (rrf_score, r.document_id, r.text, "keyword")
+            scores[tr.chunk_id] = (rrf_score, tr.document_id, tr.text, "keyword")
 
     # Sort by fused score descending
     sorted_items = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)

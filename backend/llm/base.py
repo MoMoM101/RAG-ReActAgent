@@ -1,12 +1,14 @@
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
 class ToolCall:
     id: str
     name: str
-    arguments: dict
+    arguments: dict[str, Any]
 
 
 @dataclass
@@ -28,10 +30,10 @@ class ChatMessage:
 
 class BaseLLM(ABC):
     @abstractmethod
-    async def chat_stream(
+    def chat_stream(
         self,
         messages: list[ChatMessage],
-        tools: list[dict] | None = None,
-    ):
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncGenerator[LLMResponse, None]:
         """Async generator yielding LLMResponse chunks for streaming"""
-        ...
+        raise NotImplementedError

@@ -1,4 +1,6 @@
 import json
+from collections.abc import AsyncGenerator
+from typing import Any
 from openai import AsyncOpenAI
 from config import settings
 from .base import BaseLLM, LLMResponse, ToolCall, ChatMessage
@@ -12,10 +14,10 @@ class OpenAILLM(BaseLLM):
         )
         self.model = model or settings.llm_model
 
-    def _build_messages(self, messages: list[ChatMessage]) -> list[dict]:
-        result = []
+    def _build_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
         for m in messages:
-            msg = {"role": m.role}
+            msg: dict[str, Any] = {"role": m.role}
             if m.content is not None:
                 msg["content"] = m.content
             if m.tool_call_id:
@@ -37,8 +39,10 @@ class OpenAILLM(BaseLLM):
             result.append(msg)
         return result
 
-    async def chat_stream(self, messages: list[ChatMessage], tools: list[dict] | None = None):
-        kwargs = {"model": self.model, "messages": self._build_messages(messages), "stream": True}
+    async def chat_stream(
+        self, messages: list[ChatMessage], tools: list[dict[str, Any]] | None = None
+    ) -> AsyncGenerator[LLMResponse, None]:
+        kwargs: dict[str, Any] = {"model": self.model, "messages": self._build_messages(messages), "stream": True}
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"

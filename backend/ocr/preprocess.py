@@ -43,4 +43,6 @@ def image_from_bytes(data: bytes, dpi: int = 200) -> np.ndarray:
     """Load image from bytes and preprocess for OCR."""
     arr = np.frombuffer(data, np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("failed to decode image from bytes")
     return preprocess(img, dpi=dpi)
