@@ -4,6 +4,7 @@ import os
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -261,3 +262,38 @@ async def queue_stats(db: AsyncSession = Depends(get_db)):
         "by_status": counts,
         "stuck_in_progress": stuck,
     }
+
+
+@router.delete("/clear-all")
+async def clear_all_documents(db: AsyncSession = Depends(get_db)):
+    """删除全部文档（向量 + FTS + 文件 + DB 记录）。"""
+    from storage.files import delete_file
+    from textdb.sqlite_fts import SQLiteFTS5
+    from vectordb.factory import create_vectordb
+
+    result = await db.execute(select(Document))
+    docs = result.scalars().all()
+
+    if not docs:
+        return {"status": "cleared", "count": 0}
+
+    vectordb = await create_vectordb()
+    fts = SQLiteFTS5()
+    upload_dir = settings.upload_dir
+
+    for doc in docs:
+        await vectordb.delete_by_document(doc.id)
+        await fts.delete_by_document(doc.id)
+
+        if os.path.isdir(upload_dir):
+            stem = doc.filename.rsplit(".", 1)[0] if "." in doc.filename else doc.filename
+            if stem:
+                for f in os.listdir(upload_dir):
+                    if f == doc.filename or (f.startswith(stem + "_") and f.endswith(doc.file_type)):
+                        delete_file(os.path.join(upload_dir, f))
+
+    count = len(docs)
+    await db.execute(sa_delete(Document))
+    await db.commit()
+
+    return {"status": "cleared", "count": count}

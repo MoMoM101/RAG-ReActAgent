@@ -15,6 +15,10 @@ export function deleteDocument(id: string): Promise<void> {
   return apiDelete(`/api/documents/${id}`);
 }
 
+export function clearAllDocuments(): Promise<{ status: string; count: number }> {
+  return apiDelete("/api/documents/clear-all");
+}
+
 export function getDocumentChunks(id: string): Promise<DocumentChunks> {
   return apiGet(`/api/documents/${id}/chunks`);
 }

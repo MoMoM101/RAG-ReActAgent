@@ -6,6 +6,7 @@ import { useConfirm } from "../shared/ConfirmDialog";
 import { useToastStore } from "../../stores/toastStore";
 import { TrashIcon, RefreshIcon } from "../shared/Icons";
 import { Skeleton } from "../shared/Skeleton";
+import { clearAllDocuments } from "../../api/documents";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   ready:     { label: "ready", cls: "ready" },
@@ -32,6 +33,7 @@ export function DocumentList() {
   const [viewChunksId, setViewChunksId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [clearing, setClearing] = useState(false);
   const confirm = useConfirm();
   const addToast = useToastStore((s) => s.addToast);
 
@@ -58,13 +60,45 @@ export function DocumentList() {
     load();
   };
 
+  const handleClearAll = async () => {
+    const ok = await confirm({
+      title: "清空全部文档",
+      message: `确定要删除全部 ${documents.length} 个文档吗？此操作不可撤销。`,
+      variant: "danger",
+      confirmLabel: "全部删除",
+    });
+    if (!ok) return;
+
+    setClearing(true);
+    try {
+      const res = await clearAllDocuments();
+      addToast({ type: "success", message: `已清空 ${res.count} 个文档` });
+      await load();
+    } catch {
+      addToast({ type: "error", message: "清空失败，请检查后端服务" });
+    } finally {
+      setClearing(false);
+    }
+  };
+
   return (
     <div className="chat-main">
       <div className="chat-header">
         <span className="chat-header-title">文档库</span>
-        <span className="status-badge ready">
-          {documents.length} 个文档
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="status-badge ready">
+            {documents.length} 个文档
+          </span>
+          {documents.length > 0 && (
+            <button
+              className="doc-btn danger"
+              onClick={handleClearAll}
+              disabled={clearing}
+            >
+              {clearing ? "清空中..." : "清空全部"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="chat-messages" style={{ maxWidth: "none" }}>
