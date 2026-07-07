@@ -283,18 +283,21 @@ async def run_evaluation():
     # ── Step 1: 清理旧数据 ──
     print("\n[1/5] 清理旧测试数据...")
     async with async_session() as session:
-        for doc_def in TEST_DOCS:
-            import hashlib
-            fh = hashlib.sha256(doc_def.content.encode()).hexdigest()
-            result = await session.execute(select(Document).where(Document.file_hash == fh))
-            existing = result.scalar_one_or_none()
-            if existing:
-                vectordb = await create_vectordb()
-                fts = SQLiteFTS5()
-                await vectordb.delete_by_document(existing.id)
-                await fts.delete_by_document(existing.id)
-                await session.delete(existing)
+        # 清理所有匹配测试文档的历史数据（按文件名 + 按 hash 双重匹配）
+        test_filenames = [d.filename for d in TEST_DOCS]
+        result = await session.execute(
+            select(Document).where(Document.filename.in_(test_filenames))
+        )
+        existing_docs = result.scalars().all()
+        for existing in existing_docs:
+            vectordb = await create_vectordb()
+            fts = SQLiteFTS5()
+            await vectordb.delete_by_document(existing.id)
+            await fts.delete_by_document(existing.id)
+            await session.delete(existing)
         await session.commit()
+        if existing_docs:
+            print(f"   已清理 {len(existing_docs)} 份旧测试文档")
     print("   清理完成")
 
     # ── Step 2: 摄入测试文档 ──
@@ -531,20 +534,21 @@ async def cleanup():
     from textdb.sqlite_fts import SQLiteFTS5
     from vectordb.factory import create_vectordb
 
-    for doc_def in TEST_DOCS:
-        import hashlib
-        fh = hashlib.sha256(doc_def.content.encode()).hexdigest()
-        async with async_session() as session:
-            result = await session.execute(select(Document).where(Document.file_hash == fh))
-            doc = result.scalar_one_or_none()
-            if doc:
-                vectordb = await create_vectordb()
-                fts = SQLiteFTS5()
-                await vectordb.delete_by_document(doc.id)
-                await fts.delete_by_document(doc.id)
-                await session.delete(doc)
-                await session.commit()
-                print(f"   已删除: {doc.filename}")
+    test_filenames = [d.filename for d in TEST_DOCS]
+    async with async_session() as session:
+        result = await session.execute(
+            select(Document).where(Document.filename.in_(test_filenames))
+        )
+        docs = result.scalars().all()
+        for doc in docs:
+            vectordb = await create_vectordb()
+            fts = SQLiteFTS5()
+            await vectordb.delete_by_document(doc.id)
+            await fts.delete_by_document(doc.id)
+            await session.delete(doc)
+        await session.commit()
+        if docs:
+            print(f"   已清理 {len(docs)} 份测试文档")
     print("清理完成")
 
 

@@ -64,10 +64,10 @@ class SettingsResponse(BaseModel):
     llm: LLMSettings
     embedding: EmbeddingSettings
     web_search_enabled: bool = True
-    rerank_enabled: bool = True
+    rerank_enabled: bool = False
     retrieval_top_k: int = 5
     web_search_max_results: int = 5
-    chunk_size: int = 512
+    chunk_size: int = 384
     chunk_overlap: int = 50
 
 

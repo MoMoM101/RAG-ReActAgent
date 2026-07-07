@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 
 import tiktoken
 
@@ -12,7 +13,7 @@ class Chunk:
 
 def split_text(
     text: str,
-    chunk_size: int = 512,
+    chunk_size: int = 384,
     chunk_overlap: int = 50,
     encoding_name: str = "cl100k_base",
 ) -> list[Chunk]:
@@ -28,12 +29,14 @@ def split_text(
         chunk_tokens = tokens[start:end]
         chunk_text = enc.decode(chunk_tokens)
 
-        # Try to break at natural boundaries (Chinese/English sentence end + newline)
+        # Try to break at natural boundaries (Chinese/English sentence end + newline + markdown header)
         if end < len(tokens):
             last_period = chunk_text.rfind("。")
             last_newline = chunk_text.rfind("\n")
             last_en = max(chunk_text.rfind(". "), chunk_text.rfind("? "), chunk_text.rfind("! "))
-            cut = max(last_period, last_newline, last_en)
+            md_matches = list(re.finditer(r'\n#{1,6}\s', chunk_text))
+            last_md = md_matches[-1].start() if md_matches else -1
+            cut = max(last_period, last_newline, last_en, last_md)
             if cut > len(chunk_text) * 0.5:
                 chunk_text = chunk_text[:cut + 1]
                 # Re-encode trimmed text to get actual token count so

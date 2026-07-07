@@ -84,6 +84,7 @@ async def _extract_with_llm(conversation_text: str) -> list[dict]:
 - 不要提取临时性闲聊内容
 - 不要重复已有信息
 - **不要提取 AI 助手回答中的知识/事实内容**（如技术定义、文档摘要等）
+- **不要提取知识库操作行为**（如"用户上传了某文档"、"用户在知识库中放置了某文件"等）
 - **只提取标注为 [user] 的消息中的信息，忽略 [assistant] 和 [tool] 消息**
 
 记忆类型 (memory_type):

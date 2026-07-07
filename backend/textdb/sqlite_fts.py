@@ -50,9 +50,10 @@ class SQLiteFTS5(BaseTextDB):
 
     @staticmethod
     def _escape_fts5(query: str) -> str:
-        """Escape FTS5 operators. Wraps in quotes for exact matching."""
-        cleaned = re.sub(r'["*^()]', "", query)
-        return '"' + cleaned.replace('"', '""') + '"'
+        """Remove FTS5 special characters. Uses implicit AND matching (no phrase wrap).
+        Hyphens are replaced with spaces since unicode61 tokenizer treats them as separators."""
+        cleaned = re.sub(r'["*^()]', '', query)
+        return cleaned.replace('-', ' ')
 
     async def search(self, query: str, top_k: int = 10, document_id: str = "") -> list[TextSearchResult]:
         fts5_safe = self._escape_fts5(query)

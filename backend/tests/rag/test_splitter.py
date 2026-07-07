@@ -25,3 +25,15 @@ def test_overlap():
     assert len(chunks) > 1
     for chunk in chunks:
         assert len(chunk.text) > 0
+
+
+def test_split_at_markdown_header():
+    """Chunks should break before markdown headers to keep sections together."""
+    intro = "Some introductory content that fills up space. " * 8
+    section = "\n## 模型评估\n\n模型训练完成后，需要使用测试集评估其泛化能力。" * 3
+    text = intro + section
+    chunks = split_text(text, chunk_size=100, chunk_overlap=10)
+    assert len(chunks) >= 2
+    # The second chunk should start with the markdown header
+    header_found = any("## 模型评估" in c.text for c in chunks)
+    assert header_found, "Markdown header should appear at start of a chunk"

@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     max_loop_iterations: int = 10
     max_tool_retries: int = 3
     max_total_time: int = 120
-    chunk_size: int = 512
+    chunk_size: int = 384
     chunk_overlap: int = 50
     retrieval_top_k: int = 8
 
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     memory_max_count: int = 100
 
     # Reranker
-    rerank_enabled: bool = True
+    rerank_enabled: bool = False
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
     rerank_top_n: int = 16
     hf_endpoint: str = ""  # HuggingFace 镜像，国内设 https://hf-mirror.com
