@@ -9,13 +9,10 @@
 - 重排序影响分析
 """
 
-import asyncio
 import io
 import json
 import math
-import os
 import sys
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -27,9 +24,10 @@ if sys.platform == "win32":
 # Ensure backend is on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import settings
-
 from enum import Enum
+from typing import Any
+
+from config import settings
 
 
 class AblationStrategy(Enum):
@@ -405,7 +403,7 @@ def precision_at_k(relevant: set[int], retrieved_count: int, k: int) -> float:
 def compute_metrics(
     retrieved_chunks: list[str],  # 检索到的文本列表
     ground_truth_texts: list[str],  # 标注相关的文本列表
-    k_values: list[int] = (3, 5, 10),
+    k_values: tuple[int, ...] = (3, 5, 10),
 ) -> dict:
     """计算所有标准 IR 评测指标"""
     # 相关性判定：用 Jaccard 相似度（word-level）检测检索文本是否命中标注
@@ -428,7 +426,7 @@ def compute_metrics(
     n_relevant = len(ground_truth_texts)
 
     # Initialize results with all k-value keys (always, even if n_relevant == 0)
-    results = {"precision": {}, "recall": {}, "mrr": 0.0, "ndcg": {}, "hit": {}}
+    results: dict[str, Any] = {"precision": {}, "recall": {}, "mrr": 0.0, "ndcg": {}, "hit": {}}
     for k in k_values:
         results["precision"][k] = 0.0
         results["recall"][k] = 0.0
@@ -553,10 +551,11 @@ async def run_single_strategy(
 ) -> tuple[list, int]:
     """Run a single retrieval strategy and return (results, latency_ms)."""
     import time as _time
-    from rag.retriever import RetrievalResult, hybrid_search
+
     from embedding.factory import create_embedding
-    from vectordb.factory import create_vectordb
+    from rag.retriever import RetrievalResult, hybrid_search
     from textdb.sqlite_fts import SQLiteFTS5
+    from vectordb.factory import create_vectordb
 
     t0 = _time.time()
 
@@ -608,11 +607,11 @@ async def run_evaluation():
     print(f"Qdrant: {'local' if not settings.qdrant_host else settings.qdrant_host}")
     print("=" * 70)
 
-    from rag.pipeline import ingest_document
-    from rag.retriever import hybrid_search, RetrievalResult
+    from sqlalchemy import select
+
     from models.database import async_session
-    from sqlalchemy import select, delete
     from models.orm import Document
+    from rag.pipeline import ingest_document
     from textdb.sqlite_fts import SQLiteFTS5
     from vectordb.factory import create_vectordb
 
@@ -650,7 +649,7 @@ async def run_evaluation():
             )
             doc_ids.append(doc_id)
             print(f"   [{i+1}/{len(TEST_DOCS)}] {doc_def.filename} → {doc_id[:8]}... ✓")
-        except ValueError as e:
+        except ValueError:
             print(f"   [{i+1}/{len(TEST_DOCS)}] {doc_def.filename} → SKIP (duplicate)")
             # Find existing doc
             import hashlib
@@ -727,9 +726,9 @@ async def run_evaluation():
     print("=" * 70)
 
     # Aggregation helper (kept from original for compatibility)
-    def aggregate(metrics_list: list[dict], k_vals: list[int]) -> dict:
+    def aggregate(metrics_list: list[dict[str, Any]], k_vals: list[int]) -> dict[str, Any]:
         n = len(metrics_list)
-        agg = {"precision": {}, "recall": {}, "ndcg": {}, "hit": {}, "mrr": 0.0}
+        agg: dict[str, Any] = {"precision": {}, "recall": {}, "ndcg": {}, "hit": {}, "mrr": 0.0}
         for k in k_vals:
             agg["precision"][k] = sum(m["precision"][k] for m in metrics_list) / n
             agg["recall"][k] = sum(m["recall"][k] for m in metrics_list) / n
@@ -738,7 +737,7 @@ async def run_evaluation():
         agg["mrr"] = sum(m["mrr"] for m in metrics_list) / n
         return agg
 
-    print(f"\n{'策略':<24} {'P@5':>7} {'MRR':>7} {'Hit@5':>7} {'NDCG@5':>7} {'延迟ms':>7}")
+    print("\n{:<24} {:>7} {:>7} {:>7} {:>7} {:>7}".format("策略", "P@5", "MRR", "Hit@5", "NDCG@5", "延迟ms"))
     print("-" * 70)
 
     def _agg(metrics_list):
@@ -779,9 +778,11 @@ async def run_evaluation():
     else:
         rating = "D — 需要优化"
 
-    print(f"\n  核心指标 (无重排序):")
-    print(f"    Precision@5: {p5:.1%}  Recall@5: {agg['recall'][5]:.1%}  Hit@5: {hit5:.0%}  MRR: {mrr:.1%}  NDCG@5: {agg['ndcg'][5]:.1%}")
-    print(f"    平均延迟: {sum(strategy_results[hybrid_key]['latencies'])/len(strategy_results[hybrid_key]['latencies']):.0f}ms")
+    avg_latency_ms = sum(strategy_results[hybrid_key]["latencies"]) / len(strategy_results[hybrid_key]["latencies"])
+    print("\n  核心指标 (无重排序):")
+    print("    Precision@5: {:.1%}  Recall@5: {:.1%}  Hit@5: {:.0%}  MRR: {:.1%}  NDCG@5: {:.1%}".format(
+        p5, agg["recall"][5], hit5, mrr, agg["ndcg"][5]))
+    print(f"    平均延迟: {avg_latency_ms:.0f}ms")
     print(f"  综合评级: {rating}")
 
     # Compute aggregated metrics for backward compatibility
@@ -820,8 +821,9 @@ async def run_evaluation():
 async def cleanup():
     """清理测试文档"""
     print("\n清理测试数据...")
+    from sqlalchemy import select
+
     from models.database import async_session
-    from sqlalchemy import select, delete
     from models.orm import Document
     from textdb.sqlite_fts import SQLiteFTS5
     from vectordb.factory import create_vectordb

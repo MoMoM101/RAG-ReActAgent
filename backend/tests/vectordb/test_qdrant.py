@@ -1,3 +1,5 @@
+from contextlib import suppress
+
 import pytest
 
 from config import settings
@@ -79,6 +81,7 @@ async def test_client_rebuild_on_path_change():
     # After reset — new client is created
     reset_client_for_test()
     client2 = _get_client()
+    assert client2 is not None
     key2 = _get_client_key()
     assert key2 == key1  # Same path, but new client instance
 
@@ -87,9 +90,7 @@ async def test_client_rebuild_on_path_change():
 @qdrant_required
 async def test_client_marks_unhealthy_on_search_error():
     """Search error should mark client unhealthy, next _get_client rebuilds."""
-    from vectordb.qdrant import (
-        QdrantVectorDB, _get_client, _client_healthy, reset_client_for_test,
-    )
+    from vectordb.qdrant import QdrantVectorDB, _get_client, reset_client_for_test
 
     reset_client_for_test()
 
@@ -103,10 +104,8 @@ async def test_client_marks_unhealthy_on_search_error():
 
     # Search with an invalid collection name should trigger exception
     bad_db = QdrantVectorDB(collection_name="nonexistent_collection_xyz_123")
-    try:
+    with suppress(Exception):
         await bad_db.search([1.0] + [0.0] * (dim - 1), top_k=1)
-    except Exception:
-        pass  # Expected to fail
 
     # After error, client should be marked unhealthy
     # Note: the exception is raised from to_thread, so it reaches our catch block

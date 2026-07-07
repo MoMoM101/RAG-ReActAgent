@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import suppress
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -39,10 +40,8 @@ def _get_client() -> QdrantClient:
 
     # Path changed or client unhealthy — close old, create new
     if _client is not None:
-        try:
+        with suppress(Exception):
             _client.close()
-        except Exception:
-            pass
 
     if settings.qdrant_host:
         _client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
@@ -59,10 +58,8 @@ def reset_client_for_test() -> None:
     """Force next _get_client() call to create a new connection. Test only."""
     global _client, _client_path, _client_healthy
     if _client is not None:
-        try:
+        with suppress(Exception):
             _client.close()
-        except Exception:
-            pass
     _client = None
     _client_path = ""
     _client_healthy = False
