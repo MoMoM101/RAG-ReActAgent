@@ -29,6 +29,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import settings
 
+from enum import Enum
+
+
+class AblationStrategy(Enum):
+    SEMANTIC_ONLY = "semantic-only"
+    KEYWORD_ONLY = "keyword-only"
+    HYBRID_NO_RERANK = "hybrid-no-rerank"
+    HYBRID_RERANK = "hybrid-rerank"
+
+
+STRATEGY_LABELS = {
+    AblationStrategy.SEMANTIC_ONLY: "仅语义搜索",
+    AblationStrategy.KEYWORD_ONLY: "仅关键词搜索",
+    AblationStrategy.HYBRID_NO_RERANK: "混合+RRF（无重排序）",
+    AblationStrategy.HYBRID_RERANK: "混合+RRF+重排序",
+}
+
 
 # ── 测试语料定义 ──────────────────────────────────────────────
 
@@ -47,6 +64,7 @@ class QueryCase:
     relevant_chunk_indices: list[int]  # 0-based chunk indices within the document
     doc_index: int = 0  # 哪个测试文档
     expected_keywords: list[str] = field(default_factory=list)
+    cross_doc_targets: dict[int, list[int]] | None = None  # {doc_idx: [chunk_indices]}
 
 
 # ── 3篇测试文档，每篇约500 tokens，覆盖不同领域 ──
@@ -122,6 +140,31 @@ TEST_DOCS = [
             "关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的 socarrat。"
         ),
     ),
+    TestDoc(
+        filename="python_web_frameworks.txt",
+        content=(
+            "# Python Web 框架对比指南\n\n"
+            "## Django\n\n"
+            "Django 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n"
+            "内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n"
+            "适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\n"
+            "Django REST Framework (DRF) 是其构建 RESTful API 的标准扩展。\n\n"
+            "## Flask\n\n"
+            "Flask 是一个轻量级微框架，核心只包含路由和请求/响应处理。\n"
+            "开发者需要通过扩展来添加 ORM（如 SQLAlchemy）、表单验证（WTForms）等功能。\n"
+            "Flask 的设计哲学是\"显式优于隐式\"，给予开发者最大自由度。\n"
+            "适合小型 API 服务、微服务和原型开发。\n\n"
+            "## FastAPI\n\n"
+            "FastAPI 是新一代 Python Web 框架，基于 Starlette 和 Pydantic。\n"
+            "核心特性：自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await）。\n"
+            "性能媲美 Node.js 和 Go，是目前增长最快的 Python 框架之一。\n"
+            "特别适合构建高性能 API 和机器学习模型在线推理服务。\n\n"
+            "## 选型建议\n\n"
+            "大型全栈项目选择 Django，简单 API 服务选择 Flask，\n"
+            "高性能异步 API 或 ML 模型部署选择 FastAPI。\n"
+            "三者共享 Python 生态：均可用 pip 安装，支持 virtualenv/conda 环境管理。"
+        ),
+    ),
 ]
 
 # ── 10 个查询用例 + 标注 ──
@@ -190,10 +233,167 @@ QUERY_CASES = [
         doc_index=2,
         expected_keywords=["Bomba", "saffron", "socarrat", "paellera"],
     ),
+    # ═══ 短关键词 (3) ═══
+    QueryCase(
+        query="深度学习",
+        relevant_chunk_indices=[2],
+        doc_index=0,
+        expected_keywords=["多层神经网络", "CNN", "Transformer", "BERT", "GPT"],
+    ),
+    QueryCase(
+        query="Carbonara",
+        relevant_chunk_indices=[0],
+        doc_index=2,
+        expected_keywords=["guanciale", "pecorino", "鸡蛋黄"],
+    ),
+    QueryCase(
+        query="可再生能源",
+        relevant_chunk_indices=[2],
+        doc_index=1,
+        expected_keywords=["太阳能", "风能", "20%", "光伏"],
+    ),
+    # ═══ 长描述句 (3) ═══
+    QueryCase(
+        query="我想要做一个基于神经网络的图像识别项目，需要用什么框架和工具来训练模型",
+        relevant_chunk_indices=[2],
+        doc_index=0,
+        expected_keywords=["卷积神经网络", "CNN", "TensorFlow", "PyTorch"],
+    ),
+    QueryCase(
+        query="如果我想在家里做一顿传统的地中海风味的完整晚餐，包括前菜和主菜，有什么推荐的菜谱和做法",
+        relevant_chunk_indices=[0, 1, 2],
+        doc_index=2,
+        expected_keywords=["Carbonara", "希腊沙拉", "西班牙海鲜饭", "guanciale", "feta"],
+    ),
+    QueryCase(
+        query="关于如何减缓全球变暖的趋势，国际社会和各國政府都采取了哪些重要措施和减排协议",
+        relevant_chunk_indices=[3],
+        doc_index=1,
+        expected_keywords=["巴黎协定", "碳捕获", "CCS", "碳足迹", "2°C", "1.5°C"],
+    ),
+    # ═══ 精确匹配 (3) ═══
+    QueryCase(
+        query="ROC-AUC",
+        relevant_chunk_indices=[3],
+        doc_index=0,
+        expected_keywords=["ROC-AUC", "准确率", "F1", "交叉验证"],
+    ),
+    QueryCase(
+        query="Bomba 圆粒米",
+        relevant_chunk_indices=[2],
+        doc_index=2,
+        expected_keywords=["Bomba", "saffron", "藏红花", "paellera"],
+    ),
+    QueryCase(
+        query="paellera",
+        relevant_chunk_indices=[2],
+        doc_index=2,
+        expected_keywords=["paellera", "socarrat", "西班牙海鲜饭"],
+    ),
+    # ═══ 跨文档 (2) ═══
+    QueryCase(
+        query="Python 有哪些常用的框架和开发库",
+        relevant_chunk_indices=[0],
+        doc_index=0,
+        expected_keywords=["scikit-learn", "TensorFlow", "PyTorch", "Django", "Flask", "FastAPI"],
+        cross_doc_targets={
+            0: [0],
+            3: [0, 1, 2],
+        },
+    ),
+    QueryCase(
+        query="如何用 Python 把一个训练好的机器学习模型部署为在线 API 服务",
+        relevant_chunk_indices=[0],
+        doc_index=0,
+        expected_keywords=["TensorFlow", "PyTorch", "FastAPI", "async", "在线推理"],
+        cross_doc_targets={
+            0: [0],
+            3: [2],
+        },
+    ),
+    # ═══ 数值查询 (2) ═══
+    QueryCase(
+        query="420 ppm",
+        relevant_chunk_indices=[1],
+        doc_index=1,
+        expected_keywords=["420", "ppm", "二氧化碳", "浓度"],
+    ),
+    QueryCase(
+        query="1.1°C 温度上升",
+        relevant_chunk_indices=[0],
+        doc_index=1,
+        expected_keywords=["1.1°C", "工业革命", "温度上升"],
+    ),
+    # ═══ 同义改写 (2) ═══
+    QueryCase(
+        query="深度神经网络的常见架构和训练方法",
+        relevant_chunk_indices=[2],
+        doc_index=0,
+        expected_keywords=["多层神经网络", "CNN", "RNN", "Transformer", "BERT", "GPT"],
+    ),
+    QueryCase(
+        query="意大利培根蛋奶面的正宗做法是什么",
+        relevant_chunk_indices=[0],
+        doc_index=2,
+        expected_keywords=["guanciale", "pecorino", "鸡蛋黄", "Carbonara"],
+    ),
+    # ═══ 中英混合 (2) ═══
+    QueryCase(
+        query="Python TensorFlow 训练用什么 GPU 加速",
+        relevant_chunk_indices=[2],
+        doc_index=0,
+        expected_keywords=["GPU", "加速训练", "TensorFlow", "深度学习"],
+    ),
+    QueryCase(
+        query="FastAPI 和 Django 有什么不同，各自适合什么场景",
+        relevant_chunk_indices=[0, 2, 3],
+        doc_index=3,
+        expected_keywords=["Django", "FastAPI", "ORM", "异步", "选型"],
+    ),
+    # ═══ 否定/排除 (2) ═══
+    QueryCase(
+        query="不用奶油的意面做法有哪些",
+        relevant_chunk_indices=[0],
+        doc_index=2,
+        expected_keywords=["切忌使用奶油", "鸡蛋黄", "guanciale", "pecorino"],
+    ),
+    QueryCase(
+        query="不涉及深度学习的传统机器学习方法有哪些",
+        relevant_chunk_indices=[0, 1],
+        doc_index=0,
+        expected_keywords=["scikit-learn", "分类", "回归", "聚类", "缺失值", "归一化"],
+    ),
+    # ═══ 宽泛/模糊 (2) ═══
+    QueryCase(
+        query="怎么做",
+        relevant_chunk_indices=[0, 1, 2],
+        doc_index=2,
+        expected_keywords=["Carbonara", "希腊沙拉", "西班牙海鲜饭"],
+    ),
+    QueryCase(
+        query="有哪些方法",
+        relevant_chunk_indices=[0, 1],
+        doc_index=0,
+        expected_keywords=["缺失值处理", "归一化", "编码", "分类", "回归", "聚类"],
+    ),
 ]
 
 
 # ── 评测指标计算 ──────────────────────────────────────────────
+
+def _tokenize(text: str) -> list[str]:
+    """Tokenize text for Jaccard similarity comparison.
+
+    Uses jieba for Chinese word segmentation if installed,
+    otherwise falls back to whitespace-based split().
+    """
+    try:
+        import jieba
+        tokens = [t.strip() for t in jieba.cut(text)]
+        return [t for t in tokens if t]
+    except ImportError:
+        return text.lower().split()
+
 
 def precision_at_k(relevant: set[int], retrieved_count: int, k: int) -> float:
     """Precision@k: top-k中相关结果占比"""
@@ -212,9 +412,9 @@ def compute_metrics(
     def is_relevant(text: str, gt_texts: list[str]) -> bool:
         if not text.strip():
             return False
-        text_words = set(text.lower().split())
+        text_words = set(_tokenize(text))
         for gt in gt_texts:
-            gt_words = set(gt.lower().split())
+            gt_words = set(_tokenize(gt))
             if not gt_words:
                 continue
             intersection = text_words & gt_words
@@ -259,6 +459,142 @@ def compute_metrics(
         results["ndcg"][k] = dcg / idcg if idcg > 0 else 0.0
 
     return results
+
+
+def _classify_query(qc: QueryCase) -> str:
+    """Heuristic query category classifier for reporting."""
+    q = qc.query
+    if qc.cross_doc_targets:
+        return "cross-document"
+    if len(q) <= 6:
+        return "short-keyword"
+    if len(q) >= 25:
+        return "long-descriptive"
+    if any(kw in q for kw in ["不用", "不涉及", "无", "非"]):
+        return "negation-contrast"
+    if len(q) <= 10:
+        return "ambiguous-broad"
+    return "natural-question"
+
+
+def save_results(results: dict, filepath: str = "evaluation_results.json") -> str:
+    """Persist evaluation results as JSON for cross-run comparison."""
+    from datetime import datetime
+
+    per_query_summary = []
+    for j, qc in enumerate(results.get("query_cases", [])):
+        metrics = results.get("per_query", [])
+        m = metrics[j] if j < len(metrics) else {}
+        per_query_summary.append({
+            "query": qc.query,
+            "category": _classify_query(qc),
+            "mrr": m.get("mrr", 0),
+            "precision_k3": m.get("precision", {}).get(3, 0),
+            "precision_k5": m.get("precision", {}).get(5, 0),
+            "hit_k5": m.get("hit", {}).get(5, 0),
+        })
+
+    payload = {
+        "timestamp": datetime.now().isoformat(),
+        "config": {
+            "embedding_provider": settings.embedding_provider,
+            "embedding_model": settings.embedding_model,
+            "chunk_size": settings.chunk_size,
+            "chunk_overlap": settings.chunk_overlap,
+            "rerank_enabled": settings.rerank_enabled,
+        },
+        "num_queries": len(results.get("query_cases", [])),
+        "aggregate_no_rerank": {
+            k: v for k, v in results.get("agg_no_rerank", {}).items()
+            if k != "per_query"
+        },
+        "aggregate_rerank": results.get("agg_rerank"),
+        "avg_latency_ms_no_rerank": (
+            sum(results.get("latencies_no_rerank", []))
+            / max(len(results.get("latencies_no_rerank", [])), 1)
+        ),
+        "per_query": per_query_summary,
+    }
+
+    # Add ablation data
+    if results.get("strategy_results"):
+        sr = results["strategy_results"]
+        payload["ablation"] = {}
+        for strat_name, strat_data in sr.items():
+            strat_key = strat_name.value if hasattr(strat_name, 'value') else str(strat_name)
+            metrics_list = strat_data["metrics"]
+            n = max(len(metrics_list), 1)
+            p5 = sum(m["precision"].get(5, 0) for m in metrics_list) / n
+            mrr_val = sum(m.get("mrr", 0) for m in metrics_list) / n
+            h5 = sum(m["hit"].get(5, 0) for m in metrics_list) / n
+            n5 = sum(m["ndcg"].get(5, 0) for m in metrics_list) / n
+            lat = sum(strat_data["latencies"]) / max(len(strat_data["latencies"]), 1)
+            payload["ablation"][strat_key] = {
+                "precision_k5": p5,
+                "mrr": mrr_val,
+                "hit_k5": h5,
+                "ndcg_k5": n5,
+                "avg_latency_ms": lat,
+            }
+
+    outpath = Path(__file__).resolve().parent / filepath
+    with open(outpath, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    return str(outpath)
+
+
+# ── 单策略执行 ──────────────────────────────────────────────────
+
+async def run_single_strategy(
+    strategy: AblationStrategy,
+    query: str,
+    top_k: int = 10,
+    document_id: str = "",
+) -> tuple[list, int]:
+    """Run a single retrieval strategy and return (results, latency_ms)."""
+    import time as _time
+    from rag.retriever import RetrievalResult, hybrid_search
+    from embedding.factory import create_embedding
+    from vectordb.factory import create_vectordb
+    from textdb.sqlite_fts import SQLiteFTS5
+
+    t0 = _time.time()
+
+    if strategy == AblationStrategy.KEYWORD_ONLY:
+        fts = SQLiteFTS5()
+        text_results = await fts.search(query, top_k=top_k, document_id=document_id)
+        results = [
+            RetrievalResult(
+                chunk_id=r.chunk_id, document_id=r.document_id,
+                text=r.text, score=r.score, source="keyword"
+            )
+            for r in text_results
+        ]
+
+    elif strategy == AblationStrategy.SEMANTIC_ONLY:
+        embedding = create_embedding()
+        vectordb = await create_vectordb()
+        query_vector = await embedding.embed_query(query)
+        vector_results = await vectordb.search(query_vector, top_k=top_k)
+        results = [
+            RetrievalResult(
+                chunk_id=r.chunk_id, document_id=r.document_id,
+                text=r.text, score=r.score, source="semantic"
+            )
+            for r in vector_results
+        ]
+
+    elif strategy == AblationStrategy.HYBRID_NO_RERANK:
+        results = list(await hybrid_search(query, top_k=top_k, use_rerank=False))
+
+    elif strategy == AblationStrategy.HYBRID_RERANK:
+        results = list(await hybrid_search(query, top_k=top_k, use_rerank=True))
+
+    else:
+        raise ValueError(f"Unknown strategy: {strategy}")
+
+    latency = int((_time.time() - t0) * 1000)
+    return results, latency
 
 
 # ── 主评测流程 ─────────────────────────────────────────────────
@@ -338,62 +674,59 @@ async def run_evaluation():
     ground_truth_texts = {}  # query_idx → [relevant_text, ...]
     for q_idx, qc in enumerate(QUERY_CASES):
         texts = []
-        if qc.doc_index < len(doc_chunks):
-            avail_chunks = doc_chunks[qc.doc_index]
+        # 确定来源：跨文档标注或单文档
+        sources = qc.cross_doc_targets if qc.cross_doc_targets else {qc.doc_index: qc.relevant_chunk_indices}
+        for doc_idx, chunk_indices in sources.items():
+            if doc_idx >= len(doc_chunks):
+                continue
+            avail_chunks = doc_chunks[doc_idx]
             n_avail = len(avail_chunks)
-            for chunk_idx in qc.relevant_chunk_indices:
+            for chunk_idx in chunk_indices:
                 # 如果原始 chunk 索引超出范围（chunk 被合并），映射到最近的可用 chunk
                 mapped_idx = min(chunk_idx, n_avail - 1) if n_avail > 0 else chunk_idx
                 if mapped_idx < n_avail and avail_chunks[mapped_idx] not in texts:
                     texts.append(avail_chunks[mapped_idx])
         ground_truth_texts[q_idx] = texts
 
-    # ── Step 4: 运行检索评测 ──
-    print("\n[4/5] 运行检索评测...")
+    # ── Step 4: 消融对比评测 ──
+    print("\n[4/5] 运行消融对比评测...")
     k_values = [3, 5, 10]
 
-    all_metrics_no_rerank = []
-    all_metrics_rerank = []
-    all_results_no_rerank: list[list[RetrievalResult]] = []
-    all_results_rerank: list[list[RetrievalResult]] = []
-    latencies_no_rerank = []
-    latencies_rerank = []
+    strategies = [
+        AblationStrategy.SEMANTIC_ONLY,
+        AblationStrategy.KEYWORD_ONLY,
+        AblationStrategy.HYBRID_NO_RERANK,
+    ]
+    if settings.rerank_enabled:
+        strategies.append(AblationStrategy.HYBRID_RERANK)
+
+    strategy_results: dict = {
+        s: {"metrics": [], "latencies": [], "results": []}
+        for s in strategies
+    }
 
     for j, qc in enumerate(QUERY_CASES):
         gt = ground_truth_texts[j]
 
-        # Without reranker
-        t0 = time.time()
-        results_no_rerank = await hybrid_search(qc.query, top_k=10, use_rerank=False)
-        lat_no = int((time.time() - t0) * 1000)
-        latencies_no_rerank.append(lat_no)
-        all_results_no_rerank.append(results_no_rerank)
-        retrieved_texts = [r.text for r in results_no_rerank]
-        metrics_no = compute_metrics(retrieved_texts, gt, k_values)
-        all_metrics_no_rerank.append(metrics_no)
+        for strategy in strategies:
+            results, lat = await run_single_strategy(strategy, qc.query, top_k=10)
+            strategy_results[strategy]["results"].append(results)
+            strategy_results[strategy]["latencies"].append(lat)
 
-        # With reranker (if enabled)
-        if settings.rerank_enabled:
-            t0 = time.time()
-            results_rerank = await hybrid_search(qc.query, top_k=10, use_rerank=True)
-            lat_re = int((time.time() - t0) * 1000)
-            latencies_rerank.append(lat_re)
-            all_results_rerank.append(results_rerank)
-            retrieved_texts_re = [r.text for r in results_rerank]
-            metrics_re = compute_metrics(retrieved_texts_re, gt, k_values)
-            all_metrics_rerank.append(metrics_re)
+            retrieved_texts = [r.text for r in results]
+            metrics = compute_metrics(retrieved_texts, gt, k_values)
+            strategy_results[strategy]["metrics"].append(metrics)
 
-        print(f"   [{j+1:2d}/{len(QUERY_CASES)}] \"{qc.query[:40]}\" → "
-              f"MRR={metrics_no['mrr']:.2f} P@5={metrics_no['precision'][5]:.2f} "
-              f"({lat_no}ms)")
+        mrr = strategy_results[AblationStrategy.HYBRID_NO_RERANK]["metrics"][-1]["mrr"]
+        print(f"   [{j+1:2d}/{len(QUERY_CASES)}] \"{qc.query[:40]}\" → MRR={mrr:.2f}")
 
-    # ── Step 5: 汇总分析 ──
-    print("\n[5/5] 汇总分析...\n")
+    # ── Step 5: 消融对比汇总 ──
+    print("\n[5/5] 消融对比汇总...\n")
     print("=" * 70)
-    print("评测结果汇总")
+    print("消融对比：各检索策略贡献分析")
     print("=" * 70)
 
-    # Aggregation
+    # Aggregation helper (kept from original for compatibility)
     def aggregate(metrics_list: list[dict], k_vals: list[int]) -> dict:
         n = len(metrics_list)
         agg = {"precision": {}, "recall": {}, "ndcg": {}, "hit": {}, "mrr": 0.0}
@@ -405,124 +738,83 @@ async def run_evaluation():
         agg["mrr"] = sum(m["mrr"] for m in metrics_list) / n
         return agg
 
-    agg_no_rerank = aggregate(all_metrics_no_rerank, k_values)
-    agg_rerank = aggregate(all_metrics_rerank, k_values) if all_metrics_rerank else None
+    print(f"\n{'策略':<24} {'P@5':>7} {'MRR':>7} {'Hit@5':>7} {'NDCG@5':>7} {'延迟ms':>7}")
+    print("-" * 70)
 
-    # ── 表格输出 ──
-    print(f"\n{'指标':<20} {'k=3':>8} {'k=5':>8} {'k=10':>8}")
-    print("-" * 50)
+    def _agg(metrics_list):
+        return aggregate(metrics_list, k_values)
 
-    print(f"\n── 无重排序 ──")
-    print(f"{'平均延迟 (ms)':<22} {sum(latencies_no_rerank)/len(latencies_no_rerank):7.0f}ms")
-    for metric_name, label in [("precision", "Precision"), ("recall", "Recall"),
-                                 ("ndcg", "NDCG"), ("hit", "Hit Rate")]:
-        vals = agg_no_rerank[metric_name]
-        print(f"{label:<20} {vals[3]:>8.2%} {vals[5]:>8.2%} {vals[10]:>8.2%}")
-    print(f"{'MRR':<20} {agg_no_rerank['mrr']:>8.2%}")
+    for strategy in strategies:
+        agg_m = _agg(strategy_results[strategy]["metrics"])
+        avg_lat = (sum(strategy_results[strategy]["latencies"])
+                   / max(len(strategy_results[strategy]["latencies"]), 1))
+        label = STRATEGY_LABELS.get(strategy, strategy.value)
+        print(f"{label:<24} {agg_m['precision'][5]:>6.1%} {agg_m['mrr']:>6.1%} "
+              f"{agg_m['hit'][5]:>6.0%} {agg_m['ndcg'][5]:>6.1%} {avg_lat:>6.0f}")
 
-    if agg_rerank:
-        print(f"\n── 含重排序 ──")
-        print(f"{'平均延迟 (ms)':<22} {sum(latencies_rerank)/len(latencies_rerank):7.0f}ms")
-        for metric_name, label in [("precision", "Precision"), ("recall", "Recall"),
-                                     ("ndcg", "NDCG"), ("hit", "Hit Rate")]:
-            vals = agg_rerank[metric_name]
-            print(f"{label:<20} {vals[3]:>8.2%} {vals[5]:>8.2%} {vals[10]:>8.2%}")
-        print(f"{'MRR':<20} {agg_rerank['mrr']:>8.2%}")
-
-    # ── 逐查询明细 ──
-    print(f"\n{'─'*70}")
-    print(f"逐查询分析")
-    print(f"{'─'*70}")
-    for j, qc in enumerate(QUERY_CASES):
-        results = all_results_no_rerank[j]
-        top_texts = [r.text.replace('\n', ' ')[:60] for r in results[:3]]
-        gt = ground_truth_texts[j]
-        gt_summary = [g.replace('\n', ' ')[:40] for g in gt]
-
-        print(f"\n查询 {j+1}: \"{qc.query}\"")
-        print(f"  标注: {gt_summary}")
-        print(f"  Top-3 检索结果:")
-        for i, (r, t) in enumerate(zip(results[:3], top_texts)):
-            source_label = {"semantic": "语义", "keyword": "关键词", "hybrid": "融合"}.get(r.source, r.source)
-            print(f"    #{i+1} [{source_label}] score={r.score:.3f} \"{t}\"")
-
-        # 关键词贡献分析
-        sem_count = sum(1 for r in results if r.source == "semantic")
-        kw_count = sum(1 for r in results if r.source == "keyword")
-        hyb_count = sum(1 for r in results if r.source == "hybrid")
-        print(f"  来源分布: 语义={sem_count} 关键词={kw_count} 融合={hyb_count}")
-
-    # ── 重排序差异分析 ──
-    if agg_rerank:
-        print(f"\n{'─'*70}")
-        print(f"重排序效果分析")
-        print(f"{'─'*70}")
-        p5_no = agg_no_rerank["precision"][5]
-        p5_re = agg_rerank["precision"][5]
-        delta = (p5_re - p5_no) / max(p5_no, 0.01) * 100
-        direction = "↑ 提升" if delta > 0 else "↓ 下降" if delta < 0 else "→ 无变化"
-        print(f"  Precision@5: {p5_no:.2%} → {p5_re:.2%} ({direction} {abs(delta):.1f}%)")
-
-        mrr_no = agg_no_rerank["mrr"]
-        mrr_re = agg_rerank["mrr"]
-        delta_mrr = (mrr_re - mrr_no) / max(mrr_no, 0.01) * 100
-        direction2 = "↑ 提升" if delta_mrr > 0 else "↓ 下降" if delta_mrr < 0 else "→ 无变化"
-        print(f"  MRR:       {mrr_no:.2%} → {mrr_re:.2%} ({direction2} {abs(delta_mrr):.1f}%)")
-
-        latency_increase = sum(latencies_rerank) / len(latencies_rerank) - sum(latencies_no_rerank) / len(latencies_no_rerank)
-        print(f"  延迟增加: {latency_increase:.0f}ms")
-
-    # ── 整体评估 ──
-    print(f"\n{'='*70}")
-    print(f"综合评估")
-    print(f"{'='*70}")
-
-    p5 = agg_no_rerank["precision"][5]
-    hit5 = agg_no_rerank["hit"][5]
-    mrr = agg_no_rerank["mrr"]
-
-    print(f"\n  核心指标 (无重排序):")
-    print(f"    Precision@5:  {p5:.1%}")
-    print(f"    Recall@5:     {agg_no_rerank['recall'][5]:.1%}")
-    print(f"    Hit Rate@5:   {hit5:.0%}")
-    print(f"    MRR:          {mrr:.1%}")
-    print(f"    NDCG@5:       {agg_no_rerank['ndcg'][5]:.1%}")
-    print(f"    平均延迟:     {sum(latencies_no_rerank)/len(latencies_no_rerank):.0f}ms")
-
-    # 评级
-    if p5 >= 0.8 and mrr >= 0.7:
-        rating = "A — 优秀，检索精准度和排序质量都很高"
-    elif p5 >= 0.6 and mrr >= 0.5:
-        rating = "B — 良好，大部分查询能找到正确答案"
-    elif p5 >= 0.4:
-        rating = "C — 一般，有改善空间"
-    else:
-        rating = "D — 需要优化"
-
-    print(f"\n  综合评级: {rating}")
-
-    # ── 关键词 vs 语义对比 ──
-    print(f"\n  检索来源分析:")
-    all_sources = {"semantic": 0, "keyword": 0, "hybrid": 0}
-    for results in all_results_no_rerank:
+    # 来源分析
+    hybrid_key = AblationStrategy.HYBRID_NO_RERANK
+    print(f"\n  检索来源分析 ({STRATEGY_LABELS[hybrid_key]}):")
+    all_sources: dict[str, int] = {}
+    for results in strategy_results[hybrid_key]["results"]:
         for r in results:
             all_sources[r.source] = all_sources.get(r.source, 0) + 1
     total = sum(all_sources.values())
+    labels_src = {"semantic": "语义检索", "keyword": "关键词检索", "hybrid": "双源融合"}
     for source, count in sorted(all_sources.items(), key=lambda x: x[1], reverse=True):
         pct = count / max(total, 1) * 100
-        labels = {"semantic": "语义检索", "keyword": "关键词检索", "hybrid": "双源融合"}
-        print(f"    {labels.get(source, source)}: {count} ({pct:.0f}%)")
+        print(f"    {labels_src.get(source, source)}: {count} ({pct:.0f}%)")
 
-    return {
+    # 综合评级
+    agg = _agg(strategy_results[AblationStrategy.HYBRID_NO_RERANK]["metrics"])
+    p5 = agg["precision"][5]
+    mrr = agg["mrr"]
+    hit5 = agg["hit"][5]
+    if p5 >= 0.8 and mrr >= 0.7:
+        rating = "A — 优秀"
+    elif p5 >= 0.6 and mrr >= 0.5:
+        rating = "B — 良好"
+    elif p5 >= 0.4:
+        rating = "C — 一般"
+    else:
+        rating = "D — 需要优化"
+
+    print(f"\n  核心指标 (无重排序):")
+    print(f"    Precision@5: {p5:.1%}  Recall@5: {agg['recall'][5]:.1%}  Hit@5: {hit5:.0%}  MRR: {mrr:.1%}  NDCG@5: {agg['ndcg'][5]:.1%}")
+    print(f"    平均延迟: {sum(strategy_results[hybrid_key]['latencies'])/len(strategy_results[hybrid_key]['latencies']):.0f}ms")
+    print(f"  综合评级: {rating}")
+
+    # Compute aggregated metrics for backward compatibility
+    hybrid_no_rerank = strategy_results[AblationStrategy.HYBRID_NO_RERANK]
+    agg_no_rerank = _agg(hybrid_no_rerank["metrics"])
+    agg_rerank = None
+    latencies_no_rerank = hybrid_no_rerank["latencies"]
+    latencies_rerank = []
+    all_metrics_no_rerank = hybrid_no_rerank["metrics"]
+    all_metrics_rerank = []
+
+    rerank_strat = strategy_results.get(AblationStrategy.HYBRID_RERANK)
+    if rerank_strat:
+        agg_rerank = _agg(rerank_strat["metrics"])
+        latencies_rerank = rerank_strat["latencies"]
+        all_metrics_rerank = rerank_strat["metrics"]
+
+    results = {
         "agg_no_rerank": agg_no_rerank,
         "agg_rerank": agg_rerank,
         "per_query": all_metrics_no_rerank,
-        "per_query_rerank": all_metrics_rerank if all_metrics_rerank else [],
+        "per_query_rerank": all_metrics_rerank,
         "latencies_no_rerank": latencies_no_rerank,
         "latencies_rerank": latencies_rerank,
         "query_cases": QUERY_CASES,
         "doc_ids": doc_ids,
+        "strategy_results": strategy_results,
     }
+
+    # ── Persist results ──
+    results_file = save_results(results)
+    print(f"\n  评测结果已保存至: {results_file}")
+    return results
 
 
 async def cleanup():
@@ -552,9 +844,60 @@ async def cleanup():
     print("清理完成")
 
 
+def _print_comparison(current: dict, previous: dict) -> None:
+    """Print side-by-side comparison with previous evaluation run."""
+    print("\n" + "=" * 70)
+    print("与上次评测对比")
+    print("=" * 70)
+
+    cur_agg = current.get("agg_no_rerank", {})
+    prev_agg = previous.get("aggregate_no_rerank", {})
+
+    if not prev_agg:
+        print("  上次评测无数据，无法对比")
+        return
+
+    print(f"\n{'指标':<20} {'上次':>10} {'本次':>10} {'变化':>10}")
+    print("-" * 54)
+
+    for k_val in (3, 5, 10):
+        cur_p = cur_agg.get("precision", {}).get(k_val, 0)
+        prev_p = prev_agg.get("precision", {}).get(str(k_val), 0)
+        if prev_p == 0:
+            prev_p = prev_agg.get("precision", {}).get(k_val, 0)
+        delta = (cur_p - prev_p) / max(prev_p, 0.01) * 100 if prev_p else 0
+        print(f"Precision@{k_val:<14} {prev_p:>9.1%} {cur_p:>9.1%} {delta:>+9.0f}%")
+
+    for key, label in [("mrr", "MRR")]:
+        cur_val = cur_agg.get(key, 0)
+        prev_val = prev_agg.get(key, 0)
+        delta_pct = (cur_val - prev_val) / max(prev_val, 0.01) * 100 if prev_val else 0
+        print(f"{label:<20} {prev_val:>9.1%} {cur_val:>9.1%} {delta_pct:>+9.0f}%")
+
+
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="RAG Retrieval Evaluation")
+    parser.add_argument("--compare", type=str, default=None,
+                        help="Path to previous evaluation JSON for comparison")
+    parser.add_argument("--output", type=str, default="evaluation_results.json",
+                        help="Output JSON file path")
+    args = parser.parse_args()
+
     import asyncio as _asyncio
+
     try:
         results = _asyncio.run(run_evaluation())
+
+        output_path = save_results(results, args.output)
+        print(f"\n结果已保存至: {output_path}")
+
+        if args.compare:
+            prev_path = Path(args.compare)
+            if prev_path.exists():
+                prev_data = json.loads(prev_path.read_text(encoding="utf-8"))
+                _print_comparison(results, prev_data)
+            else:
+                print(f"\n[WARN] 对比文件不存在: {args.compare}")
     finally:
         _asyncio.run(cleanup())
