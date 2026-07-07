@@ -48,8 +48,10 @@ async def setup_db():
     # 重置模块级单例，避免测试间状态污染
     from embedding.factory import reset_embedding
     from llm.factory import reset_llm
+    from vectordb.qdrant import reset_client_for_test
     reset_embedding()
     reset_llm()
+    reset_client_for_test()
 
     await init_db()
     # Clean FTS data before each test
