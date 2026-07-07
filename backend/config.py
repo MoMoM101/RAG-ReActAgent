@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     max_loop_iterations: int = 10
     max_tool_retries: int = 3
     max_total_time: int = 120
-    chunk_size: int = 384
-    chunk_overlap: int = 50
+    chunk_size: int = 200
+    chunk_overlap: int = 40
     retrieval_top_k: int = 8
 
     # Retrieval dedup
