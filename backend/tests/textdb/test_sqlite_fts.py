@@ -11,12 +11,19 @@ async def test_insert_and_search():
     await fts.insert("chunk_3", "doc_test_2", "前端使用 React 和 TypeScript")
 
     try:
+        # trigram: "部署" is 2 chars → LIKE fallback, should hit chunk_1
         results = await fts.search("部署", top_k=5)
         assert len(results) >= 1
         assert results[0].chunk_id == "chunk_1"
 
+        # "数据库连接" is 5 chars → trigram MATCH
         results = await fts.search("数据库连接", top_k=5)
         assert len(results) >= 1
+
+        # English search
+        results = await fts.search("React", top_k=5)
+        assert len(results) >= 1
+        assert results[0].chunk_id == "chunk_3"
 
         await fts.delete_by_document("doc_test_1")
         count = await fts.count()
@@ -77,18 +84,56 @@ def test_escape_fts5_handles_hyphen():
 
 @pytest.mark.asyncio
 async def test_cjk_multi_char_and_search():
-    """CJK multi-char query should use AND matching, not require contiguous phrase."""
+    """Trigram tokenizer correctly handles CJK multi-char queries."""
     fts = SQLiteFTS5()
     await fts.insert("ch_cjk_1", "doc_cjk", "机器学习在人工智能领域有广泛应用")
     await fts.insert("ch_cjk_2", "doc_cjk", "深度学习框架包括TensorFlow和PyTorch")
     try:
+        # "机器学习" is 4 chars > 2, uses trigram MATCH
         results = await fts.search("机器学习", top_k=5)
         assert len(results) >= 1
-        # chunk_1 has all four chars, should rank higher
         assert results[0].chunk_id == "ch_cjk_1"
 
-        # Mixed CJK + ASCII: words don't need to be contiguous
-        results = await fts.search("TensorFlow深度学习", top_k=5)
+        # Mixed CJK + ASCII: trigram handles uniformly as separate tokens
+        results = await fts.search("TensorFlow 深度学习", top_k=5)
         assert len(results) >= 1
     finally:
         await fts.delete_by_document("doc_cjk")
+
+
+@pytest.mark.asyncio
+async def test_trigram_short_query_fallback():
+    """Queries of 1-2 characters fall back to LIKE search."""
+    fts = SQLiteFTS5()
+    await fts.insert("ch_short_1", "doc_short", "AI 是人工智能的缩写")
+    await fts.insert("ch_short_2", "doc_short", "Python 是一种编程语言")
+    try:
+        # "AI" is 2 chars → LIKE fallback
+        results = await fts.search("AI", top_k=5)
+        assert len(results) >= 1
+        assert results[0].chunk_id == "ch_short_1"
+
+        # "语" is 1 char → LIKE fallback
+        results = await fts.search("语", top_k=5)
+        assert len(results) >= 1
+        assert results[0].chunk_id == "ch_short_2"
+    finally:
+        await fts.delete_by_document("doc_short")
+
+
+@pytest.mark.asyncio
+async def test_trigram_mixed_chinese_english():
+    """Trigram handles mixed Chinese/English/numbers uniformly."""
+    fts = SQLiteFTS5()
+    await fts.insert("ch_mix_1", "doc_mix", "RAG (Retrieval-Augmented Generation) 检索增强生成")
+    await fts.insert("ch_mix_2", "doc_mix", "BAAI/bge-reranker-v2-m3 模型用于重排序")
+    try:
+        results = await fts.search("RAG 检索", top_k=5)
+        assert len(results) >= 1
+        assert results[0].chunk_id == "ch_mix_1"
+
+        results = await fts.search("bge-reranker-v2-m3", top_k=5)
+        assert len(results) >= 1
+        assert results[0].chunk_id == "ch_mix_2"
+    finally:
+        await fts.delete_by_document("doc_mix")
