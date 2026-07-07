@@ -46,7 +46,7 @@ class SQLiteFTS5(BaseTextDB):
     @staticmethod
     def _escape_fts5(query: str) -> str:
         """Remove FTS5 special characters. Uses implicit AND matching (no phrase wrap).
-        Hyphens are replaced with spaces since unicode61 tokenizer treats them as separators."""
+        Hyphens are replaced with spaces since FTS5 tokenizers treat them as separators."""
         cleaned = re.sub(r'["*^()]', '', query)
         return cleaned.replace('-', ' ')
 
