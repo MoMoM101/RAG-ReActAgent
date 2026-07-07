@@ -58,7 +58,12 @@ async def init_db():
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='chunks_fts'"
         )).fetchone()
         if fts_info and fts_info[0] and "trigram" not in fts_info[0]:
-            # 旧 tokenizer 只可能是 unicode61，与 trigram 不兼容
+            import logging as _logging
+            _log = _logging.getLogger(__name__)
+            _log.warning(
+                "FTS5 tokenizer migrated from unicode61 to trigram; "
+                "old index dropped. Re-upload documents or use rebuild to restore keyword search."
+            )
             await conn.exec_driver_sql("DROP TABLE IF EXISTS chunks_fts")
             await conn.execute(sa_text(
                 "CREATE VIRTUAL TABLE chunks_fts "

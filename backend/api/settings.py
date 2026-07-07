@@ -558,7 +558,7 @@ async def rebuild_collections():
             async with engine.begin() as conn:
                 await conn.execute(sa_text(
                     "CREATE VIRTUAL TABLE chunks_fts_v2 "
-                    "USING fts5(chunk_id, document_id, content, tokenize='unicode61')"
+                    "USING fts5(chunk_id, document_id, content, tokenize='trigram')"
                 ))
 
             # ── 1. Pre-flight ──
