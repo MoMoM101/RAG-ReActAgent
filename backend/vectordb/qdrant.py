@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -14,18 +15,57 @@ from config import settings
 
 from .base import BaseVectorDB, VectorSearchResult
 
+logger = logging.getLogger(__name__)
+
 # ── Singleton client: all collections share one QdrantClient ──
 _client: QdrantClient | None = None
+_client_path: str = ""
+_client_healthy: bool = False
+
+
+def _get_client_key() -> str:
+    """Return a key identifying the current Qdrant connection target."""
+    if settings.qdrant_host:
+        return f"{settings.qdrant_host}:{settings.qdrant_port}"
+    return settings.qdrant_path
 
 
 def _get_client() -> QdrantClient:
-    global _client
-    if _client is None:
-        if settings.qdrant_host:
-            _client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
-        else:
-            _client = QdrantClient(path=settings.qdrant_path)
+    global _client, _client_path, _client_healthy
+    current_key = _get_client_key()
+
+    if _client is not None and _client_path == current_key and _client_healthy:
+        return _client
+
+    # Path changed or client unhealthy — close old, create new
+    if _client is not None:
+        try:
+            _client.close()
+        except Exception:
+            pass
+
+    if settings.qdrant_host:
+        _client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+    else:
+        _client = QdrantClient(path=settings.qdrant_path)
+
+    _client_path = current_key
+    _client_healthy = True
+    logger.info("Qdrant client created path=%s", current_key)
     return _client
+
+
+def reset_client_for_test() -> None:
+    """Force next _get_client() call to create a new connection. Test only."""
+    global _client, _client_path, _client_healthy
+    if _client is not None:
+        try:
+            _client.close()
+        except Exception:
+            pass
+    _client = None
+    _client_path = ""
+    _client_healthy = False
 
 
 class QdrantVectorDB(BaseVectorDB):
@@ -73,19 +113,29 @@ class QdrantVectorDB(BaseVectorDB):
             )
             for p in points
         ]
-        await asyncio.to_thread(
-            self.client.upsert,
-            collection_name=self.collection,
-            points=qdrant_points,
-        )
+        try:
+            await asyncio.to_thread(
+                self.client.upsert,
+                collection_name=self.collection,
+                points=qdrant_points,
+            )
+        except Exception:
+            global _client_healthy
+            _client_healthy = False
+            raise
 
     async def search(self, vector: list[float], top_k: int = 10) -> list[VectorSearchResult]:
-        results = await asyncio.to_thread(
-            self.client.search,
-            collection_name=self.collection,
-            query_vector=vector,
-            limit=top_k,
-        )
+        try:
+            results = await asyncio.to_thread(
+                self.client.search,
+                collection_name=self.collection,
+                query_vector=vector,
+                limit=top_k,
+            )
+        except Exception:
+            global _client_healthy
+            _client_healthy = False
+            raise
         return [
             VectorSearchResult(
                 chunk_id=str(r.id),
@@ -97,13 +147,18 @@ class QdrantVectorDB(BaseVectorDB):
         ]
 
     async def delete_by_document(self, document_id: str) -> None:
-        await asyncio.to_thread(
-            self.client.delete,
-            collection_name=self.collection,
-            points_selector=Filter(
-                must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]
-            ),
-        )
+        try:
+            await asyncio.to_thread(
+                self.client.delete,
+                collection_name=self.collection,
+                points_selector=Filter(
+                    must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]
+                ),
+            )
+        except Exception:
+            global _client_healthy
+            _client_healthy = False
+            raise
 
     async def delete_by_chunks(self, chunk_ids: list[str]) -> None:
         if not chunk_ids:
