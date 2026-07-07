@@ -51,8 +51,19 @@ async def init_db():
         # FTS5 virtual table (not managed by SQLAlchemy ORM)
         await conn.execute(sa_text(
             "CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts "
-            "USING fts5(chunk_id, document_id, content, tokenize='unicode61')"
+            "USING fts5(chunk_id, document_id, content, tokenize='trigram')"
         ))
+        # 检测已有表的 tokenizer，如果与 trigram 不兼容则重建
+        fts_info = (await conn.exec_driver_sql(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='chunks_fts'"
+        )).fetchone()
+        if fts_info and fts_info[0] and "trigram" not in fts_info[0]:
+            # 旧 tokenizer 只可能是 unicode61，与 trigram 不兼容
+            await conn.exec_driver_sql("DROP TABLE IF EXISTS chunks_fts")
+            await conn.execute(sa_text(
+                "CREATE VIRTUAL TABLE chunks_fts "
+                "USING fts5(chunk_id, document_id, content, tokenize='trigram')"
+            ))
 
 
 async def get_db():
