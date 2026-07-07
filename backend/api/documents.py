@@ -152,7 +152,7 @@ import re
 
 
 def _desegment_cjk(text: str) -> str:
-    """Undo _segment_cjk spacing for display: ' 项 目 ' → '项目'"""
+    """Remove whitespace before CJK characters from legacy segmented text for display."""
     # Collapse whitespace around CJK characters
     return re.sub(r'\s+(?=[一-鿿㐀-䶿豈-﫿])', '', text).strip()
 

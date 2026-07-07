@@ -21,11 +21,6 @@ def _safe_id(s: str) -> str:
 class SQLiteFTS5(BaseTextDB):
     TABLE = "chunks_fts"
 
-    @staticmethod
-    def _segment_cjk(text: str) -> str:
-        """Insert spaces around CJK characters for FTS5 unicode61 tokenizer."""
-        return re.sub(r"([一-鿿㐀-䶿豈-﫿])", r" \1 ", text)
-
     async def _exec(self, sql: str) -> None:
         """Execute raw SQL via driver-level connection (avoids bind-param parsing)."""
         async with async_session() as session:
@@ -42,10 +37,10 @@ class SQLiteFTS5(BaseTextDB):
     async def insert(self, chunk_id: str, document_id: str, text: str) -> None:
         cid = _safe_id(chunk_id)
         did = _safe_id(document_id)
-        segmented = _escape_sql(self._segment_cjk(text))
+        escaped = _escape_sql(text)
         await self._exec(
             f"INSERT INTO {self.TABLE} (chunk_id, document_id, content) "
-            f"VALUES ('{cid}', '{did}', '{segmented}')"
+            f"VALUES ('{cid}', '{did}', '{escaped}')"
         )
 
     @staticmethod
@@ -57,11 +52,19 @@ class SQLiteFTS5(BaseTextDB):
 
     async def search(self, query: str, top_k: int = 10, document_id: str = "") -> list[TextSearchResult]:
         fts5_safe = self._escape_fts5(query)
-        segmented = _escape_sql(self._segment_cjk(fts5_safe))
-        sql = (
-            f"SELECT chunk_id, document_id, content, bm25({self.TABLE}) as score "
-            f"FROM {self.TABLE} WHERE {self.TABLE} MATCH '{segmented}'"
-        )
+        escaped = _escape_sql(fts5_safe.strip())
+
+        if len(fts5_safe.strip()) <= 2:
+            sql = (
+                f"SELECT chunk_id, document_id, content, 0.5 as score "
+                f"FROM {self.TABLE} WHERE content LIKE '%{escaped}%'"
+            )
+        else:
+            sql = (
+                f"SELECT chunk_id, document_id, content, bm25({self.TABLE}) as score "
+                f"FROM {self.TABLE} WHERE {self.TABLE} MATCH '{escaped}'"
+            )
+
         if document_id:
             sql += f" AND document_id = '{_safe_id(document_id)}'"
         sql += f" ORDER BY score LIMIT {top_k}"
