@@ -9,6 +9,7 @@ from qdrant_client.models import (
     Filter,
     MatchValue,
     PointStruct,
+    SearchParams,
     VectorParams,
 )
 
@@ -123,11 +124,12 @@ class QdrantVectorDB(BaseVectorDB):
 
     async def search(self, vector: list[float], top_k: int = 10) -> list[VectorSearchResult]:
         try:
-            results = await asyncio.to_thread(
-                self.client.search,
+            response = await asyncio.to_thread(
+                self.client.query_points,
                 collection_name=self.collection,
-                query_vector=vector,
+                query=vector,
                 limit=top_k,
+                search_params=SearchParams(hnsw_ef=128),
             )
         except Exception:
             global _client_healthy
@@ -140,7 +142,7 @@ class QdrantVectorDB(BaseVectorDB):
                 text=(r.payload or {}).get("text", ""),
                 score=r.score,
             )
-            for r in results
+            for r in response.points
         ]
 
     async def delete_by_document(self, document_id: str) -> None:

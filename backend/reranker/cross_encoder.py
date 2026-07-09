@@ -20,10 +20,7 @@ def _is_model_cached(model_name: str) -> bool:
     model_dir = cache_dir / f"models--{org}--{name}"
     if not model_dir.is_dir():
         return False
-    for snap in model_dir.glob("snapshots/*"):
-        if any(snap.glob("*.safetensors")) or any(snap.glob("*.bin")):
-            return True
-    return False
+    return any(any(snap.glob("*.safetensors")) or any(snap.glob("*.bin")) for snap in model_dir.glob("snapshots/*"))
 
 
 class CrossEncoderReranker(BaseReranker):

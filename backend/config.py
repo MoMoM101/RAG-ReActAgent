@@ -53,8 +53,15 @@ class Settings(BaseSettings):
     rerank_enabled: bool = False
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
     rerank_top_n: int = 16
+    rrf_k: int = 60
+    rrf_semantic_weight: float = 2.0
+    rrf_keyword_weight: float = 1.0
+    rrf_quality_prefilter_enabled: bool = False
+    rrf_adaptive_enabled: bool = False
     hf_endpoint: str = ""  # HuggingFace 镜像，国内设 https://hf-mirror.com
     chunk_quality_filter_enabled: bool = True  # 设为 False 对代码/API 文档等场景禁用质量过滤
+    chunk_quality_llm_enabled: bool = False  # 启用 LLM 对低质量 chunk 批量判分（会增加搜索延迟）
+    query_rewrite_enabled: bool = False  # 启用多路查询改写，搜索前用 LLM 生成关键词变体并行检索
 
     # Web Search
     web_search_enabled: bool = True

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .database import Base
 
 
-class DocStatus(str, enum.Enum):
+class DocStatus(enum.StrEnum):
     uploaded = "uploaded"
     parsing = "parsing"
     chunking = "chunking"

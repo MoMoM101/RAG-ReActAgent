@@ -1,10 +1,12 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import re
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
@@ -12,6 +14,28 @@ from pydantic import BaseModel, field_validator
 from config import settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+_V2_SUFFIX = "_v2"
+
+
+async def _cleanup_bm25_v2() -> None:
+    """清除 BM25 双缓冲重建的 _v2 残留表。"""
+    from sqlalchemy import text as sa_text
+
+    from models.database import engine
+    async with engine.begin() as conn:
+        for t in ("bm25_docs_v2", "bm25_index_v2", "bm25_stats_v2", "chunks_fts_v2"):
+            await conn.execute(sa_text(f"DROP TABLE IF EXISTS {t}"))
+
+
+async def _switch_bm25_tables() -> None:
+    """BM25 原子切换：删旧表，_v2 重命名为正式表。"""
+    from sqlalchemy import text as sa_text
+
+    from models.database import engine
+    async with engine.begin() as conn:
+        for t in ("bm25_docs", "bm25_index", "bm25_stats"):
+            await conn.execute(sa_text(f"DROP TABLE IF EXISTS {t}"))
+            await conn.execute(sa_text(f"ALTER TABLE {t}_v2 RENAME TO {t}"))
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +240,8 @@ async def test_connection(req: TestConnectionRequest):
         model = req.model or settings.llm_model
 
     t0 = time.time()
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    http_client = httpx.AsyncClient(proxy=None, trust_env=False)
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
 
     if req.kind == "embedding":
         try:
@@ -263,7 +288,8 @@ async def _detect_dimension_mismatch() -> dict:
     current_dim = None
     dim_error = None
     try:
-        client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        http_client = httpx.AsyncClient(proxy=None, trust_env=False)
+        client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
         resp = await client.embeddings.create(model=model, input=["test"])
         current_dim = len(resp.data[0].embedding) if resp.data else None
     except Exception as e:
@@ -318,7 +344,8 @@ async def _get_actual_embedding_dim() -> int:
 
     api_key = settings.embedding_api_key or settings.llm_api_key
     base_url = settings.embedding_base_url or settings.llm_base_url
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    http_client = httpx.AsyncClient(proxy=None, trust_env=False)
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
     resp = await client.embeddings.create(model=settings.embedding_model, input=["test"])
     return len(resp.data[0].embedding)
 
@@ -430,12 +457,12 @@ async def _get_sample_text() -> str | None:
         if row and row[0]:
             return row[0]
 
-    # 2. 降级: 从 FTS5 回读旧 chunk
-    from textdb.sqlite_fts import SQLiteFTS5
-    fts = SQLiteFTS5()
+    # 2. 降级: 从 BM25 回读旧 chunk
+    from textdb.bm25_search import BM25Search
+    fts = BM25Search()
     try:
-        rows = await fts._query(
-            "SELECT content FROM chunks_fts ORDER BY length(content) DESC LIMIT 1"
+        rows = await fts.raw_query(
+            "SELECT text FROM bm25_docs ORDER BY length(text) DESC LIMIT 1"
         )
         if rows and rows[0]:
             return _re_module.sub(r'\s+(?=[一-鿿㐀-䶿豈-﫿])', '', rows[0][0]).strip()
@@ -529,19 +556,17 @@ async def rebuild_collections():
         import uuid as _uuid
 
         from sqlalchemy import select
-        from sqlalchemy import text as sa_text
 
         from embedding.factory import create_embedding, reset_embedding
         from memory.profile import _index_profile, _load
-        from models.database import async_session, engine
+        from models.database import async_session
         from models.orm import DocStatus, Document
         from rag.progress import progress
         from rag.splitter import split_text
-        from textdb.sqlite_fts import SQLiteFTS5
+        from textdb.bm25_search import BM25Search
         from vectordb.qdrant import QdrantVectorDB
 
         rebuild_id = "rebuild"
-        V2_SUFFIX = "_v2"
 
         try:
             # ── 0. 清理上次失败的残留 ──
@@ -550,16 +575,7 @@ async def rebuild_collections():
             # 重置 embedding 单例，确保使用最新模型配置
             reset_embedding()
 
-            # 清理残留的 FTS5 _v2
-            async with engine.begin() as conn:
-                await conn.execute(sa_text("DROP TABLE IF EXISTS chunks_fts_v2"))
-
-            # 创建 FTS5 _v2 表
-            async with engine.begin() as conn:
-                await conn.execute(sa_text(
-                    "CREATE VIRTUAL TABLE chunks_fts_v2 "
-                    "USING fts5(chunk_id, document_id, content, tokenize='trigram')"
-                ))
+            await _cleanup_bm25_v2()
 
             # ── 1. Pre-flight ──
             progress.publish(rebuild_id, {"status": "preflight", "message": "正在检测模型兼容性..."})
@@ -583,8 +599,7 @@ async def rebuild_collections():
                 )
                 docs = result.scalars().all()
 
-            fts_v2 = SQLiteFTS5()
-            fts_v2.TABLE = "chunks_fts" + V2_SUFFIX
+            fts_v2 = BM25Search(table_suffix=_V2_SUFFIX)
 
             total_docs = len(docs)
             total_chunks = 0
@@ -605,9 +620,9 @@ async def rebuild_collections():
                     if doc.raw_text:
                         raw_text = doc.raw_text
                     else:
-                        fts_old = SQLiteFTS5()
+                        fts_old = BM25Search()
                         rows = await fts_old._query(
-                            f"SELECT content FROM chunks_fts WHERE document_id = '{doc.id}' ORDER BY chunk_id"
+                            f"SELECT text FROM bm25_docs WHERE document_id = '{doc.id}' ORDER BY chunk_id"
                         )
                         if not rows:
                             logger.warning("rebuild skip doc_id=%s no raw_text and no fts chunks", doc.id)
@@ -628,7 +643,7 @@ async def rebuild_collections():
 
                     # Build points for Qdrant _v2
                     points = []
-                    for i, (chunk, vec) in enumerate(zip(chunks, vectors)):
+                    for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False)):
                         chunk_id = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{doc.id}:{i}"))
                         points.append({
                             "id": chunk_id,
@@ -644,15 +659,11 @@ async def rebuild_collections():
 
                     # FTS5 _v2 写入
                     fts_entries = [
-                        (
-                            str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{doc.id}:{chunk.chunk_index}")),
-                            doc.id,
-                            chunk.text,
-                        )
-                        for chunk in chunks
+                        (str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{doc.id}:{c.chunk_index}")),
+                         doc.id, c.text)
+                        for c in chunks
                     ]
-                    for cid, did, txt in fts_entries:
-                        await fts_v2.insert(cid, did, txt)
+                    await fts_v2.insert_batch(fts_entries)
 
                     doc_chunk_counts[doc.id] = len(chunks)
                     total_chunks += len(chunks)
@@ -669,7 +680,7 @@ async def rebuild_collections():
             progress.publish(rebuild_id, {"status": "switching", "message": "正在切换索引..."})
 
             # 4a. Qdrant rag_chunks: 创建全新 collection → 写入 → 切换指针 → 删旧
-            from qdrant_client.models import PointStruct as PS
+            from qdrant_client.models import PointStruct
             new_coll_name = f"{settings.qdrant_collection}_{_uuid.uuid4().hex[:8]}"
 
             chunks_db_new = QdrantVectorDB(collection_name=new_coll_name)
@@ -677,7 +688,7 @@ async def rebuild_collections():
 
             if all_points:
                 qdrant_points = [
-                    PS(id=p["id"], vector=p["vector"], payload=p["payload"])
+                    PointStruct(id=p["id"], vector=p["vector"], payload=p["payload"])
                     for p in all_points
                 ]
                 for i in range(0, len(qdrant_points), 50):
@@ -722,12 +733,8 @@ async def rebuild_collections():
             except Exception:
                 logger.warning("profile collection dimension fix failed during switch", exc_info=True)
 
-            # 4c. FTS5: drop old + rename _v2
-            async with engine.begin() as conn:
-                await conn.execute(sa_text("DROP TABLE IF EXISTS chunks_fts"))
-                await conn.execute(sa_text(
-                    "ALTER TABLE chunks_fts_v2 RENAME TO chunks_fts"
-                ))
+            # 4c. BM25: drop old tables + rename _v2
+            await _switch_bm25_tables()
 
             # ── 5. 更新 Document 表 ──
             async with async_session() as session:
@@ -772,13 +779,9 @@ async def rebuild_collections():
         except Exception as e:
             logger.error("rebuild failed: %s", str(e)[:300], exc_info=True)
             _last_rebuild_result = {"status": "failed", "error": str(e)[:300]}
-            # 清理 FTS5 _v2 残留
-            try:
-                async with engine.begin() as conn:
-                    from sqlalchemy import text as sa_text
-                    await conn.execute(sa_text("DROP TABLE IF EXISTS chunks_fts_v2"))
-            except Exception:
-                pass
+            # 清理 BM25 _v2 残留
+            with contextlib.suppress(Exception):
+                await _cleanup_bm25_v2()
             progress.publish(rebuild_id, {
                 "status": "failed",
                 "error": str(e)[:300],
@@ -829,10 +832,11 @@ async def clear_all_data():
         await session.execute(delete(Document))
         await session.commit()
 
-    # 清空 FTS5
+    # 清空 BM25 + FTS5
     async with engine.begin() as conn:
         from sqlalchemy import text as sa_text
-        await conn.execute(sa_text("DELETE FROM chunks_fts"))
+        for t in ("bm25_docs", "bm25_index", "bm25_stats", "chunks_fts"):
+            await conn.execute(sa_text(f"DELETE FROM {t}"))
 
     # 清空上传文件
     upload_dir = settings.upload_dir

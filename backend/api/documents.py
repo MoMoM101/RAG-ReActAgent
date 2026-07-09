@@ -1,15 +1,16 @@
 import asyncio
 import json
 import os
+import re
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from limiter import limiter
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from limiter import limiter
 from models.database import async_session, get_db
 from models.orm import DocStatus, Document
 from rag.pipeline import _process_document, ingest_document
@@ -88,10 +89,47 @@ async def list_documents(db: AsyncSession = Depends(get_db)):
     ]
 
 
+
+@router.delete("/clear-all")
+async def clear_all_documents(db: AsyncSession = Depends(get_db)):
+    """删除全部文档（向量 + FTS + 文件 + DB 记录）。"""
+    from storage.files import delete_file
+
+    from textdb.bm25_search import BM25Search
+    from vectordb.factory import create_vectordb
+
+    result = await db.execute(select(Document))
+    docs = result.scalars().all()
+
+    if not docs:
+        return {"status": "cleared", "count": 0}
+
+    vectordb = await create_vectordb()
+    fts = BM25Search()
+    upload_dir = settings.upload_dir
+
+    for doc in docs:
+        await vectordb.delete_by_document(doc.id)
+        await fts.delete_by_document(doc.id)
+
+        if os.path.isdir(upload_dir):
+            stem = doc.filename.rsplit(".", 1)[0] if "." in doc.filename else doc.filename
+            if stem:
+                for f in os.listdir(upload_dir):
+                    if f == doc.filename or (f.startswith(stem + "_") and f.endswith(doc.file_type)):
+                        delete_file(os.path.join(upload_dir, f))
+
+    count = len(docs)
+    await db.execute(sa_delete(Document))
+    await db.commit()
+
+    return {"status": "cleared", "count": count}
+
 @router.delete("/{doc_id}")
 async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     from storage.files import delete_file
-    from textdb.sqlite_fts import SQLiteFTS5
+
+    from textdb.bm25_search import BM25Search
     from vectordb.factory import create_vectordb
 
     result = await db.execute(select(Document).where(Document.id == doc_id))
@@ -101,7 +139,7 @@ async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
 
     # Clean up in order
     vectordb = await create_vectordb()
-    fts = SQLiteFTS5()
+    fts = BM25Search()
 
     await vectordb.delete_by_document(doc_id)
     await fts.delete_by_document(doc_id)
@@ -127,14 +165,13 @@ async def get_document_chunks(doc_id: str, db: AsyncSession = Depends(get_db)):
     if not doc:
         raise HTTPException(404, "Document not found")
 
-    import re
     if not re.fullmatch(r"[a-zA-Z0-9\-_]+", doc_id):
         raise HTTPException(400, "Invalid document ID")
 
     async with async_session() as session:
         conn = await session.connection()
         result = await conn.exec_driver_sql(
-            "SELECT chunk_id, content FROM chunks_fts WHERE document_id = ? ORDER BY chunk_id",
+            "SELECT chunk_id, text FROM bm25_docs WHERE document_id = ? ORDER BY chunk_id",
             (doc_id,)
         )
         rows = result.fetchall()
@@ -143,59 +180,61 @@ async def get_document_chunks(doc_id: str, db: AsyncSession = Depends(get_db)):
         "document_id": doc_id,
         "filename": doc.filename,
         "chunks": [
-            {"chunk_id": r[0], "text": _desegment_cjk(r[1])}
+            {"chunk_id": r[0], "text": r[1]}
             for r in rows
         ],
     }
 
-import re
-
-
-def _desegment_cjk(text: str) -> str:
-    """Remove whitespace before CJK characters from legacy segmented text for display."""
-    # Collapse whitespace around CJK characters
-    return re.sub(r'\s+(?=[一-鿿㐀-䶿豈-﫿])', '', text).strip()
-
 
 @router.post("/{doc_id}/reprocess")
 async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Document).where(Document.id == doc_id))
-    doc = result.scalar_one_or_none()
-    if not doc:
-        raise HTTPException(404, "Document not found")
-    if doc.status not in (DocStatus.failed, DocStatus.ready):
+    # Atomic status check-and-claim to prevent concurrent reprocess
+    result = await db.execute(
+        update(Document)
+        .where(Document.id == doc_id)
+        .where(Document.status.in_((DocStatus.failed, DocStatus.ready)))
+        .values(status=DocStatus.uploaded, error_message=None)
+        .returning(Document.filename, Document.file_type)
+    )
+    row = result.one_or_none()
+    if not row:
+        # Either doc doesn't exist or status is not failed/ready
+        check = await db.execute(select(Document.id).where(Document.id == doc_id))
+        if check.scalar_one_or_none() is None:
+            raise HTTPException(404, "Document not found")
         raise HTTPException(400, "Only failed or ready documents can be reprocessed")
+    await db.commit()
+
+    filename, file_type = row
 
     # Find file path
     upload_dir = settings.upload_dir
     if not os.path.isdir(upload_dir):
         raise HTTPException(404, "Upload directory not found")
 
-    stem = doc.filename.rsplit(".", 1)[0] if "." in doc.filename else doc.filename
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
     file_path = None
     for f in os.listdir(upload_dir):
-        if f == doc.filename:
+        if f == filename:
             file_path = os.path.join(upload_dir, f)
             break
-        if stem and f.startswith(stem + "_") and f.endswith(doc.file_type):
+        if stem and f.startswith(stem + "_") and f.endswith(file_type):
             file_path = os.path.join(upload_dir, f)
             break
 
     if not file_path:
         raise HTTPException(404, "Original file not found")
 
-    # Reset status and retry (_process_document handles internal cleanup)
-    doc.status = DocStatus.uploaded
-    doc.error_message = None  # type: ignore[assignment]
-    await db.commit()
-
     try:
-        await _process_document(doc_id, file_path, doc.file_type)
+        await _process_document(doc_id, file_path, file_type)
     except Exception as e:
         import traceback
         traceback.print_exc()
-        doc.status = DocStatus.failed
-        doc.error_message = str(e)
+        await db.execute(
+            update(Document)
+            .where(Document.id == doc_id)
+            .values(status=DocStatus.failed, error_message=str(e))
+        )
         await db.commit()
         raise HTTPException(500, f"Reprocessing failed: {e}") from e
 
@@ -264,36 +303,3 @@ async def queue_stats(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.delete("/clear-all")
-async def clear_all_documents(db: AsyncSession = Depends(get_db)):
-    """删除全部文档（向量 + FTS + 文件 + DB 记录）。"""
-    from storage.files import delete_file
-    from textdb.sqlite_fts import SQLiteFTS5
-    from vectordb.factory import create_vectordb
-
-    result = await db.execute(select(Document))
-    docs = result.scalars().all()
-
-    if not docs:
-        return {"status": "cleared", "count": 0}
-
-    vectordb = await create_vectordb()
-    fts = SQLiteFTS5()
-    upload_dir = settings.upload_dir
-
-    for doc in docs:
-        await vectordb.delete_by_document(doc.id)
-        await fts.delete_by_document(doc.id)
-
-        if os.path.isdir(upload_dir):
-            stem = doc.filename.rsplit(".", 1)[0] if "." in doc.filename else doc.filename
-            if stem:
-                for f in os.listdir(upload_dir):
-                    if f == doc.filename or (f.startswith(stem + "_") and f.endswith(doc.file_type)):
-                        delete_file(os.path.join(upload_dir, f))
-
-    count = len(docs)
-    await db.execute(sa_delete(Document))
-    await db.commit()
-
-    return {"status": "cleared", "count": count}

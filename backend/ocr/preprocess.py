@@ -19,10 +19,7 @@ def preprocess(image: np.ndarray, dpi: int = 200) -> np.ndarray:
         image = cv2.resize(image, (int(w * scale), int(h * scale)))
 
     # Grayscale
-    if len(image.shape) == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
 
     # Denoise
     denoised = cv2.fastNlMeansDenoising(gray, h=10)

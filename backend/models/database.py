@@ -48,7 +48,8 @@ async def init_db():
         await conn.exec_driver_sql("PRAGMA journal_mode=WAL")
         await conn.exec_driver_sql("PRAGMA busy_timeout=30000")
         await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
-        # FTS5 virtual table (not managed by SQLAlchemy ORM)
+        # Legacy FTS5 table (deprecated, replaced by bm25_* tables below)
+        # Kept for backward compatibility — no longer used for search
         await conn.execute(sa_text(
             "CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts "
             "USING fts5(chunk_id, document_id, content, tokenize='trigram')"
@@ -69,6 +70,21 @@ async def init_db():
                 "CREATE VIRTUAL TABLE chunks_fts "
                 "USING fts5(chunk_id, document_id, content, tokenize='trigram')"
             ))
+
+        # BM25 inverted index tables (replaces FTS5 for keyword search)
+        for stmt in [
+            "CREATE TABLE IF NOT EXISTS bm25_docs ("
+            "  chunk_id TEXT PRIMARY KEY, document_id TEXT NOT NULL,"
+            "  text TEXT NOT NULL, token_count INTEGER NOT NULL DEFAULT 0)",
+            "CREATE TABLE IF NOT EXISTS bm25_index ("
+            "  term TEXT NOT NULL, chunk_id TEXT NOT NULL, tf INTEGER NOT NULL,"
+            "  PRIMARY KEY (term, chunk_id))",
+            "CREATE TABLE IF NOT EXISTS bm25_stats ("
+            "  term TEXT PRIMARY KEY, df INTEGER NOT NULL DEFAULT 0)",
+            "CREATE INDEX IF NOT EXISTS idx_bm25_docs_did ON bm25_docs(document_id)",
+            "CREATE INDEX IF NOT EXISTS idx_bm25_index_term ON bm25_index(term)",
+        ]:
+            await conn.exec_driver_sql(stmt)
 
 
 async def get_db():

@@ -2,6 +2,7 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 
 from config import settings
@@ -11,9 +12,11 @@ from .base import BaseLLM, ChatMessage, LLMResponse, ToolCall
 
 class OpenAILLM(BaseLLM):
     def __init__(self, api_key: str | None = None, base_url: str | None = None, model: str | None = None):
+        http_client = httpx.AsyncClient(proxy=None, trust_env=False)
         self.client = AsyncOpenAI(
             api_key=api_key or settings.llm_api_key,
             base_url=base_url or settings.llm_base_url,
+            http_client=http_client,
         )
         self.model = model or settings.llm_model
 

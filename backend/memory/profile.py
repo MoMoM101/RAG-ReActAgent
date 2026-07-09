@@ -15,6 +15,30 @@ MAX_FACTS = 30
 PROFILE_COLLECTION = "user_profile"
 
 
+def _score_fact(fact: dict) -> float:
+    """Weighted score: 30% access count + 70% recency. Higher = keep."""
+    ts_str = fact.get("ts", "")
+    days = 365.0
+    if ts_str:
+        try:
+            dt = datetime.fromisoformat(ts_str)
+            days = (datetime.now(UTC) - dt).total_seconds() / 86400.0
+        except (ValueError, TypeError):
+            pass
+    recency_score = max(0.0, 1.0 - days / 365.0)
+    access_count = fact.get("access_count", 0)
+    return access_count * 0.3 + recency_score * 0.7
+
+
+def _evict_facts(facts: list[dict], max_count: int) -> list[dict]:
+    """Remove lowest-scored facts when exceeding max_count."""
+    if len(facts) <= max_count:
+        return facts
+    scored = [(f, _score_fact(f)) for f in facts]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [f for f, _ in scored[:max_count]]
+
+
 def _empty() -> dict:
     return {"name": "", "role": "", "preferences": [], "decisions": [], "facts": []}
 
@@ -123,7 +147,7 @@ async def _index_profile(data: dict):
         await vdb.create_collection(len(vectors[0]))
 
         points = []
-        for i, (text, vec) in enumerate(zip(texts, vectors)):
+        for i, (text, vec) in enumerate(zip(texts, vectors, strict=False)):
             point_id = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"user_profile_{i}"))
             points.append({
                 "id": point_id,
@@ -195,27 +219,48 @@ async def append_facts(items: list[str], source: str = "session") -> dict:
             data.setdefault("facts", []).append({
                 "content": item, "source": source,
                 "ts": datetime.now(UTC).isoformat(),
+                "access_count": 0,
             })
             existing.append(item)
             new_count += 1
-    if len(data["facts"]) > MAX_FACTS:
-        data["facts"] = data["facts"][-MAX_FACTS:]
+    data["facts"] = _evict_facts(data["facts"], MAX_FACTS)
     if new_count > 0:
         logger.info("memory facts appended total=%d new=%d", len(data["facts"]), new_count)
     await _save(data)
     return data
 
 
+# ── 身份字段跨字段去重 ────────────────
+
+async def _identity_similar(value: str, data: dict) -> bool:
+    """Check if value is semantically similar to existing name or role."""
+    existing = []
+    if data.get("name"):
+        existing.append(data["name"])
+    if data.get("role"):
+        existing.append(data["role"])
+    return await _is_similar(value, existing) if existing else False
+
+
 # ── 拦截器入口 ────────────────────────
 
 async def handle_intercept(content: str, mem_type: str) -> dict:
     if mem_type == "identity":
+        data = await _load()
         if "用户叫" in content:
-            return await upsert_field("name", content.replace("用户叫", "").strip())
+            value = content.replace("用户叫", "").strip()
+            if not await _identity_similar(value, data):
+                return await upsert_field("name", value)
+            return data
         elif "用户是" in content:
-            return await upsert_field("role", content.replace("用户是", "").strip())
+            value = content.replace("用户是", "").strip()
+            if not await _identity_similar(value, data):
+                return await upsert_field("role", value)
+            return data
         else:
-            return await upsert_field("role", content)
+            if not await _identity_similar(content, data):
+                return await upsert_field("role", content)
+            return data
     elif mem_type == "preference":
         return await append_list("preferences", content)
     elif mem_type == "decision":
@@ -236,8 +281,19 @@ async def handle_session_extract(extracted: list[dict]) -> dict:
         if not content:
             continue
         if mem_type == "identity":
-            if "是" in content:
-                data["role"] = content.split("是", 1)[-1].strip()
+            if "叫" in content:
+                value = content.split("叫", 1)[-1].strip()
+                if value and not await _identity_similar(value, data):
+                    data["name"] = value
+                    new_count += 1
+            elif "是" in content:
+                value = content.split("是", 1)[-1].strip()
+                if value and not await _identity_similar(value, data):
+                    data["role"] = value
+                    new_count += 1
+            elif not await _identity_similar(content, data):
+                data["role"] = content
+                new_count += 1
         elif mem_type == "preference":
             items = data.setdefault("preferences", [])
             if not await _is_similar(content, items):
@@ -254,10 +310,10 @@ async def handle_session_extract(extracted: list[dict]) -> dict:
                 data.setdefault("facts", []).append({
                     "content": content, "source": "session",
                     "ts": datetime.now(UTC).isoformat(),
+                    "access_count": 0,
                 })
                 new_count += 1
-    if len(data.get("facts", [])) > MAX_FACTS:
-        data["facts"] = data["facts"][-MAX_FACTS:]
+    data["facts"] = _evict_facts(data.get("facts", []), MAX_FACTS)
     if new_count > 0:
         logger.info("memory session extracted total=%d new=%d", len(extracted), new_count)
     await _save(data)
@@ -307,7 +363,7 @@ async def search_profile(query: str, top_k: int = 5) -> list[dict]:
         from numpy import dot
         from numpy.linalg import norm
         scored = []
-        for text, dv in zip(texts, doc_vecs):
+        for text, dv in zip(texts, doc_vecs, strict=False):
             sim = float(dot(q_vec, dv) / (norm(q_vec) * norm(dv)))
             scored.append((text, sim))
         scored.sort(key=lambda x: x[1], reverse=True)

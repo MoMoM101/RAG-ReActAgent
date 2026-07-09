@@ -5,6 +5,7 @@ import time
 import uuid
 
 from sqlalchemy import select
+from storage.files import save_upload
 
 from config import settings
 from embedding.factory import create_embedding
@@ -12,8 +13,7 @@ from models.database import async_session
 from models.orm import DocStatus, Document
 from rag.loaders import load_document
 from rag.splitter import split_text
-from storage.files import save_upload
-from textdb.sqlite_fts import SQLiteFTS5
+from textdb.bm25_search import BM25Search
 from vectordb.factory import create_vectordb
 
 logger = logging.getLogger(__name__)
@@ -195,12 +195,12 @@ async def _process_document(doc_id: str, file_path: str, file_type: str):
         t_idx = time.time()
 
         vectordb = await create_vectordb()
-        fts = SQLiteFTS5()
+        fts = BM25Search()
         await vectordb.delete_by_document(doc_id)
         await fts.delete_by_document(doc_id)
 
         points = []
-        for chunk, vector in zip(chunks, vectors):
+        for chunk, vector in zip(chunks, vectors, strict=False):
             chunk_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{doc_id}:{chunk.chunk_index}"))
             points.append({
                 "id": chunk_id,
@@ -214,9 +214,12 @@ async def _process_document(doc_id: str, file_path: str, file_type: str):
 
         # Qdrant 先写，FTS5 后写：Qdrant 失败时 FTS5 干净，不会残留垃圾
         await vectordb.upsert(points)
-        for chunk in chunks:
-            chunk_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{doc_id}:{chunk.chunk_index}"))
-            await fts.insert(chunk_id, doc_id, chunk.text)
+        fts_entries = [
+            (str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{doc_id}:{c.chunk_index}")),
+             doc_id, c.text)
+            for c in chunks
+        ]
+        await fts.insert_batch(fts_entries)
         idx_elapsed = int((time.time() - t_idx) * 1000)
         logger.info("indexing done doc_id=%s elapsed_ms=%d", doc_id, idx_elapsed)
 

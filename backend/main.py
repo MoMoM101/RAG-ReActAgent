@@ -6,11 +6,11 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from config import settings
-from limiter import limiter
 from models.database import init_db
 
 logger = logging.getLogger(__name__)
@@ -148,6 +148,10 @@ app.include_router(settings_router)
 from api.memories import router as memories_router
 
 app.include_router(memories_router)
+
+from api.backup import router as backup_router
+
+app.include_router(backup_router)
 
 if __name__ == "__main__":
     import uvicorn

@@ -48,9 +48,9 @@ def _rule_match(query: str, has_history: bool) -> IntentHint | None:
         )
 
     # Calculator
-    if any(kw in query for kw in {"计算", "算", "等于", "加", "减", "乘", "除", "+", "-", "*", "/"}):
-        if re.search(r"[\d+\-*/]", query):
-            return IntentHint(
+    calc_kw = {"计算", "算", "等于", "加", "减", "乘", "除", "+", "-", "*", "/"}
+    if any(kw in query for kw in calc_kw) and re.search(r"[\d+\-*/]", query):
+        return IntentHint(
                 intent="calculation", confidence=0.7, suggested_tools=["calculator"],
                 hint_text="用户可能在询问数学计算，建议使用 calculator 进行计算",
             )

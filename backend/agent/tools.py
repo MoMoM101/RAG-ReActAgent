@@ -48,10 +48,7 @@ def _is_retryable_exception(e: Exception) -> bool:
         pass
 
     module = type(e).__module__
-    if "qdrant" in module.lower() or "grpc" in module.lower():
-        return True
-
-    return False
+    return "qdrant" in module.lower() or "grpc" in module.lower()
 
 
 def _raise_if_retryable(e: Exception, tool_name: str) -> None:
@@ -498,11 +495,11 @@ class WebSearchTool(BaseTool):
         """Fallback: DuckDuckGo via ddgs library."""
         from config import settings
 
-        DDGS = None
+        DDGS = None  # noqa: N806
         for module_name in ("ddgs", "duckduckgo_search"):
             try:
                 mod = __import__(module_name, fromlist=["DDGS"])
-                DDGS = mod.DDGS
+                DDGS = mod.DDGS  # noqa: N806
                 break
             except ImportError:
                 continue

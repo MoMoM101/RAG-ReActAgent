@@ -1,15 +1,16 @@
 import json
 import uuid
+from contextlib import suppress
 from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from limiter import limiter
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.loop import run_agent_loop
-from limiter import limiter
 from llm.base import ChatMessage, ToolCall
 from models.database import async_session, get_db
 from models.orm import Conversation, Message
@@ -194,10 +195,8 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
             args = {}
             db_msg = db_msg_by_idx.get(i)
             if db_msg and db_msg.tool_args:
-                try:
+                with suppress(json.JSONDecodeError):
                     args = json.loads(db_msg.tool_args)
-                except json.JSONDecodeError:
-                    pass
             for j in range(i - 1, -1, -1):
                 if history[j].role == "assistant":
                     target_msg = history[j]

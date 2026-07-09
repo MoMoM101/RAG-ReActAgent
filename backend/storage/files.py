@@ -1,4 +1,5 @@
 import os
+from contextlib import suppress
 from pathlib import Path
 
 from config import settings
@@ -38,7 +39,5 @@ def delete_file(file_path: str) -> None:
     resolved = Path(file_path).resolve()
     if not str(resolved).startswith(str(UPLOAD_DIR)):
         return
-    try:
+    with suppress(FileNotFoundError):
         os.remove(file_path)
-    except FileNotFoundError:
-        pass

@@ -1,3 +1,4 @@
+import httpx
 from openai import AsyncOpenAI
 
 from config import settings
@@ -10,9 +11,11 @@ BATCH_SIZE = 10
 
 class OpenAIEmbedding(BaseEmbedding):
     def __init__(self):
+        http_client = httpx.AsyncClient(proxy=None, trust_env=False)
         self.client = AsyncOpenAI(
             api_key=settings.embedding_api_key or settings.llm_api_key,
             base_url=settings.embedding_base_url or settings.llm_base_url,
+            http_client=http_client,
         )
         self.model = settings.embedding_model
 
