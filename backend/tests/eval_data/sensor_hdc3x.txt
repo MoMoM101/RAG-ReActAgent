@@ -1,0 +1,20 @@
+# HDC3x Digital Humidity Sensor (Texas Instruments)
+
+## HDC3020
+Humidity: +/-1.5% RH. Temp: +/-0.1C. Range: 0-100% RH, -40C to 125C
+Interface: I2C (addr 0x44/0x45), max 1MHz, alert pin
+Supply: 1.62V-3.6V, 0.5uA avg at 1Hz. Package: WSON-8 2.5x2.5mm
+Price: CNY 7.20 (1K+), CNY 5.80 (10K+). Lead time: in stock
+Integrated heater for condensation removal
+
+## HDC3021
+Humidity: +/-1.0% RH. Temp: +/-0.1C. Range: 0-100% RH, -40C to 125C
+Interface: I2C (0x44/0x45), max 1MHz, alert pin, NIST traceable
+Supply: 1.62V-3.6V, 0.5uA avg. Package: WSON-8 2.5x2.5mm (IP67 option)
+Price: CNY 12.50 (1K+), CNY 9.80 (10K+)
+
+## HDC3022
+Humidity: +/-0.8% RH. Temp: +/-0.1C. Range: 0-100% RH, -40C to 125C
+Interface: I2C (0x44/0x45), max 1MHz, dual alert, NIST certificate
+Supply: 1.62V-3.6V, 0.5uA avg. Package: WSON-8 2.5x2.5mm (IP67 cover)
+Price: CNY 18.00 (1K+), CNY 14.50 (10K+). For medical/cold chain use

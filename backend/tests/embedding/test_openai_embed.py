@@ -9,9 +9,7 @@ def _api_key_is_set() -> bool:
     key = settings.embedding_api_key or settings.llm_api_key
     if not key:
         return False
-    if key == "your-api-key-here":
-        return False
-    return True
+    return key != "your-api-key-here"
 
 
 api_key_required = pytest.mark.skipif(

@@ -1,0 +1,19 @@
+# Personal Information Protection Law (PIPL) - China
+
+## Legal Basis (Art.13-17)
+Art.13: consent, contract necessity, statutory duty, public health emergency, news reporting
+Art.14: consent must be voluntary, explicit, fully informed; separate consent for sharing,
+  sensitive data, cross-border transfer, public disclosure
+Art.17: privacy notice required before collection: processor ID, purpose, method, categories,
+  retention period, rights exercise method
+
+## Individual Rights (Art.44-48)
+Art.44: right to know and decide. Art.47: right to deletion (purpose achieved,
+  retention expired, consent withdrawn, unlawful processing)
+Art.45: right to request transfer to designated processor
+
+## Breach Response (Art.57-58)
+Art.57: immediately notify department and affected individuals upon breach
+  Notification: breach nature, consequences, measures taken, risk mitigation
+Fines: up to 50M CNY or 5% of prior year revenue; personal liability;
+  credit file record; business suspension possible

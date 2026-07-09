@@ -1,0 +1,18 @@
+# SHT4x Digital Humidity/Temperature Sensor (Sensirion)
+
+## SHT40
+Humidity: +/-1.8% RH. Temp: +/-0.2C. Range: 0-100% RH, -40C to 125C
+Interface: I2C (addr 0x44/0x45), max 1MHz
+Supply: 1.08V-3.6V, 0.4uA avg at 1Hz. Package: DFN-4 1.5x1.5mm
+Price: CNY 8.50 (1K+). Lead time: in stock
+
+## SHT41
+Humidity: +/-1.5% RH. Temp: +/-0.2C. Range: 0-100% RH, -40C to 125C
+Interface: I2C (0x44/0x45), max 1MHz. Supply: 1.08V-3.6V, 0.4uA avg
+Package: DFN-4 1.5x1.5mm (filter membrane option). Price: CNY 12.80 (1K+)
+
+## SHT45
+Humidity: +/-1.0% RH. Temp: +/-0.1C. Range: 0-100% RH, -40C to 125C
+Interface: I2C (0x44/0x45), max 1MHz. Supply: 1.08V-3.6V
+Package: DFN-4 1.5x1.5mm with PTFE membrane. Price: CNY 22.00 (1K+)
+Automotive AEC-Q100 Grade 1 qualified

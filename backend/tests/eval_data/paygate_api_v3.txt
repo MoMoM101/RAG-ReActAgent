@@ -1,0 +1,36 @@
+# Payment Gateway API v3.2 Reference
+
+## Authentication
+All endpoints require Header: Authorization: Bearer <API_KEY>.
+Get API Key from Merchant Dashboard: Developer Center > API Key Management.
+Supports RSA-SHA256 and HMAC-SHA256 signing algorithms.
+Sandbox Base URL: https://sandbox.paygate.example.com/v3
+Production Base URL: https://api.paygate.example.com/v3
+
+## Create Order POST /orders
+Request: amount(required,cents), currency(required,ISO 4217), out_trade_no(required,max 32 chars),
+  notify_url(optional), metadata(optional,max 1KB JSON)
+Response: order_id (UUID v4), status (PENDING/PAID/EXPIRED/CANCELLED),
+  pay_url, created_at (ISO 8601)
+Error codes: ERR_40001 missing parameter, ERR_40002 invalid signature,
+  ERR_40003 amount exceeds limit(over 1 million CNY),
+  ERR_42901 rate limit(100 requests/min), ERR_50001 internal error
+
+## Query Order GET /orders/{order_id}
+Response: order_id, amount, currency, status, out_trade_no,
+  paid_at (only PAID status), channel (wechat/alipay/unionpay)
+Error codes: ERR_40401 order not found
+
+## Refund POST /orders/{order_id}/refund
+Request: refund_amount(required,cents,<=original amount), reason(required,max 200 chars),
+  notify_url(optional)
+Response: refund_id, status (PROCESSING/SUCCESS/FAILED)
+Error codes: ERR_40004 refund amount exceeds limit,
+  ERR_40005 order status not refundable(only PAID allowed),
+  ERR_40201 merchant balance insufficient
+
+## Webhook Notifications
+Events: order.paid, order.expired, refund.success, refund.failed
+Signature: X-Signature header = HMAC-SHA256(webhook_secret, request_body)
+Retry: 1min/5min/15min/30min/1h, total 5 retries
+IP whitelist: only accept webhook push from 203.0.113.0/24

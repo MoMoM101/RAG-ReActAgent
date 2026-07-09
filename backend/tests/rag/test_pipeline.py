@@ -1,3 +1,5 @@
+import contextlib
+
 import pytest
 from sqlalchemy import select
 
@@ -35,10 +37,8 @@ async def test_duplicate_detection(tmp_path, monkeypatch):
     content = b"unique test content for duplicate check"
     test_file.write_bytes(content)
 
-    try:
+    with contextlib.suppress(Exception):
         await ingest_document("dup1.txt", content, ".txt")
-    except Exception:
-        pass  # Expected if no API key
 
     # Second upload with same content should raise ValueError
     with pytest.raises(ValueError, match="already exists"):

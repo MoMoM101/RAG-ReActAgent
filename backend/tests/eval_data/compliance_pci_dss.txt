@@ -1,0 +1,21 @@
+# PCI DSS v4.0 Compliance Requirements
+
+## Protect Stored Cardholder Data (Req.3)
+3.1: limit storage and retention; delete when no longer needed
+3.2: never store sensitive auth data (full track, CVV, PIN) after authorization
+3.3: mask PAN (first 6/last 4 max); render unreadable via salted hash, truncation,
+  tokenization, or strong cryptography
+3.4: PAN must be unreadable everywhere stored (DB, logs, backups, archives)
+
+## Encrypt Transmission (Req.4)
+4.1: strong cryptography for cardholder data over open networks (TLS 1.2+, IPSEC, SSH)
+4.2: wireless must use WPA3 or IEEE 802.11i; never use WEP
+
+## Vulnerability Management (Req.6)
+6.1: identify vulnerabilities via reputable external sources; risk ranking (critical/high/medium/low)
+6.2: apply vendor security patches within one month of release
+6.3: critical patches within 30 days
+
+## Breach Penalties
+Non-compliance: USD 5K-100K/month fine; acquiring bank may terminate; forensic audit
+Data breach: card brand assessments; mandatory PCI Forensic Investigator (PFI) engagement

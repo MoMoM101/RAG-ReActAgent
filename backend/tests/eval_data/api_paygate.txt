@@ -1,0 +1,17 @@
+# PayGate Payment API v3.2
+
+## POST /orders
+amount(cents), currency(ISO 4217), out_trade_no(max 32)
+Response: order_id(UUID), status(PENDING/PAID/EXPIRED/CANCELLED), pay_url
+Error: ERR_40001 missing param, ERR_40002 bad signature, ERR_40003 amount > 1M CNY
+Error: ERR_42901 rate limit 100/min, ERR_50001 internal error
+
+## POST /orders/{id}/refund
+refund_amount(cents, <=original), reason(max 200)
+Response: refund_id, status(PROCESSING/SUCCESS/FAILED)
+Error: ERR_40004 refund over limit, ERR_40005 status not PAID, ERR_40201 balance low
+
+## Webhook
+Events: order.paid, refund.success, refund.failed
+Signature: X-Sig = HMAC-SHA256(secret, body). Retry: 1m/5m/15m/30m/1h x5
+IP whitelist: 203.0.113.0/24, Max: 1,000,000 CNY/transaction

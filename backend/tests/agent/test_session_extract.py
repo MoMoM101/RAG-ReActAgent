@@ -127,3 +127,77 @@ class TestExtractSessionMemories:
                 await extract_session_memories("conv-456")
 
                 mock_extract.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_extract_updates_last_extracted_at_on_success(self):
+        """>=5 new messages + LLM returns valid → last_extracted_at updated + profile written."""
+        # Single shared session mock — handles both read and write phases
+        shared_session = MagicMock()
+        shared_session.__aenter__ = AsyncMock(return_value=shared_session)
+        shared_session.__aexit__ = AsyncMock()
+        shared_session.commit = AsyncMock()
+
+        # Read phase queries: last_extracted_at, count, messages
+        conv_result = MagicMock()
+        conv_result.scalar_one_or_none.return_value = None
+        count_result = MagicMock()
+        count_result.scalar.return_value = 6
+        msg_result = MagicMock()
+        mock_msg = MagicMock()
+        mock_msg.role = "user"
+        mock_msg.content = "I am a Python developer"
+        msg_result.scalars.return_value.all.return_value = [mock_msg] * 6
+        # Write phase query: update Conversation (no scalar result needed)
+        write_result = MagicMock()
+
+        shared_session.execute = AsyncMock(side_effect=[
+            conv_result, count_result, msg_result,  # read phase
+            write_result,                            # write phase: update
+        ])
+
+        with patch("models.database.async_session") as mock_factory:
+            mock_factory.return_value = shared_session
+            with patch("agent.session_extract._extract_with_llm") as mock_extract:
+                mock_extract.return_value = [
+                    {"content": "user is a Python developer", "memory_type": "identity"},
+                ]
+                with patch("memory.profile.handle_session_extract") as mock_handle:
+                    mock_handle.return_value = {}
+                    from agent.session_extract import extract_session_memories
+                    await extract_session_memories("conv-789")
+
+                    mock_extract.assert_called_once()
+                    shared_session.commit.assert_called_once()
+                    mock_handle.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_extract_result_skips_update(self):
+        """>=5 new messages + LLM returns [] → returns early, no update."""
+        read_session = MagicMock()
+        read_session.__aenter__ = AsyncMock(return_value=read_session)
+        read_session.__aexit__ = AsyncMock()
+
+        conv_result = MagicMock()
+        conv_result.scalar_one_or_none.return_value = None
+        count_result = MagicMock()
+        count_result.scalar.return_value = 5
+        msg_result = MagicMock()
+        mock_msg = MagicMock()
+        mock_msg.role = "user"
+        mock_msg.content = "hello"
+        msg_result.scalars.return_value.all.return_value = [mock_msg] * 5
+
+        read_session.execute = AsyncMock(side_effect=[conv_result, count_result, msg_result])
+
+        with patch("models.database.async_session") as mock_factory:
+            mock_factory.side_effect = [read_session]
+            mock_factory.return_value = read_session
+            with patch("agent.session_extract._extract_with_llm") as mock_extract:
+                mock_extract.return_value = []
+                with patch("memory.profile.handle_session_extract") as mock_handle:
+                    from agent.session_extract import extract_session_memories
+                    await extract_session_memories("conv-000")
+
+                    mock_extract.assert_called_once()
+                    # handle_session_extract should NOT be called (early return)
+                    mock_handle.assert_not_called()

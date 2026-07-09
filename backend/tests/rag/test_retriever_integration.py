@@ -48,7 +48,7 @@ async def _ensure_collection_dim(db) -> int | None:
 async def test_hybrid_search_hits_qdrant():
     """Search returns results from Qdrant semantic search."""
     from rag.retriever import hybrid_search
-    from textdb.sqlite_fts import SQLiteFTS5
+    from textdb.bm25_search import BM25Search
     from vectordb.qdrant import QdrantVectorDB
 
     chunk_id = "550e8400-e29b-41d4-a716-44665544a001"
@@ -64,7 +64,7 @@ async def test_hybrid_search_hits_qdrant():
         "payload": {"document_id": TEST_DOC_ID, "text": "测试文档内容关于机器学习部署流程"},
     }])
 
-    fts = SQLiteFTS5()
+    fts = BM25Search()
     try:
         results = await hybrid_search("机器学习部署", top_k=3)
         assert len(results) > 0
@@ -79,14 +79,14 @@ async def test_hybrid_search_hits_qdrant():
 async def test_hybrid_search_hits_fts5():
     """FTS5 keyword search finds exact match that semantic search might miss."""
     from rag.retriever import hybrid_search
-    from textdb.sqlite_fts import SQLiteFTS5
+    from textdb.bm25_search import BM25Search
     from vectordb.qdrant import QdrantVectorDB
 
     db = QdrantVectorDB()
     if await _ensure_collection_dim(db) is None:
         pytest.skip("Qdrant collection dimension mismatch with embedding API")
 
-    fts = SQLiteFTS5()
+    fts = BM25Search()
     chunk_id = "550e8400-e29b-41d4-a716-44665544b002"
     await fts.insert(chunk_id, TEST_DOC_ID, "XYZ-9000 型号规格参数详细说明")
 

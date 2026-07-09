@@ -1,0 +1,49 @@
+# Data Security Compliance Checklist v2.1
+
+## A. Personal Information Collection (Clauses 13-18)
+13. Explicit consent required before collection; consent form must include:
+  data usage purpose, retention period, third-party sharing details
+14. Sensitive personal information (biometrics, health records, financial accounts,
+  location tracking) requires separate explicit authorization
+15. Minors (under 14 years) information collection requires verified guardian consent
+  with identity verification mechanism
+16. Data minimization principle: only collect minimum information necessary
+  for the stated service purpose
+17. Data subjects have right to withdraw consent at any time; upon withdrawal,
+  processing must stop and data deleted within 15 working days
+18. Personal information export requires security assessment;
+  data export exceeding 1 million records requires CAC (Cyberspace Administration) approval
+
+## B. Data Storage and Transmission (Clauses 21-26)
+21. Personal information collected domestically must be stored domestically in principle;
+  if export is necessary, security assessment or certification must be completed
+22. Storage encryption: AES-256-GCM or SM4-CBC, encryption keys stored separately from data
+23. Transmission encryption: TLS 1.3 minimum requirement,
+  SSL 3.0 / TLS 1.0 / TLS 1.1 are strictly prohibited
+24. Backup strategy: full backup interval no more than 24 hours,
+  incremental backup no more than 4 hours, backup stored in offsite disaster recovery
+25. Access logs retained for at least 6 months, containing:
+  operation time, operator identity, IP address, operation type, affected data scope
+26. Database passwords must be at least 16 characters,
+  containing upper+lower+digit+special characters, rotated every 90 days
+
+## C. Data Breach Response (Clauses 31-35)
+31. Initiate emergency response within 1 hour of breach discovery,
+  complete initial severity classification within 4 hours
+32. Breach affecting 100K or more personal records must be reported to CAC within 8 hours
+33. Breach affecting 1M or more records, or involving sensitive information,
+  must be reported within 2 hours
+34. Affected users must be notified within 72 hours, explaining:
+  breach content, potential consequences, recommended countermeasures
+35. Submit complete remediation report within 30 days after breach, containing:
+  root cause analysis, remedial measures taken, recurrence prevention plan
+
+## D. Penalty Standards
+- Minor violation: order correction + warning;
+  refusal to correct results in fine up to CNY 500,000
+- Severe violation (breach of 100K+ records or causing significant harm):
+  fine of CNY 1M-50M or 5% of prior year revenue
+- Criminal liability: infringement of citizens personal information,
+  maximum 7 years imprisonment
+- Direct responsible person ban: violation of Clauses 13-18
+  may result in 5-year ban from data security related positions

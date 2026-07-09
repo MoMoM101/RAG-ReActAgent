@@ -1,0 +1,290 @@
+{
+  "timestamp": "2026-07-08T22:48:50.572515",
+  "config": {
+    "embedding_provider": "qwen",
+    "embedding_model": "text-embedding-v4",
+    "chunk_size": 200,
+    "chunk_overlap": 40,
+    "rerank_enabled": true
+  },
+  "num_queries": 25,
+  "aggregate_no_rerank": {
+    "precision": {
+      "3": 0.7333333333333333,
+      "5": 0.5920000000000001,
+      "10": 0.35200000000000004
+    },
+    "recall": {
+      "3": 2.0133333333333336,
+      "5": 2.626666666666667,
+      "10": 3.0
+    },
+    "ndcg": {
+      "3": 0.9005914040515868,
+      "5": 0.9209374744197646,
+      "10": 0.9446487752387205
+    },
+    "hit": {
+      "3": 1.0,
+      "5": 1.0,
+      "10": 1.0
+    },
+    "mrr": 0.9733333333333333
+  },
+  "aggregate_rerank": {
+    "precision": {
+      "3": 0.7333333333333333,
+      "5": 0.5920000000000001,
+      "10": 0.35200000000000004
+    },
+    "recall": {
+      "3": 2.0133333333333336,
+      "5": 2.626666666666667,
+      "10": 3.0
+    },
+    "ndcg": {
+      "3": 0.9005914040515868,
+      "5": 0.9209374744197646,
+      "10": 0.9446487752387205
+    },
+    "hit": {
+      "3": 1.0,
+      "5": 1.0,
+      "10": 1.0
+    },
+    "mrr": 0.9733333333333333
+  },
+  "avg_latency_ms_no_rerank": 447.72,
+  "per_query": [
+    {
+      "query": "ERR_40003",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "ERR_40401",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "ERR_40201",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "STM32H743VI",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 1.0,
+      "hit_k5": 1
+    },
+    {
+      "query": "R7FA6M5BH3CFC",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 1.0,
+      "hit_k5": 1
+    },
+    {
+      "query": "ESP32-S3R8 price and stock",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 1.0,
+      "hit_k5": 1
+    },
+    {
+      "query": "Clopidogrel loading dose",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "Nifedipine GITS contraindications",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "Atorvastatin drug interactions",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "clause 32 breach report deadline",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "clause 26 database password rotation",
+      "category": "long-descriptive",
+      "mrr": 0.3333333333333333,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "clause 18 personal information export",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "ADC 5MSPS microcontroller",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 1.0,
+      "hit_k5": 1
+    },
+    {
+      "query": "-40C to 125C industrial MCU",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 1.0,
+      "hit_k5": 1
+    },
+    {
+      "query": "80mg max dose atorvastatin",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "HMG-CoA reductase inhibitor",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "P2Y12 receptor antagonist",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "what parameters are required to create a payment order",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "which chips support CAN FD bus interface",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 1.0,
+      "hit_k5": 1
+    },
+    {
+      "query": "how soon must users be notified after a data breach",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "STM32 MCU with ETH ethernet interface",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 1.0,
+      "hit_k5": 1
+    },
+    {
+      "query": "refund refund_amount parameter limit",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "where is AES-256 encryption mentioned",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "encryption",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "security",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    }
+  ],
+  "ablation": {
+    "semantic-only": {
+      "precision_k5": 0.5920000000000001,
+      "mrr": 0.9733333333333333,
+      "hit_k5": 1.0,
+      "ndcg_k5": 0.918749085953708,
+      "avg_latency_ms": 361.6
+    },
+    "keyword-only": {
+      "precision_k5": 0.30400000000000005,
+      "mrr": 0.8,
+      "hit_k5": 0.8,
+      "ndcg_k5": 0.7854551073113045,
+      "avg_latency_ms": 27.76
+    },
+    "hybrid-no-rerank": {
+      "precision_k5": 0.5920000000000001,
+      "mrr": 0.9733333333333333,
+      "hit_k5": 1.0,
+      "ndcg_k5": 0.9209374744197646,
+      "avg_latency_ms": 447.72
+    },
+    "hybrid-rerank": {
+      "precision_k5": 0.5920000000000001,
+      "mrr": 0.9733333333333333,
+      "hit_k5": 1.0,
+      "ndcg_k5": 0.9209374744197646,
+      "avg_latency_ms": 833.32
+    }
+  }
+}

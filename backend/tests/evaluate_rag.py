@@ -554,13 +554,13 @@ async def run_single_strategy(
 
     from embedding.factory import create_embedding
     from rag.retriever import RetrievalResult, hybrid_search
-    from textdb.sqlite_fts import SQLiteFTS5
+    from textdb.bm25_search import BM25Search
     from vectordb.factory import create_vectordb
 
     t0 = _time.time()
 
     if strategy == AblationStrategy.KEYWORD_ONLY:
-        fts = SQLiteFTS5()
+        fts = BM25Search()
         text_results = await fts.search(query, top_k=top_k, document_id=document_id)
         results = [
             RetrievalResult(
@@ -612,7 +612,7 @@ async def run_evaluation():
     from models.database import async_session
     from models.orm import Document
     from rag.pipeline import ingest_document
-    from textdb.sqlite_fts import SQLiteFTS5
+    from textdb.bm25_search import BM25Search
     from vectordb.factory import create_vectordb
 
     # ── Step 1: 清理旧数据 ──
@@ -626,7 +626,7 @@ async def run_evaluation():
         existing_docs = result.scalars().all()
         for existing in existing_docs:
             vectordb = await create_vectordb()
-            fts = SQLiteFTS5()
+            fts = BM25Search()
             await vectordb.delete_by_document(existing.id)
             await fts.delete_by_document(existing.id)
             await session.delete(existing)
@@ -737,8 +737,8 @@ async def run_evaluation():
         agg["mrr"] = sum(m["mrr"] for m in metrics_list) / n
         return agg
 
-    print("\n{:<24} {:>7} {:>7} {:>7} {:>7} {:>7}".format("策略", "P@5", "MRR", "Hit@5", "NDCG@5", "延迟ms"))
-    print("-" * 70)
+    print("\n{:<24} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7}".format("策略", "P@5", "Recall@5", "MRR", "Hit@5", "NDCG@5", "延迟ms"))
+    print("-" * 78)
 
     def _agg(metrics_list):
         return aggregate(metrics_list, k_values)
@@ -748,7 +748,8 @@ async def run_evaluation():
         avg_lat = (sum(strategy_results[strategy]["latencies"])
                    / max(len(strategy_results[strategy]["latencies"]), 1))
         label = STRATEGY_LABELS.get(strategy, strategy.value)
-        print(f"{label:<24} {agg_m['precision'][5]:>6.1%} {agg_m['mrr']:>6.1%} "
+        print(f"{label:<24} {agg_m['precision'][5]:>6.1%} {agg_m['recall'][5]:>7.1%} "
+              f"{agg_m['mrr']:>6.1%} "
               f"{agg_m['hit'][5]:>6.0%} {agg_m['ndcg'][5]:>6.1%} {avg_lat:>6.0f}")
 
     # 来源分析
@@ -825,7 +826,7 @@ async def cleanup():
 
     from models.database import async_session
     from models.orm import Document
-    from textdb.sqlite_fts import SQLiteFTS5
+    from textdb.bm25_search import BM25Search
     from vectordb.factory import create_vectordb
 
     test_filenames = [d.filename for d in TEST_DOCS]
@@ -836,7 +837,7 @@ async def cleanup():
         docs = result.scalars().all()
         for doc in docs:
             vectordb = await create_vectordb()
-            fts = SQLiteFTS5()
+            fts = BM25Search()
             await vectordb.delete_by_document(doc.id)
             await fts.delete_by_document(doc.id)
             await session.delete(doc)

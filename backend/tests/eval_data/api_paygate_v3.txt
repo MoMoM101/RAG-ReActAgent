@@ -1,0 +1,27 @@
+# PayGate Payment API v3.2
+
+## Authentication
+Header: Authorization: Bearer <API_KEY>
+API Key from Merchant Dashboard > Developer Center > API Keys
+Signing: RSA-SHA256 and HMAC-SHA256 supported
+Sandbox: https://sandbox.paygate.example.com/v3
+Production: https://api.paygate.example.com/v3
+
+## Create Order POST /orders
+Request: amount(cents,required), currency(ISO 4217,required), out_trade_no(max 32,required),
+  notify_url(optional), metadata(1KB JSON max,optional)
+Response: order_id(UUID v4), status(PENDING/PAID/EXPIRED/CANCELLED),
+  pay_url, created_at(ISO 8601)
+Error: ERR_40001 missing param, ERR_40002 bad signature, ERR_40003 amount over 1M CNY,
+  ERR_42901 rate limit 100/min, ERR_50001 internal error
+
+## Refund POST /orders/{order_id}/refund
+Request: refund_amount(cents,required,<=original), reason(max 200,required), notify_url(optional)
+Response: refund_id, status(PROCESSING/SUCCESS/FAILED)
+Error: ERR_40004 refund over limit, ERR_40005 order not PAID, ERR_40201 balance low
+
+## Webhook
+Events: order.paid, order.expired, refund.success, refund.failed
+Signature: X-Signature = HMAC-SHA256(webhook_secret, body)
+Retry: 1min/5min/15min/30min/1h, 5 total
+IP: 203.0.113.0/24 only
