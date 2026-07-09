@@ -18,7 +18,15 @@ export const useToastStore = create<ToastStore>((set) => ({
 
   addToast: (t) => {
     const id = crypto.randomUUID();
-    set((s) => ({ toasts: [...s.toasts, { ...t, id }] }));
+    const MAX_TOASTS = 5;
+    set((s) => {
+      const next = [...s.toasts, { ...t, id }];
+      if (next.length > MAX_TOASTS) {
+        next[0] = { ...next[0], removing: true };
+        setTimeout(() => set((ns) => ({ toasts: ns.toasts.filter((x) => !x.removing) })), 200);
+      }
+      return { toasts: next };
+    });
     setTimeout(() => {
       set((s) => ({
         toasts: s.toasts.map((x) => (x.id === id ? { ...x, removing: true } : x)),

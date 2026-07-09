@@ -51,3 +51,38 @@ jobs:
         uses: astral-sh/ruff-action@v1
         with:
           src: "backend"
+
+  docker:
+    needs: [backend-tests, lint]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/backend:latest
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/frontend:latest

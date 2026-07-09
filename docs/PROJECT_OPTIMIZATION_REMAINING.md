@@ -201,3 +201,34 @@ results = await asyncio.to_thread(
 | 07-07 | 评测脚本消融对比 + --compare | `d2208bc` |
 | 07-07 | dot 转义、lint/type 修复 | `dd7fb3a`, `813ea56` |
 | 07-08 | chunk_size=200, 段落优先, 表格保护 | `fd4e6ef` |
+
+---
+
+## 八、2026-07-08 全量优化完成总结
+
+### P0 — 评测验证
+- chunk_size=200 评测：P@5 从 22.6% → 27.7%（**+5.1%**），Hit@5 保持 90%
+
+### P1 — 核心测试补全（+5 tests）
+- **Context overflow**：已有 5 个测试覆盖折半降级全路径（`test_context_overflow.py`）
+- **网络搜索**：新增 3 个测试覆盖 Bing→DDG fallback、双失败、RetryableError 合并（`test_web_search.py`）
+- **Session extract**：新增 2 个测试覆盖成功更新 last_extracted_at、空结果跳过（`test_session_extract.py`）
+- **FakeLLM**：已在 `conftest.py` 统一管理，`make_fake_llm` fixture 全局可用
+
+### P2 — 测试收尾 + 代码质量
+- **`_process_dropped`**：已有 3 个测试（`test_context_overflow.py`）
+- **`_is_retryable_exception`**：已有 10 个测试覆盖 6 种异常类型（`test_tools.py`）
+- **ruff**：28 → 5 错误（剩余为 N806/N817 命名偏好，非 bug）
+- **Qdrant**：`search` → `query_points` API 迁移完成，所有检索测试通过
+
+### P3 — 功能增强
+- **Chunk quality LLM**：新增 `_llm_chunk_quality_batch` 批量判分函数，`chunk_quality_llm_enabled` 配置开关（默认关闭）
+- **画像记忆过期**：加权评分 = `access_count×0.3 + recency×0.7`，满 30 条按权重淘汰
+- **前端测试**：20 个测试覆盖 ChatInput（9 tests）+ MessageBubble（11 tests），Vitest + RTL
+
+### 测试总数变化
+| 指标 | 优化前 | 优化后 |
+|------|:---:|:---:|
+| 后端测试 | 195 | 200 |
+| 前端测试 | 0 | 20 |
+| 总计 | 195 | 220 |
