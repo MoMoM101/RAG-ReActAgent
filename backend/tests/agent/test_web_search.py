@@ -121,6 +121,9 @@ class TestWebSearchFallback:
     @pytest.mark.asyncio
     async def test_bing_fails_ddg_succeeds(self, tool):
         """Bing timeout → DDG returns results → ToolResult(success=True)."""
+        from config import settings
+        settings.web_search_enabled = True
+
         bing_error = RetryableError("Bing 搜索超时")
         ddg_result = ToolResult(
             success=True,
@@ -141,6 +144,9 @@ class TestWebSearchFallback:
     @pytest.mark.asyncio
     async def test_bing_and_ddg_both_fail(self, tool):
         """Bing returns empty, DDG raises → combined error message."""
+        from config import settings
+        settings.web_search_enabled = True
+
         bing_empty = ToolResult(success=True, data={"count": 0, "results": []})
         ddg_error = RuntimeError("DDG network unreachable")
         with (
@@ -155,6 +161,9 @@ class TestWebSearchFallback:
     @pytest.mark.asyncio
     async def test_bing_retryable_ddg_retryable_raises_combined(self, tool):
         """Both Bing and DDG raise RetryableError → combined RetryableError raised."""
+        from config import settings
+        settings.web_search_enabled = True
+
         bing_err = RetryableError("Bing 搜索超时")
         ddg_err = RetryableError("DDG 搜索超时")
         with (
@@ -186,6 +195,9 @@ class TestWebSearchMain:
     @pytest.mark.asyncio
     async def test_bing_success_skips_ddg(self, tool):
         """When Bing returns results, DDG is not called."""
+        from config import settings
+        settings.web_search_enabled = True
+
         with patch.object(tool, "_search_bing") as mock_bing:
             mock_bing.return_value = ToolResult(
                 success=True, data={"count": 3, "results": [

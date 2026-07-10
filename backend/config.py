@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     query_rewrite_enabled: bool = False  # 启用多路查询改写，搜索前用 LLM 生成关键词变体并行检索
 
     # Web Search
-    web_search_enabled: bool = True
+    web_search_enabled: bool = False
     web_search_max_results: int = 5
     web_search_proxy: str = ""
 
