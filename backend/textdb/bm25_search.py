@@ -14,6 +14,7 @@ from collections import Counter
 from typing import Any
 
 import jieba
+from sqlalchemy import text as sa_text
 
 from models.database import async_session
 
@@ -50,9 +51,6 @@ def tokenize(text: str) -> list[str]:
         cleaned_tokens.append(cleaned.lower())
 
     # Phase 2: re-join code-like fragments split by jieba
-    # Pattern: [short_alpha] + (sep|code_fragment)* → one code token
-    # e.g. ['err', '_', '40003'] → 'err_40003'
-    # e.g. ['stm32h743vi', 'mcu'] → stay separate ('mcu' is not sep/code)
     tokens: list[str] = []
     buf: list[str] = []
     for t in cleaned_tokens:
@@ -61,22 +59,18 @@ def tokenize(text: str) -> list[str]:
         is_short = _SHORT_ALPHA.match(t) is not None
 
         if buf:
-            # Continue buf: only separators or code fragments
             if is_sep or is_code:
                 buf.append(t)
                 continue
             else:
-                # Flush buf and re-check current token
                 joined = "".join(buf)
                 if re.search(r"[0-9]", joined):
                     tokens.append(joined)
                 else:
                     tokens.extend(buf)
                 buf.clear()
-                # fall through to re-check this token
 
         if not buf:
-            # Start new buf: short alpha or code fragment
             if is_short or is_code:
                 buf.append(t)
             else:
@@ -123,19 +117,43 @@ class BM25Search(BaseTextDB):
         self._tables_created = True
 
     async def _batch_exec(self, statements: list[str]) -> None:
-        """Execute multiple SQL statements in a single transaction-like batch."""
+        """Execute raw DDL statements (no user data, safe for exec_driver_sql)."""
         async with async_session() as session:
             conn = await session.connection()
             for sql in statements:
                 await conn.exec_driver_sql(sql)
             await session.commit()
 
+    async def _batch_param(self, stmts: list[tuple[str, dict]]) -> None:
+        """Execute parameterized DML statements in a single transaction."""
+        if not stmts:
+            return
+        async with async_session() as session:
+            conn = await session.connection()
+            for sql, params in stmts:
+                await conn.execute(sa_text(sql), params)
+            await session.commit()
+
     async def _query(self, sql: str) -> list[Any]:
-        """Execute a SELECT query and return all rows."""
+        """Execute a SELECT query (no user params, for internal use)."""
         async with async_session() as session:
             conn = await session.connection()
             result = await conn.exec_driver_sql(sql)
             return list(result.fetchall())
+
+    async def _query_param(self, sql: str, params: dict) -> list[Any]:
+        """Execute a parameterized SELECT query."""
+        async with async_session() as session:
+            conn = await session.connection()
+            result = await conn.execute(sa_text(sql), params)
+            return list(result.fetchall())
+
+    async def _exec_param(self, sql: str, params: dict) -> None:
+        """Execute a parameterized DML statement (INSERT/UPDATE/DELETE)."""
+        async with async_session() as session:
+            conn = await session.connection()
+            await conn.execute(sa_text(sql), params)
+            await session.commit()
 
     async def _load_stats(self) -> dict[str, Any]:
         """Load collection-level statistics (cached per session)."""
@@ -169,34 +187,80 @@ class BM25Search(BaseTextDB):
         tf_counter = Counter(tokens)
         token_count = len(tokens)
 
-        # Escape single quotes for SQL
-        safe_text = text.replace("'", "''")
-        safe_cid = chunk_id.replace("'", "''")
-        safe_did = document_id.replace("'", "''")
-
-        stmts = [
-            f"INSERT OR REPLACE INTO {self._docs} (chunk_id, document_id, text, token_count) "
-            f"VALUES ('{safe_cid}', '{safe_did}', '{safe_text}', {token_count})",
+        stmts: list[tuple[str, dict]] = [
+            (
+                f"INSERT OR REPLACE INTO {self._docs} (chunk_id, document_id, text, token_count) "
+                f"VALUES (:cid, :did, :text, :tokens)",
+                {"cid": chunk_id, "did": document_id, "text": text, "tokens": token_count},
+            ),
         ]
 
         for term, tf in tf_counter.items():
-            safe_term = term.replace("'", "''")
-            stmts.append(
+            stmts.append((
                 f"INSERT INTO {self._idx} (term, chunk_id, tf) "
-                f"VALUES ('{safe_term}', '{safe_cid}', {tf}) "
-                f"ON CONFLICT(term, chunk_id) DO UPDATE SET tf = {tf}"
-            )
+                f"VALUES (:term, :cid, :tf) "
+                f"ON CONFLICT(term, chunk_id) DO UPDATE SET tf = :tf2",
+                {"term": term, "cid": chunk_id, "tf": tf, "tf2": tf},
+            ))
 
         # Update df for each unique term
         for term in tf_counter:
-            safe_term = term.replace("'", "''")
-            stmts.append(
-                f"INSERT INTO {self._stats} (term, df) "
-                f"VALUES ('{safe_term}', 1) "
-                f"ON CONFLICT(term) DO UPDATE SET df = df + 1"
-            )
+            stmts.append((
+                f"INSERT INTO {self._stats} (term, df) VALUES (:term, 1) "
+                f"ON CONFLICT(term) DO UPDATE SET df = df + 1",
+                {"term": term},
+            ))
 
-        await self._batch_exec(stmts)
+        await self._batch_param(stmts)
+        self._invalidate_cache()
+
+    async def insert_batch(
+        self, entries: list[tuple[str, str, str]]
+    ) -> None:
+        """Insert multiple chunks in a single transaction.
+        entries: [(chunk_id, document_id, text), ...]
+        """
+        if not entries:
+            return
+        await self._ensure_tables()
+
+        stmts: list[tuple[str, dict]] = []
+        all_terms: dict[str, set[str]] = {}  # term -> set of chunk_ids
+
+        for chunk_id, document_id, text in entries:
+            tokens = tokenize(text)
+            tf_counter: dict[str, int] = {}
+            for t in tokens:
+                tf_counter[t] = tf_counter.get(t, 0) + 1
+
+            token_count = len(tokens)
+
+            stmts.append((
+                f"INSERT OR REPLACE INTO {self._docs} (chunk_id, document_id, text, token_count) "
+                f"VALUES (:cid, :did, :text, :tokens)",
+                {"cid": chunk_id, "did": document_id, "text": text, "tokens": token_count},
+            ))
+            for term, tf in tf_counter.items():
+                stmts.append((
+                    f"INSERT INTO {self._idx} (term, chunk_id, tf) "
+                    f"VALUES (:term, :cid, :tf) "
+                    f"ON CONFLICT(term, chunk_id) DO UPDATE SET tf = :tf2",
+                    {"term": term, "cid": chunk_id, "tf": tf, "tf2": tf},
+                ))
+                if term not in all_terms:
+                    all_terms[term] = set()
+                all_terms[term].add(chunk_id)
+
+        # Stats: increment df by number of chunks containing each term
+        for term, chunk_ids in all_terms.items():
+            delta = len(chunk_ids)
+            stmts.append((
+                f"INSERT INTO {self._stats} (term, df) VALUES (:term, :delta) "
+                f"ON CONFLICT(term) DO UPDATE SET df = df + :delta2",
+                {"term": term, "delta": delta, "delta2": delta},
+            ))
+
+        await self._batch_param(stmts)
         self._invalidate_cache()
 
     async def search(
@@ -217,18 +281,18 @@ class BM25Search(BaseTextDB):
         # Collect candidate chunks from index for each query token
         candidates: dict[str, dict[str, Any]] = {}
         for t in query_tokens:
-            safe_term = t.replace("'", "''")
             sql = (
                 f"SELECT i.chunk_id, i.tf, d.token_count, d.text, d.document_id "
                 f"FROM {self._idx} i "
                 f"JOIN {self._docs} d ON i.chunk_id = d.chunk_id "
-                f"WHERE i.term = '{safe_term}'"
+                f"WHERE i.term = :term"
             )
+            params: dict = {"term": t}
             if document_id:
-                safe_did = document_id.replace("'", "''")
-                sql += f" AND d.document_id = '{safe_did}'"
+                sql += " AND d.document_id = :did"
+                params["did"] = document_id
 
-            rows = await self._query(sql)
+            rows = await self._query_param(sql, params)
             for row in rows:
                 chunk_id = row[0]
                 if chunk_id not in candidates:
@@ -244,13 +308,17 @@ class BM25Search(BaseTextDB):
         if not candidates:
             return []
 
-        # Compute IDF for each query token (batch query)
-        safe_terms = [t.replace("'", "''") for t in query_tokens]
-        terms_in = ", ".join(f"'{t}'" for t in safe_terms)
-        idf_rows = await self._query(
-            f"SELECT term, df FROM {self._stats} WHERE term IN ({terms_in})"
-        )
-        df_map = {row[0]: row[1] for row in idf_rows}
+        # Compute IDF for each query token (batch query with parameterized IN)
+        if query_tokens:
+            placeholders = ", ".join(f":t{i}" for i in range(len(query_tokens)))
+            idf_params = {f"t{i}": t for i, t in enumerate(query_tokens)}
+            idf_rows = await self._query_param(
+                f"SELECT term, df FROM {self._stats} WHERE term IN ({placeholders})",
+                idf_params,
+            )
+            df_map: dict[str, int] = {row[0]: row[1] for row in idf_rows}
+        else:
+            df_map = {}
 
         # Compute BM25 scores
         scored: list[tuple[float, str, str, str]] = []
@@ -279,26 +347,27 @@ class BM25Search(BaseTextDB):
 
     async def delete_by_document(self, document_id: str) -> None:
         await self._ensure_tables()
-        safe_did = document_id.replace("'", "''")
 
-        # Collect chunk_ids for this document before deleting
-        rows = await self._query(
-            f"SELECT chunk_id FROM {self._docs} WHERE document_id = '{safe_did}'"
+        rows = await self._query_param(
+            f"SELECT chunk_id FROM {self._docs} WHERE document_id = :did",
+            {"did": document_id},
         )
         chunk_ids = [r[0] for r in rows]
 
         if not chunk_ids:
             return
 
-        # Incrementally update stats before deleting
         await self._increment_terms(chunk_ids, delta=-1)
 
-        # Delete from index and docs
-        chunk_ids_in = ", ".join(f"'{cid.replace(chr(39), chr(39)+chr(39))}'" for cid in chunk_ids)
-        await self._batch_exec([
-            f"DELETE FROM {self._idx} WHERE chunk_id IN ({chunk_ids_in})",
-            f"DELETE FROM {self._docs} WHERE document_id = '{safe_did}'",
+        placeholders = ", ".join(f":c{i}" for i in range(len(chunk_ids)))
+        params = {f"c{i}": cid for i, cid in enumerate(chunk_ids)}
+        await self._batch_param([
+            (f"DELETE FROM {self._idx} WHERE chunk_id IN ({placeholders})", params),
         ])
+        await self._exec_param(
+            f"DELETE FROM {self._docs} WHERE document_id = :did",
+            {"did": document_id},
+        )
 
         self._invalidate_cache()
 
@@ -307,13 +376,14 @@ class BM25Search(BaseTextDB):
         if not chunk_ids:
             return
         await self._increment_terms(chunk_ids, delta=-1)
-        safe_ids = ", ".join(
-            f"'{cid.replace(chr(39), chr(39)+chr(39))}'" for cid in chunk_ids
-        )
-        await self._batch_exec([
-            f"DELETE FROM {self._idx} WHERE chunk_id IN ({safe_ids})",
-            f"DELETE FROM {self._docs} WHERE chunk_id IN ({safe_ids})",
+
+        placeholders = ", ".join(f":c{i}" for i in range(len(chunk_ids)))
+        params = {f"c{i}": cid for i, cid in enumerate(chunk_ids)}
+        await self._batch_param([
+            (f"DELETE FROM {self._idx} WHERE chunk_id IN ({placeholders})", params),
+            (f"DELETE FROM {self._docs} WHERE chunk_id IN ({placeholders})", dict(params)),
         ])
+
         self._invalidate_cache()
 
     async def count(self) -> int:
@@ -327,83 +397,36 @@ class BM25Search(BaseTextDB):
         """Increment/decrement df for terms in given chunks by their actual count."""
         if not chunk_ids:
             return
-        safe_ids = ", ".join(
-            f"'{cid.replace(chr(39), chr(39)+chr(39))}'" for cid in chunk_ids
-        )
-        rows = await self._query(
+
+        placeholders = ", ".join(f":c{i}" for i in range(len(chunk_ids)))
+        params = {f"c{i}": cid for i, cid in enumerate(chunk_ids)}
+        rows = await self._query_param(
             f"SELECT term, COUNT(DISTINCT chunk_id) as cnt FROM {self._idx} "
-            f"WHERE chunk_id IN ({safe_ids}) GROUP BY term"
+            f"WHERE chunk_id IN ({placeholders}) GROUP BY term",
+            params,
         )
         if not rows:
             return
-        stmts: list[str] = []
+
+        stmts: list[tuple[str, dict]] = []
         for term, cnt in rows:
-            safe = term.replace("'", "''")
             if delta < 0:
-                stmts.append(
-                    f"UPDATE {self._stats} SET df = MAX(0, df + {delta * cnt}) "
-                    f"WHERE term = '{safe}'"
-                )
-                stmts.append(
-                    f"DELETE FROM {self._stats} WHERE term = '{safe}' AND df <= 0"
-                )
+                stmts.append((
+                    f"UPDATE {self._stats} SET df = MAX(0, df + :d) "
+                    f"WHERE term = :term",
+                    {"d": delta * cnt, "term": term},
+                ))
+                stmts.append((
+                    f"DELETE FROM {self._stats} WHERE term = :term AND df <= 0",
+                    {"term": term},
+                ))
             else:
-                stmts.append(
-                    f"INSERT INTO {self._stats} (term, df) VALUES ('{safe}', 1) "
-                    f"ON CONFLICT(term) DO UPDATE SET df = df + {delta}"
-                )
-        await self._batch_exec(stmts)
-
-    async def insert_batch(
-        self, entries: list[tuple[str, str, str]]
-    ) -> None:
-        """Insert multiple chunks in a single transaction.
-        entries: [(chunk_id, document_id, text), ...]
-        """
-        if not entries:
-            return
-        await self._ensure_tables()
-
-        stmts: list[str] = []
-        all_terms: dict[str, set[str]] = {}  # term -> set of chunk_ids
-
-        for chunk_id, document_id, text in entries:
-            tokens = tokenize(text)
-            tf_counter: dict[str, int] = {}
-            for t in tokens:
-                tf_counter[t] = tf_counter.get(t, 0) + 1
-
-            safe_text = text.replace("'", "''")
-            safe_cid = chunk_id.replace("'", "''")
-            safe_did = document_id.replace("'", "''")
-            token_count = len(tokens)
-
-            stmts.append(
-                f"INSERT OR REPLACE INTO {self._docs} (chunk_id, document_id, text, token_count) "
-                f"VALUES ('{safe_cid}', '{safe_did}', '{safe_text}', {token_count})"
-            )
-            for term, tf in tf_counter.items():
-                safe_term = term.replace("'", "''")
-                stmts.append(
-                    f"INSERT INTO {self._idx} (term, chunk_id, tf) "
-                    f"VALUES ('{safe_term}', '{safe_cid}', {tf}) "
-                    f"ON CONFLICT(term, chunk_id) DO UPDATE SET tf = {tf}"
-                )
-                if term not in all_terms:
-                    all_terms[term] = set()
-                all_terms[term].add(chunk_id)
-
-        # Stats: increment df by number of chunks containing each term
-        for term, chunk_ids in all_terms.items():
-            delta = len(chunk_ids)
-            safe_term = term.replace("'", "''")
-            stmts.append(
-                f"INSERT INTO {self._stats} (term, df) VALUES ('{safe_term}', {delta}) "
-                f"ON CONFLICT(term) DO UPDATE SET df = df + {delta}"
-            )
-
-        await self._batch_exec(stmts)
-        self._invalidate_cache()
+                stmts.append((
+                    f"INSERT INTO {self._stats} (term, df) VALUES (:term, 1) "
+                    f"ON CONFLICT(term) DO UPDATE SET df = df + :d",
+                    {"term": term, "d": delta},
+                ))
+        await self._batch_param(stmts)
 
     async def raw_query(self, sql: str) -> list[Any]:
         """Exposed for settings.py rebuild logic."""
