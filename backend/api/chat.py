@@ -23,6 +23,26 @@ class ChatRequest(BaseModel):
     message: str = Field(..., max_length=10000)
 
 
+def _truncate_tool_result(data: dict, max_chars: int = 4000) -> str:
+    """Serialize tool result data, truncating long text fields to avoid DB bloat."""
+    if not data:
+        return "{}"
+
+    truncated = dict(data)
+    if "results" in truncated:
+        items = truncated["results"]
+        if isinstance(items, list):
+            truncated["results"] = items[:3]  # keep top 3 only
+            for item in truncated["results"]:
+                if isinstance(item, dict) and "text" in item:
+                    item["text"] = item["text"][:300]
+
+    result_json = json.dumps(truncated, ensure_ascii=False, default=str)
+    if len(result_json) > max_chars:
+        result_json = result_json[:max_chars - 3] + "..."
+    return result_json
+
+
 async def _save_messages(
     conv_id: str,
     assistant_content: str,
@@ -50,8 +70,9 @@ async def _save_messages(
             )
             db.add(pre_msg)
 
-        # Save tool messages with call_id and args
+        # Save tool messages with call_id, args, and full result data
         for tm in tool_messages:
+            result_data = tm.get("result_data")
             tool_msg = Message(
                 id=str(uuid.uuid4()),
                 conversation_id=conv_id,
@@ -60,6 +81,7 @@ async def _save_messages(
                 tool_call_id=tm.get("call_id"),
                 tool_name=tm["name"],
                 tool_args=json.dumps(tm.get("args", {}), ensure_ascii=False),
+                tool_result_json=_truncate_tool_result(result_data) if result_data else None,
             )
             db.add(tool_msg)
 
@@ -116,13 +138,14 @@ async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: 
                 "content": "",  # filled by tool_result
             })
         elif event_type == "tool_result":
-            # Update the last tool message with result content
+            # Update the last tool message with result content and full data
             if tool_messages:
                 d = event["data"]
                 if d.get("success"):
                     tool_messages[-1]["content"] = f"Success: {d.get('result_count', 0)} results"
                 else:
                     tool_messages[-1]["content"] = f"Error: {d.get('error', 'unknown')}"
+                tool_messages[-1]["result_data"] = d.get("full_data")
         elif event_type == "done":
             await _save_messages(
                 conv_id, assistant_content, tool_messages, sources,

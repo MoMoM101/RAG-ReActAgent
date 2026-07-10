@@ -34,6 +34,13 @@ async def init_db():
             await conn.exec_driver_sql(
                 "ALTER TABLE conversations ADD COLUMN last_extracted_at TIMESTAMP"
             )
+        # 迁移: messages 表新增 tool_result_json 列
+        msg_cols = (await conn.exec_driver_sql("PRAGMA table_info(messages)")).fetchall()
+        msg_existing = {row[1] for row in msg_cols}
+        if "tool_result_json" not in msg_existing:
+            await conn.exec_driver_sql(
+                "ALTER TABLE messages ADD COLUMN tool_result_json TEXT"
+            )
         # 迁移: documents 表新增 raw_text、chunk_size 列
         doc_cols = (await conn.exec_driver_sql("PRAGMA table_info(documents)")).fetchall()
         doc_existing = {row[1] for row in doc_cols}

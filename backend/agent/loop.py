@@ -183,6 +183,7 @@ async def run_agent_loop(
                         "result_count": result_count,
                         "reranked": result.data.get("reranked", False) if result.data else False,
                         "error": result.error,
+                        "full_data": result.data if result.success else None,
                     },
                 }
 

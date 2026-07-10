@@ -61,6 +61,7 @@ class Message(Base):
     tool_name: Mapped[str] = mapped_column(String(100), nullable=True)
     tool_args: Mapped[str] = mapped_column(Text, nullable=True)
     sources: Mapped[str] = mapped_column(Text, nullable=True)
+    tool_result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
