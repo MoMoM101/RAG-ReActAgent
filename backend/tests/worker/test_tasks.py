@@ -26,7 +26,7 @@ async def test_create_and_complete():
 
     status = tm.get_status()
     assert len(status["running"]) == 0  # completed tasks are removed
-    completed = [h for h in status["history"] if h["name"] == "test_ok"]
+    completed = [h for h in status["history"] if h["name"].startswith("test_ok")]
     assert len(completed) == 1
     assert completed[0]["status"] == "completed"
 
@@ -42,7 +42,7 @@ async def test_create_and_fail():
     await asyncio.sleep(0.1)
 
     status = tm.get_status()
-    failed = [h for h in status["history"] if h["name"] == "test_fail"]
+    failed = [h for h in status["history"] if h["name"].startswith("test_fail")]
     assert len(failed) == 1
     assert failed[0]["status"] == "failed"
 
@@ -59,15 +59,15 @@ async def test_get_status_shows_running():
     await asyncio.sleep(0.05)
 
     status = tm.get_status()
-    assert "test_slow" in status["running"]
-    assert any(h["name"] == "test_slow" for h in status["history"]) is False
+    assert any(n.startswith("test_slow") for n in status["running"])
+    assert any(h["name"].startswith("test_slow") for h in status["history"]) is False
 
     event.set()
     await asyncio.sleep(0.05)
 
     status2 = tm.get_status()
-    assert "test_slow" not in status2["running"]
-    assert any(h["name"] == "test_slow" for h in status2["history"])
+    assert not any(n.startswith("test_slow") for n in status2["running"])
+    assert any(h["name"].startswith("test_slow") for h in status2["history"])
 
 
 @pytest.mark.asyncio
@@ -90,7 +90,7 @@ async def test_shutdown_cancels_running_tasks():
     await asyncio.sleep(0.05)
 
     status = tm.get_status()
-    assert "test_cancel" not in status["running"]
+    assert not any(n.startswith("test_cancel") for n in status["running"])
     assert cancelled.is_set()
 
 

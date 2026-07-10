@@ -21,9 +21,12 @@ class BackgroundTaskManager:
         self, coro, name: str, *, metadata: dict | None = None
     ) -> asyncio.Task:
         """Wrap and track a background coroutine."""
-        task = asyncio.create_task(self._wrap(coro, name, metadata))
-        self._tasks[name] = task
-        task.add_done_callback(lambda _t: self._tasks.pop(name, None))
+        # Append short random suffix to avoid name collisions
+        import uuid as _uuid
+        unique_name = f"{name}_{_uuid.uuid4().hex[:6]}"
+        task = asyncio.create_task(self._wrap(coro, unique_name, metadata))
+        self._tasks[unique_name] = task
+        task.add_done_callback(lambda _t: self._tasks.pop(unique_name, None))
         return task
 
     async def _wrap(self, coro, name: str, metadata: dict | None):
