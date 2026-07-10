@@ -98,7 +98,6 @@ async def test_health_dependencies_detects_missing_api_key():
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_lazy_dimension_detection_on_first_embed():
     """First embed call should detect and cache the dimension."""
     from config import settings

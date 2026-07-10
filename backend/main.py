@@ -65,26 +65,7 @@ async def lifespan(app: FastAPI):
                         _data.get("rag_chunks"), _data.get("user_profile"))
         except Exception:
             pass
-    # Auto-detect actual embedding dimension from API
-    from embedding.factory import create_embedding
-    emb = create_embedding()
-    test_vec = await emb.embed_query("dim check")
-    detected_dim = len(test_vec)
-    settings.embedding_dim = detected_dim
-    logger.info("embedding dim detected: %d", detected_dim)
-    # Warn if existing Qdrant collection dimension doesn't match
-    try:
-        from vectordb.qdrant import QdrantVectorDB
-        chunks_db = QdrantVectorDB()
-        if await chunks_db.collection_exists():
-            col_dim = await chunks_db.get_collection_dim()
-            if col_dim is not None and col_dim != detected_dim:
-                logger.warning(
-                    "embedding dim mismatch: API=%d Qdrant=%d. Use /api/settings/rebuild-collections to migrate",
-                    detected_dim, col_dim,
-                )
-    except Exception:
-        logger.warning("Qdrant dimension check skipped, service unavailable", exc_info=True)
+    logger.info("embedding dim (from config): %d", settings.embedding_dim)
     # Clean up documents stuck in intermediate states > 30 min
     await _cleanup_stuck_documents()
     # Preload reranker model in background
@@ -128,6 +109,56 @@ app.add_middleware(
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/health/dependencies")
+async def health_dependencies():
+    """Report health status of each dependency without blocking startup."""
+    deps = {
+        "sqlite": "ok",
+        "qdrant": "ok",
+        "embedding": "ok",
+        "llm": "ok",
+    }
+
+    # Check SQLite
+    try:
+        from sqlalchemy import text as sa_text
+        from models.database import engine
+        async with engine.begin() as conn:
+            await conn.execute(sa_text("SELECT 1"))
+    except Exception:
+        deps["sqlite"] = "error"
+
+    # Check Qdrant
+    try:
+        from vectordb.qdrant import QdrantVectorDB
+        vdb = QdrantVectorDB()
+        await vdb.collection_exists()
+    except Exception:
+        deps["qdrant"] = "error"
+
+    # Check embedding (just check if key is configured)
+    if not settings.embedding_api_key and not settings.llm_api_key:
+        deps["embedding"] = "missing_api_key"
+
+    # Check LLM (just check if key is configured)
+    if not settings.llm_api_key:
+        deps["llm"] = "missing_api_key"
+
+    # Aggregate status
+    has_error = any(v == "error" for v in deps.values())
+    has_missing = any(v == "missing_api_key" for v in deps.values())
+
+    if has_error:
+        status = "error"
+    elif has_missing:
+        status = "degraded"
+    else:
+        status = "ok"
+
+    return {"status": status, "dependencies": deps}
+
 
 from api.documents import router as documents_router
 
