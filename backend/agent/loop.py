@@ -106,8 +106,8 @@ async def run_agent_loop(
                     f"\n[历史摘要] 早期对话要点: {history_summary}"
                 )
             if dropped_queries and _first_attempt:
-                import asyncio as _asyncio
-                _asyncio.create_task(_process_dropped(dropped_queries))
+                from worker.tasks import get_task_manager
+                get_task_manager().create(_process_dropped(dropped_queries), "process_dropped")
             _first_attempt = False
             yield {"event": "status", "data": {"message": "思考中..."}}
 

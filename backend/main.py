@@ -79,6 +79,9 @@ async def lifespan(app: FastAPI):
     from memory.profile import rebuild_index
     await rebuild_index()
     yield
+    # Shutdown: cancel pending background tasks
+    from worker.tasks import get_task_manager
+    await get_task_manager().shutdown()
 
 app = FastAPI(title="RAG Agent", lifespan=lifespan)
 app.state.limiter = limiter
@@ -158,6 +161,13 @@ async def health_dependencies():
         status = "ok"
 
     return {"status": status, "dependencies": deps}
+
+
+@app.get("/api/health/tasks")
+async def health_tasks():
+    """Return background task status — running tasks and recent history."""
+    from worker.tasks import get_task_manager
+    return get_task_manager().get_status()
 
 
 from api.documents import router as documents_router

@@ -96,7 +96,8 @@ async def ingest_document(
                                 await session.commit()
                             logger.error("ingestion failed doc_id=%s error=%s", doc_id, str(e)[:200])
                             progress.publish(doc_id, {"status": "failed", "error": str(e)[:200]})
-        asyncio.create_task(_bg_process())
+        from worker.tasks import get_task_manager
+        get_task_manager().create(_bg_process(), f"ingestion_{doc_id[:8]}", metadata={"doc_id": doc_id})
         return doc_id
 
     try:

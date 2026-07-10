@@ -790,7 +790,8 @@ async def rebuild_collections():
             _rebuild_lock = False
 
     _rebuild_lock = True
-    asyncio.create_task(_do_rebuild())
+    from worker.tasks import get_task_manager
+    get_task_manager().create(_do_rebuild(), "rebuild_collections")
     return {"status": "started"}
 
 
