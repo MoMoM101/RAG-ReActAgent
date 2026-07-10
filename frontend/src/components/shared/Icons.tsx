@@ -1,9 +1,9 @@
-interface IconProps { size?: number; className?: string }
+interface IconProps { size?: number; className?: string; style?: React.CSSProperties }
 
 function i(props: IconProps, d: string, strokeWidth = 1.5) {
   const s = props.size ?? 16;
   return (
-    <svg className={props.className} width={s} height={s} viewBox="0 0 24 24"
+    <svg className={props.className} style={props.style} width={s} height={s} viewBox="0 0 24 24"
          fill="none" stroke="currentColor" strokeWidth={strokeWidth}
          strokeLinecap="round" strokeLinejoin="round">
       <path d={d} />
