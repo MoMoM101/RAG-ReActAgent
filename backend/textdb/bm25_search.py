@@ -324,23 +324,24 @@ class BM25Search(BaseTextDB):
     # ── Helper methods ───────────────────────────────────────────
 
     async def _increment_terms(self, chunk_ids: list[str], delta: int = -1) -> None:
-        """Increment/decrement df for unique terms in given chunks."""
+        """Increment/decrement df for terms in given chunks by their actual count."""
         if not chunk_ids:
             return
         safe_ids = ", ".join(
             f"'{cid.replace(chr(39), chr(39)+chr(39))}'" for cid in chunk_ids
         )
         rows = await self._query(
-            f"SELECT DISTINCT term FROM {self._idx} WHERE chunk_id IN ({safe_ids})"
+            f"SELECT term, COUNT(DISTINCT chunk_id) as cnt FROM {self._idx} "
+            f"WHERE chunk_id IN ({safe_ids}) GROUP BY term"
         )
         if not rows:
             return
         stmts: list[str] = []
-        for (term,) in rows:
+        for term, cnt in rows:
             safe = term.replace("'", "''")
             if delta < 0:
                 stmts.append(
-                    f"UPDATE {self._stats} SET df = MAX(0, df + {delta}) "
+                    f"UPDATE {self._stats} SET df = MAX(0, df + {delta * cnt}) "
                     f"WHERE term = '{safe}'"
                 )
                 stmts.append(
@@ -392,12 +393,13 @@ class BM25Search(BaseTextDB):
                     all_terms[term] = set()
                 all_terms[term].add(chunk_id)
 
-        # Stats: increment df for each unique (term, chunk) pair
-        for term in all_terms:
+        # Stats: increment df by number of chunks containing each term
+        for term, chunk_ids in all_terms.items():
+            delta = len(chunk_ids)
             safe_term = term.replace("'", "''")
             stmts.append(
-                f"INSERT INTO {self._stats} (term, df) VALUES ('{safe_term}', 1) "
-                f"ON CONFLICT(term) DO UPDATE SET df = df + 1"
+                f"INSERT INTO {self._stats} (term, df) VALUES ('{safe_term}', {delta}) "
+                f"ON CONFLICT(term) DO UPDATE SET df = df + {delta}"
             )
 
         await self._batch_exec(stmts)
