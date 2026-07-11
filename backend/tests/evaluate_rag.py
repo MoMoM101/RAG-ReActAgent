@@ -30,13 +30,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from enum import Enum
 from typing import Any
 
+from eval_metrics import QrelItem, RetrievedItem, compute_metrics_v2
+
 from config import settings
-from eval_metrics import (
-    QrelItem,
-    RetrievedItem,
-    aggregate_metrics as aggregate_metrics_v2,
-    compute_metrics_v2,
-)
 
 
 class AblationStrategy(Enum):
@@ -761,7 +757,7 @@ async def run_evaluation():
 
     # Build qrels (v2 structured) from ground truth annotations
     qrels_per_query: list[list[QrelItem]] = []
-    for q_idx, qc in enumerate(QUERY_CASES):
+    for _q_idx, qc in enumerate(QUERY_CASES):
         qrels: list[QrelItem] = []
         sources = qc.cross_doc_targets if qc.cross_doc_targets else {qc.doc_index: qc.relevant_chunk_indices}
         for doc_idx, chunk_indices in sources.items():
@@ -779,7 +775,6 @@ async def run_evaluation():
         qrels_per_query.append(qrels)
 
     for j, qc in enumerate(QUERY_CASES):
-        gt = ground_truth_texts[j]
         qrels = qrels_per_query[j]
 
         for strategy in strategies:

@@ -166,16 +166,18 @@ class TestCorrectToken:
             [LLMResponse(content="Hello!")],
         ])
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            async with client.stream(
+        async with (
+            AsyncClient(transport=transport, base_url="http://test") as client,
+            client.stream(
                 "POST",
                 "/api/chat",
                 json={"message": "hello"},
                 headers={"X-Admin-Token": TEST_TOKEN},
-            ) as r:
-                assert r.status_code == 200
-                body = await r.aread()
-                assert b"Hello!" in body
+            ) as r,
+        ):
+            assert r.status_code == 200
+            body = await r.aread()
+            assert b"Hello!" in body
 
 
 class TestNoTokenBackwardCompat:
