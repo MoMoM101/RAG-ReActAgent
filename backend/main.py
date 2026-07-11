@@ -97,9 +97,12 @@ async def lifespan(app: FastAPI):
 
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     # Clean up leftover restore artifacts (candidate/previous dirs) from interrupted restores
-    from api.backup import _cleanup_restore_artifacts
+    from api.backup import _cleanup_orphan_qdrant_collections, _cleanup_restore_artifacts
     upload_path = Path(settings.upload_dir).resolve()
     _cleanup_restore_artifacts(upload_path)
+    # Audit Qdrant collections for orphan restore temp collections
+    active_collection = settings.qdrant_active_collection or settings.qdrant_collection
+    await _cleanup_orphan_qdrant_collections(active_collection)
     await init_db()
     # 恢复 active collection 指针（rebuild 持久化的）
     _ptr = Path(settings.qdrant_path) / "active_collections.json"

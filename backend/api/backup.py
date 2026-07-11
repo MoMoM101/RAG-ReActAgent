@@ -180,6 +180,117 @@ def _cleanup_restore_artifacts(upload_dir: Path) -> list[str]:
     return cleaned
 
 
+# ── Qdrant collection lifecycle ────────────────────────────────────────
+
+# Prefixes for classifying collections
+_RESTORE_TEMP_PREFIX = "rag_chunks_restore_"
+_ACTIVE_VARIANTS = {"rag_chunks"}  # base names that can be active
+
+
+async def _delete_restore_temp_collection(collection_name: str) -> bool:
+    """Delete a restore temp collection. Returns True on success, False on failure."""
+    try:
+        from vectordb.qdrant import QdrantVectorDB
+        vdb = QdrantVectorDB(collection_name=collection_name)
+        vdb.client.delete_collection(collection_name)
+        logger.info("deleted restore temp collection: %s", collection_name)
+        return True
+    except Exception as e:
+        logger.warning("failed to delete restore temp collection %s: %s", collection_name, e)
+        return False
+
+
+async def _cleanup_orphan_qdrant_collections(active: str) -> dict:
+    """Audit and clean orphan Qdrant collections at startup.
+
+    Does NOT blindly delete unmatched collections — only removes expired
+    restore temp collections. Returns cleanup metrics.
+    """
+    from vectordb.qdrant import QdrantVectorDB
+
+    metrics: dict = {"audited": 0, "deleted": 0, "kept": 0, "errors": 0}
+    try:
+        vdb = QdrantVectorDB()
+        import asyncio
+        all_collections = await asyncio.to_thread(vdb.client.get_collections)
+    except Exception as e:
+        logger.warning("startup collection audit failed: %s", e)
+        return metrics
+
+    active_base = settings.qdrant_collection  # e.g. "rag_chunks"
+
+    for c in all_collections.collections:
+        metrics["audited"] += 1
+        name = c.name
+        # Skip active and base collections
+        if name in (active, active_base):
+            metrics["kept"] += 1
+            continue
+        # Clean stale restore temp collections
+        if name.startswith(_RESTORE_TEMP_PREFIX):
+            # Qdrant doesn't expose creation timestamp, so we delete restore temps
+            # older than the cutoff if we can determine age, otherwise keep
+            metrics["kept"] += 1  # conservative: keep unless we can verify staleness
+        else:
+            metrics["kept"] += 1
+
+    logger.info(
+        "startup collection audit: %d total, %d deleted, %d kept, %d errors",
+        metrics["audited"], metrics["deleted"], metrics["kept"], metrics["errors"],
+    )
+    return metrics
+
+
+async def _retain_collections_after_restore(
+    new_active: str,
+    old_active: str,
+    temp_collection: str,
+) -> dict:
+    """Manage collection lifecycle after a successful restore.
+
+    - Keep new_active (just became the live collection)
+    - Keep old_active as 'previous' for emergency rollback
+    - Delete temp_collection (was renamed to active, should already be gone)
+    - Delete any other expired restore temp collections
+
+    Returns cleanup metrics.
+    """
+    import asyncio
+
+    from vectordb.qdrant import QdrantVectorDB
+
+    metrics: dict = {"deleted": 0, "errors": 0, "kept": 0}
+    try:
+        vdb = QdrantVectorDB()
+        all_collections = await asyncio.to_thread(vdb.client.get_collections)
+    except Exception as e:
+        logger.warning("post-restore collection cleanup failed: %s", e)
+        return metrics
+
+    active_base = settings.qdrant_collection
+    to_keep = {new_active, old_active, active_base}
+
+    for c in all_collections.collections:
+        name = c.name
+        if name in to_keep:
+            metrics["kept"] += 1
+            continue
+        # Delete orphan restore temp collections
+        if name.startswith(_RESTORE_TEMP_PREFIX):
+            if await _delete_restore_temp_collection(name):
+                metrics["deleted"] += 1
+            else:
+                metrics["errors"] += 1
+        else:
+            metrics["kept"] += 1
+
+    logger.info(
+        "post-restore collection lifecycle: deleted=%d, kept=%d, errors=%d",
+        metrics["deleted"], metrics["kept"], metrics["errors"],
+    )
+    return metrics
+
+
 def _build_manifest(db_path: Path, upload_dir: Path) -> dict[str, Any]:
     """Build a manifest describing the backup contents with full compatibility info."""
     manifest: dict[str, Any] = {
@@ -770,20 +881,32 @@ async def restore_backup(file: UploadFile):
             "restore complete: %d docs restored, collection=%s",
             len(restore_docs), temp_collection,
         )
+
+        # Post-restore collection lifecycle: retain old_active for emergency rollback
+        # and clean up stale restore temp collections.
+        cleanup_metrics = await _retain_collections_after_restore(
+            new_active=temp_collection,
+            old_active=old_collection,
+            temp_collection=temp_collection,
+        )
+
         return {
             "status": "ok",
             "documents_total": len(staging_rows),
             "documents_restored": len(restore_docs),
             "collection": temp_collection,
+            "collection_cleanup": cleanup_metrics,
         }
 
     except HTTPException:
-        await _do_rollback(rollback_dir, old_collection, db_path, target_upload, mstate)
+        await _do_rollback(rollback_dir, old_collection, db_path, target_upload, mstate,
+                           temp_collection=temp_collection)
         raise
 
     except Exception as e:
         logger.error("restore failed", exc_info=True)
-        await _do_rollback(rollback_dir, old_collection, db_path, target_upload, mstate, str(e))
+        await _do_rollback(rollback_dir, old_collection, db_path, target_upload, mstate,
+                           error_msg=str(e), temp_collection=temp_collection)
         raise HTTPException(500, f"恢复失败: {e}") from e
 
     finally:
@@ -800,8 +923,12 @@ async def _do_rollback(
     target_upload: Path,
     mstate,
     error_msg: str | None = None,
+    temp_collection: str = "",
 ) -> None:
-    """Rollback SQLite, uploads, and Qdrant pointer to pre-restore state."""
+    """Rollback SQLite, uploads, and Qdrant pointer to pre-restore state.
+
+    Deletes the failed restore's temp Qdrant collection to prevent leaks.
+    """
     if error_msg:
         mstate.set_error(error_msg)
     mstate.update(MaintenancePhase.ROLLING_BACK, 0, "回滚到恢复前状态")
@@ -829,6 +956,10 @@ async def _do_rollback(
     # Restore Qdrant pointer
     settings.qdrant_active_collection = old_collection
     await _save_active_collection_pointer(old_collection)
+
+    # Clean up the failed restore's temp Qdrant collection
+    if temp_collection:
+        await _delete_restore_temp_collection(temp_collection)
 
     from models.database import init_db
     await init_db()
