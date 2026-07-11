@@ -322,8 +322,20 @@ async def handle_session_extract(extracted: list[dict]) -> dict:
 
 # ── 语义搜索（recall_memory 工具用）───
 
+def _embedding_configured() -> bool:
+    """Check if any embedding API key is available."""
+    from config import settings
+    return bool(settings.embedding_api_key or settings.llm_api_key)
+
+
 async def rebuild_index():
-    """强制重建画像 Qdrant 索引。启动时调用。"""
+    """强制重建画像 Qdrant 索引。启动时调用。
+
+    当画像为空或 embedding key 未配置时跳过语义索引。
+    """
+    if not _embedding_configured():
+        logger.info("memory index skipped — no embedding API key configured")
+        return
     data = await _load()
     await _index_profile(data)
     logger.info("memory index rebuilt vectors=%d", len(_flatten(data)))

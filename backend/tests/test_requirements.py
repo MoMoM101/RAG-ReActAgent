@@ -53,7 +53,7 @@ def test_dev_requirements_exists():
     pkgs = _parse_requirements("requirements-dev.txt")
     assert pkgs, "requirements-dev.txt 不应为空"
 
-    required = ["pytest", "pytest-asyncio", "pytest-cov", "mypy", "ruff", "httpx"]
+    required = ["pytest", "pytest-asyncio", "pytest-cov", "mypy", "ruff", "httpx", "pyyaml"]
     missing = [p for p in required if p not in pkgs]
     assert not missing, f"requirements-dev.txt 缺少: {missing}"
 

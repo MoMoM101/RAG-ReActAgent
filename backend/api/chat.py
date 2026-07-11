@@ -43,6 +43,16 @@ def _truncate_tool_result(data: dict, max_chars: int = 4000) -> str:
     return result_json
 
 
+def _tool_message_content(m: "Message") -> str:
+    """Return the best available tool result content for history replay.
+
+    Prefers full tool_result_json when available, falls back to summary content.
+    """
+    if m.tool_result_json:
+        return f"[历史工具结果: {m.tool_name}]\n{m.tool_result_json}"
+    return m.content or ""
+
+
 async def _save_messages(
     conv_id: str,
     assistant_content: str,
@@ -201,7 +211,7 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
     for _idx, m in enumerate(messages_db):
         if m.role == "tool":
             history.append(ChatMessage(
-                role="tool", content=m.content,
+                role="tool", content=_tool_message_content(m),
                 tool_call_id=m.tool_call_id, tool_name=m.tool_name,
             ))
             db_msg_by_idx[len(history) - 1] = m

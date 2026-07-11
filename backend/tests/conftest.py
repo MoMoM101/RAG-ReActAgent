@@ -79,7 +79,7 @@ def make_fake_llm():
     return _make
 
 
-@pytest_asyncio.fixture(autouse=True)
+@pytest_asyncio.fixture
 async def setup_db():
     # 重置模块级单例，避免测试间状态污染
     from embedding.factory import reset_embedding
@@ -94,3 +94,15 @@ async def setup_db():
     async with engine.begin() as conn:
         await conn.execute(sa_text("DELETE FROM chunks_fts"))
     yield
+
+
+def pytest_collection_modifyitems(items):
+    """Auto-add 'db' marker and setup_db fixture to tests that need database access."""
+    db_subdirs = {"api", "agent", "memory", "rag", "textdb", "vectordb", "storage",
+                   "llm", "embedding", "reranker", "worker"}
+    db_root_files = {"test_e2e_mvp", "test_startup_degraded"}
+    for item in items:
+        parent = item.path.parent.name
+        if parent in db_subdirs or (parent == "tests" and item.path.stem in db_root_files):
+            item.add_marker(pytest.mark.db)
+            item.fixturenames.append("setup_db")

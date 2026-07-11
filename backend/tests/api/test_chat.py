@@ -1,8 +1,42 @@
 """Test tool result persistence in chat API."""
 import json
+from unittest.mock import MagicMock
 
-from api.chat import _truncate_tool_result
+from api.chat import _tool_message_content, _truncate_tool_result
 
+# ── _tool_message_content ──────────────────────────
+
+def test_tool_message_content_uses_tool_result_json():
+    """When tool_result_json is present, it should be used with a prefix."""
+    m = MagicMock()
+    m.tool_result_json = '{"results": [{"text": "relevant content"}]}'
+    m.tool_name = "search_docs"
+    m.content = "Success: 8 results"
+    result = _tool_message_content(m)
+    assert "relevant content" in result
+    assert "[历史工具结果: search_docs]" in result
+    assert "Success: 8 results" not in result
+
+
+def test_tool_message_content_falls_back_to_content():
+    """When tool_result_json is None, use content as-is."""
+    m = MagicMock()
+    m.tool_result_json = None
+    m.content = "Success: 5 results"
+    result = _tool_message_content(m)
+    assert result == "Success: 5 results"
+
+
+def test_tool_message_content_empty_content():
+    """When both tool_result_json and content are empty, return empty string."""
+    m = MagicMock()
+    m.tool_result_json = None
+    m.content = None
+    result = _tool_message_content(m)
+    assert result == ""
+
+
+# ── _truncate_tool_result ──────────────────────────
 
 def test_truncate_tool_result_empty():
     assert _truncate_tool_result(None) == "{}"
