@@ -1,11 +1,14 @@
 """Tests for admin token authentication across all API routes."""
 
+from pathlib import Path
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from main import app
 
 TEST_TOKEN = "test-admin-token-12345"
+FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 @pytest.fixture
@@ -150,7 +153,7 @@ class TestCorrectToken:
     async def test_upload_with_token(self, require_token):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            with open("tests/fixtures/sample.txt", "rb") as f:
+            with (FIXTURES_DIR / "sample.txt").open("rb") as f:
                 r = await client.post(
                     "/api/documents/upload",
                     files={"file": ("sample.txt", f, "text/plain")},

@@ -83,6 +83,8 @@ jobs:
           node-version: "22"
       - name: Install dependencies
         run: npm ci
+      - name: Lint
+        run: npm run lint
       - name: Build (includes TypeScript check)
         run: npm run build
       - name: Run tests
@@ -113,8 +115,9 @@ jobs:
           done
           # Verify health endpoint
           curl -sf http://127.0.0.1:8000/api/health
-          # Verify 401 on admin endpoint without token
-          curl -sf -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/settings | grep -qE "401|200"
+          # Verify 401 on admin endpoint without token (strict)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/settings)
+          test "$STATUS" = "401" || (echo "Expected 401, got $STATUS" && exit 1)
       - name: Cleanup
         if: always()
         run: docker rm -f rag-backend-smoke
