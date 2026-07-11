@@ -7,7 +7,6 @@ high for natural language, keyword_weight high for exact codes/SKUs.
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import ClassVar
 
 
 class QueryType(Enum):
@@ -110,7 +109,7 @@ def _has_question_structure(q: str) -> bool:
 
 # Default weight profiles — semantic_weight higher favors semantic search
 # keyword_weight higher favors keyword/FTS5 search
-DEFAULT_PROFILES: ClassVar[dict[QueryType, QueryProfile]] = {
+DEFAULT_PROFILES: dict[QueryType, QueryProfile] = {
     QueryType.EXACT_CODE: QueryProfile(semantic_weight=0.3, keyword_weight=3.0),
     QueryType.NUMERIC_SPEC: QueryProfile(semantic_weight=0.5, keyword_weight=2.5),
     QueryType.CLAUSE_LOOKUP: QueryProfile(semantic_weight=1.0, keyword_weight=2.5),

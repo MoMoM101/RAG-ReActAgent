@@ -16,6 +16,11 @@ def _events_by_type(events: list[dict], event_type: str) -> list[dict]:
     return [e for e in events if e.get("event") == event_type]
 
 
+def _make_parallel_result(name: str, result: ToolResult, elapsed: float = 0.0):
+    """Return a single-element execute_parallel result list."""
+    return [(name, result, elapsed)]
+
+
 class TestAgentLoopBasic:
     @pytest.mark.asyncio
     async def test_direct_answer_no_tools(self, make_fake_llm):
@@ -26,7 +31,7 @@ class TestAgentLoopBasic:
 
         with patch("agent.loop.registry") as mock_registry:
             mock_registry.get_schemas.return_value = []
-            mock_registry.execute = AsyncMock()
+            mock_registry.execute_parallel = AsyncMock()
 
             from agent.loop import run_agent_loop
 
@@ -39,7 +44,7 @@ class TestAgentLoopBasic:
             done = _events_by_type(events, "done")
             assert len(chunks) > 0
             assert len(done) == 1
-            mock_registry.execute.assert_not_called()
+            mock_registry.execute_parallel.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_single_tool_call(self, make_fake_llm):
@@ -57,9 +62,13 @@ class TestAgentLoopBasic:
 
         with patch("agent.loop.registry") as mock_registry:
             mock_registry.get_schemas.return_value = []
-            mock_registry.execute = AsyncMock(return_value=ToolResult(
-                success=True,
-                data={"results": [{"document_id": "d1", "filename": "test.txt", "text": "测试内容", "score": 0.9}], "count": 1},
+            mock_registry.execute_parallel = AsyncMock(return_value=_make_parallel_result(
+                "search_docs",
+                ToolResult(success=True, data={
+                    "results": [{"document_id": "d1", "filename": "test.txt",
+                                 "text": "测试内容", "score": 0.9}],
+                    "count": 1,
+                }),
             ))
 
             from agent.loop import run_agent_loop
@@ -96,8 +105,9 @@ class TestAgentLoopToolError:
 
         with patch("agent.loop.registry") as mock_registry:
             mock_registry.get_schemas.return_value = []
-            mock_registry.execute = AsyncMock(return_value=ToolResult(
-                success=False, error="division by zero",
+            mock_registry.execute_parallel = AsyncMock(return_value=_make_parallel_result(
+                "calculator",
+                ToolResult(success=False, error="division by zero"),
             ))
 
             from agent.loop import run_agent_loop
@@ -127,14 +137,17 @@ class TestAgentLoopSources:
 
         with patch("agent.loop.registry") as mock_registry:
             mock_registry.get_schemas.return_value = []
-            mock_registry.execute = AsyncMock(return_value=ToolResult(
-                success=True,
-                data={
-                    "results": [
-                        {"document_id": "abc12345", "filename": "readme.txt", "text": "重要内容", "score": 0.92},
-                    ],
-                    "count": 1,
-                },
+            mock_registry.execute_parallel = AsyncMock(return_value=_make_parallel_result(
+                "search_docs",
+                ToolResult(
+                    success=True,
+                    data={
+                        "results": [
+                            {"document_id": "abc12345", "filename": "readme.txt", "text": "重要内容", "score": 0.92},
+                        ],
+                        "count": 1,
+                    },
+                ),
             ))
 
             from agent.loop import run_agent_loop
@@ -170,8 +183,9 @@ class TestAgentLoopLimits:
 
         with patch("agent.loop.registry") as mock_registry:
             mock_registry.get_schemas.return_value = []
-            mock_registry.execute = AsyncMock(return_value=ToolResult(
-                success=True, data={"result": 2},
+            mock_registry.execute_parallel = AsyncMock(return_value=_make_parallel_result(
+                "calculator",
+                ToolResult(success=True, data={"result": 2}),
             ))
 
             from agent.loop import run_agent_loop
@@ -211,9 +225,10 @@ class TestAgentLoopParallelTools:
 
         with patch("agent.loop.registry") as mock_registry:
             mock_registry.get_schemas.return_value = []
-            mock_registry.execute = AsyncMock(return_value=ToolResult(
-                success=True, data={"results": [], "count": 0},
-            ))
+            mock_registry.execute_parallel = AsyncMock(return_value=[
+                ("search_docs", ToolResult(success=True, data={"results": [], "count": 0}), 0.0),
+                ("recall_memory", ToolResult(success=True, data={"results": [], "count": 0}), 0.0),
+            ])
 
             from agent.loop import run_agent_loop
 
@@ -252,15 +267,12 @@ class TestAgentLoopParallelTools:
             [LLMResponse(content="partial result")],
         ])
 
-        # search_docs succeeds, calculator fails
-        async def side_effect(name, **kw):
-            if name == "calculator":
-                return ToolResult(success=False, error="division by zero")
-            return ToolResult(success=True, data={"results": [], "count": 0})
-
         with patch("agent.loop.registry") as mock_registry:
             mock_registry.get_schemas.return_value = []
-            mock_registry.execute = AsyncMock(side_effect=side_effect)
+            mock_registry.execute_parallel = AsyncMock(return_value=[
+                ("search_docs", ToolResult(success=True, data={"results": [], "count": 0}), 0.0),
+                ("calculator", ToolResult(success=False, error="division by zero"), 0.0),
+            ])
 
             from agent.loop import run_agent_loop
 

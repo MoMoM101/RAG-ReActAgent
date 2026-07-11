@@ -3,10 +3,11 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from limiter import limiter
+from security import require_admin
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -46,10 +47,54 @@ async def _cleanup_stuck_documents():
                 logger.warning("stale doc cleaned doc_id=%s filename=%s", doc_id, filename)
 
 
+def _bootstrap_admin_token() -> None:
+    """Generate and persist an admin token on first startup if none is configured."""
+    from pathlib import Path as _Path
+
+    if settings.admin_api_token:
+        return
+
+    env_path = _Path(str(settings.model_config.get("env_file", ".env")))
+    if env_path.exists():
+        content = env_path.read_text(encoding="utf-8")
+        import re as _re
+        m = _re.search(r"^ADMIN_API_TOKEN=(.+)", content, _re.MULTILINE)
+        if m and m.group(1).strip():
+            settings.admin_api_token = m.group(1).strip()
+            return
+
+    from security import generate_admin_token
+    token = generate_admin_token()
+    settings.admin_api_token = token
+
+    # Write token to .env file
+    if env_path.exists():
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+        new_lines = []
+        found = False
+        for line in lines:
+            if line.strip().startswith("ADMIN_API_TOKEN="):
+                new_lines.append(f"ADMIN_API_TOKEN={token}")
+                found = True
+            else:
+                new_lines.append(line)
+        if not found:
+            new_lines.append(f"ADMIN_API_TOKEN={token}")
+        env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    else:
+        env_path.write_text(f"ADMIN_API_TOKEN={token}\n", encoding="utf-8")
+
+    logger.info("Generated new admin API token (saved to %s)", env_path)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from logging_config import setup_logging
     setup_logging()
+
+    # Bootstrap admin token on first run
+    _bootstrap_admin_token()
+
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     await init_db()
     # 恢复 active collection 指针（rebuild 持久化的）
@@ -100,6 +145,33 @@ from middleware.logging import RequestIDMiddleware
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 
+# Maintenance middleware: return 503 for write requests during restore/rebuild
+from fastapi.responses import JSONResponse as _JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class MaintenanceMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/api/health"):
+            return await call_next(request)
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            from maintenance import get_maintenance_state
+            mstate = get_maintenance_state()
+            if mstate.active:
+                return _JSONResponse(
+                    status_code=503,
+                    content={
+                        "detail": f"系统维护中（{mstate.phase.value}），请稍后重试",
+                        "phase": mstate.phase.value,
+                        "progress_pct": mstate.progress_pct,
+                    },
+                    headers={"Retry-After": "30"},
+                )
+        return await call_next(request)
+
+
+app.add_middleware(MaintenanceMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -114,19 +186,29 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/metrics")
+async def metrics(_admin: None = Depends(require_admin)):
+    """Structured metrics endpoint — no raw queries, content, or API keys."""
+    from metrics import get_metrics
+    return get_metrics().snapshot()
+
+
 @app.get("/api/health/dependencies")
 async def health_dependencies():
     """Report health status of each dependency without blocking startup."""
-    deps = {
+    deps: dict[str, str] = {
         "sqlite": "ok",
         "qdrant": "ok",
         "embedding": "ok",
         "llm": "ok",
+        "reranker": "disabled",
+        "ocr": "disabled",
     }
 
     # Check SQLite
     try:
         from sqlalchemy import text as sa_text
+
         from models.database import engine
         async with engine.begin() as conn:
             await conn.execute(sa_text("SELECT 1"))
@@ -149,13 +231,29 @@ async def health_dependencies():
     if not settings.llm_api_key:
         deps["llm"] = "missing_api_key"
 
+    # Reranker status
+    try:
+        from reranker.factory import get_reranker_status
+        deps["reranker"] = get_reranker_status()["status"]
+    except Exception:
+        deps["reranker"] = "error"
+
+    # OCR status
+    try:
+        from ocr.factory import get_ocr_status
+        deps["ocr"] = get_ocr_status()["status"]
+    except Exception:
+        deps["ocr"] = "error"
+
     # Aggregate status
-    has_error = any(v == "error" for v in deps.values())
-    has_missing = any(v == "missing_api_key" for v in deps.values())
+    error_states = {"error", "failed"}
+    degraded_states = {"missing_api_key", "missing_dependency", "loading"}
+    has_error = any(v in error_states for v in deps.values())
+    has_degraded = any(v in degraded_states for v in deps.values()) or has_error
 
     if has_error:
         status = "error"
-    elif has_missing:
+    elif has_degraded:
         status = "degraded"
     else:
         status = "ok"
@@ -172,28 +270,41 @@ async def health_tasks():
 
 from api.documents import router as documents_router
 
-app.include_router(documents_router)
+app.include_router(documents_router, dependencies=[Depends(require_admin)])
 
 from api.chat import router as chat_router
 
-app.include_router(chat_router)
+app.include_router(chat_router, dependencies=[Depends(require_admin)])
 
 from api.conversations import router as conversations_router
 
-app.include_router(conversations_router)
+app.include_router(conversations_router, dependencies=[Depends(require_admin)])
 
 from api.settings import router as settings_router
 
-app.include_router(settings_router)
+app.include_router(settings_router, dependencies=[Depends(require_admin)])
 
 from api.memories import router as memories_router
 
-app.include_router(memories_router)
+app.include_router(memories_router, dependencies=[Depends(require_admin)])
 
 from api.backup import router as backup_router
 
-app.include_router(backup_router)
+app.include_router(backup_router, dependencies=[Depends(require_admin)])
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    host = settings.server_host
+    if settings.allow_remote_access:
+        host = "0.0.0.0"
+
+    if settings.admin_api_token:
+        logger.info("Admin API token is configured")
+    else:
+        logger.warning(
+            "ADMIN_API_TOKEN is empty — admin endpoints are unprotected. "
+            "Set ADMIN_API_TOKEN in .env or environment to enable authentication."
+        )
+
+    uvicorn.run(app, host=host, port=8000)

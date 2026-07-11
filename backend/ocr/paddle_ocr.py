@@ -98,8 +98,13 @@ class DoctrOCREngine(BaseOCR):
                 self._ready = True
                 elapsed = time.time() - start
                 print(f"[OCR] 模型就绪，耗时 {elapsed:.0f}s", flush=True)
+                from ocr.factory import set_ocr_ready
+                set_ocr_ready()
             except Exception as e:
                 print(f"[OCR] 加载失败: {e}", flush=True)
+                self._ready = False
+                from ocr.factory import set_ocr_failed
+                set_ocr_failed(str(e))
 
         threading.Thread(target=_download, daemon=True).start()
 

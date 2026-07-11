@@ -1060,3 +1060,87 @@ h3 { font-family: var(--font-sans); font-size: 15px; font-weight: 500; }
   .settings-row { grid-template-columns: 1fr; }
   .settings-content { padding: 14px; }
 }
+
+/* ── Auth Token Gate ── */
+.auth-gate-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.auth-gate-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px 28px;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.auth-gate-card h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--accent);
+}
+
+.auth-gate-card > p {
+  color: var(--muted);
+  margin-bottom: 18px;
+  font-size: 0.9rem;
+}
+
+.auth-gate-card input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.95rem;
+  margin-bottom: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.auth-gate-card input:focus {
+  border-color: var(--accent);
+}
+
+.auth-gate-card button {
+  width: 100%;
+  padding: 10px 0;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.auth-gate-card button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.auth-gate-card button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.auth-gate-error {
+  color: var(--danger) !important;
+  font-size: 0.85rem;
+  margin-top: 8px;
+}
+
+.auth-gate-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 14px;
+  line-height: 1.5;
+}

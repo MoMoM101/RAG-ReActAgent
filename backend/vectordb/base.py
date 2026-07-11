@@ -8,6 +8,8 @@ class VectorSearchResult:
     document_id: str
     text: str
     score: float
+    document_key: str = ""
+    section_key: str = ""
 
 
 class BaseVectorDB(ABC):

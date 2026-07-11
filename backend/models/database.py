@@ -13,6 +13,9 @@ class Base(DeclarativeBase):
 
 
 async def init_db():
+    # Ensure all ORM models are registered with Base.metadata before create_all
+    import models.orm  # noqa: F401
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # 迁移：为旧 user_memories 表新增字段（先检查列是否存在）

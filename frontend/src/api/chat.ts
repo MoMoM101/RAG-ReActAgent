@@ -1,4 +1,5 @@
 import type { SSEEvent } from "../types";
+import { authHeaders } from "../stores/authStore";
 
 export function sendMessage(
   message: string,
@@ -12,12 +13,16 @@ export function sendMessage(
 
   fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ message, conversation_id: conversationId }),
     signal: controller.signal,
   })
     .then(async (response) => {
       if (!response.ok) {
+        if (response.status === 401) {
+          sessionStorage.removeItem("rag_admin_token");
+          window.dispatchEvent(new CustomEvent("auth:required"));
+        }
         const text = await response.text();
         throw new Error(`${response.status} - ${text}`);
       }

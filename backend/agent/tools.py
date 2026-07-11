@@ -72,6 +72,8 @@ class BaseTool(ABC):
     max_retries: int = 3
     retry_backoff: float = 1.0
     retry_strategy: str = "exponential"  # "exponential" | "none"
+    parallel_safe: bool = True      # can run concurrently with other tools
+    side_effecting: bool = False    # writes data — keep serial if True
 
     @abstractmethod
     async def execute(self, **kwargs: Any) -> ToolResult: ...
@@ -149,8 +151,9 @@ class SearchDocsTool(BaseTool):
 
 
 class ToolRegistry:
-    def __init__(self):
+    def __init__(self, max_concurrent: int = 4):
         self._tools: dict[str, BaseTool] = {}
+        self._semaphore = asyncio.Semaphore(max_concurrent)
 
     def register(self, tool: BaseTool):
         self._tools[tool.name] = tool
@@ -159,8 +162,64 @@ class ToolRegistry:
         return [t.to_llm_schema() for t in self._tools.values()]
 
     async def execute(self, name: str, **kwargs) -> ToolResult:
+        """Execute a single tool with retry logic."""
         tool = self._tools[name]
+        return await self._execute_one(tool, **kwargs)
 
+    async def execute_parallel(
+        self, calls: list[dict[str, Any]]
+    ) -> list[tuple[str, ToolResult, float]]:
+        """Execute multiple tool calls with controlled concurrency.
+
+        Read-only tools (parallel_safe=True, side_effecting=False) are run
+        concurrently via asyncio.gather(). Side-effecting tools are run
+        serially to avoid data races.
+
+        Returns list of (tool_name, result, elapsed_ms) in original call order.
+        """
+        import time as _time
+
+        tool_objects = [self._tools[tc["name"]] for tc in calls]
+        has_side_effects = any(t.side_effecting for t in tool_objects)
+
+        if len(calls) <= 1 or has_side_effects:
+            # Serial execution for single call or side-effecting tools
+            serial_results: list[tuple[str, ToolResult, float]] = []
+            for tc in calls:
+                t0 = _time.time()
+                result = await self.execute(tc["name"], **tc.get("arguments", {}))
+                elapsed = float(int((_time.time() - t0) * 1000))
+                serial_results.append((tc["name"], result, elapsed))
+            return serial_results
+
+        # Concurrent execution for parallel-safe read-only tools
+        async def _run_one(idx: int, tc: dict) -> tuple[int, str, ToolResult, float]:
+            t0 = _time.time()
+            tool = tool_objects[idx]
+            try:
+                async with self._semaphore:
+                    result = await self._execute_one(tool, **tc.get("arguments", {}))
+            except Exception as e:
+                result = ToolResult(success=False, error=str(e))
+            elapsed = int((_time.time() - t0) * 1000)
+            return (idx, tc["name"], result, elapsed)
+
+        tasks = [_run_one(i, tc) for i, tc in enumerate(calls)]
+        gathered = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Reconstruct results in original order
+        indexed: list[tuple[int, str, ToolResult, float]] = []
+        for item in gathered:
+            if isinstance(item, BaseException):
+                indexed.append((0, "unknown", ToolResult(success=False, error=str(item)), 0.0))
+            else:
+                indexed.append(item)
+        indexed.sort(key=lambda x: x[0])
+
+        return [(name, result, elapsed) for _, name, result, elapsed in indexed]
+
+    async def _execute_one(self, tool: BaseTool, **kwargs) -> ToolResult:
+        """Internal: execute a single tool with retry logic."""
         if tool.retry_strategy == "none":
             try:
                 result = await tool.execute(**kwargs)
@@ -189,10 +248,9 @@ class ToolRegistry:
                     return ToolResult(
                         success=False, error=str(e), retries=attempt
                     )
+            return ToolResult(success=False, error="unreachable")
         else:
             raise ValueError(f"Unknown retry_strategy: {tool.retry_strategy}")
-        # Satisfy mypy: all paths above return or raise
-        return ToolResult(success=False, error="unreachable")
 
 
 class CalculatorTool(BaseTool):

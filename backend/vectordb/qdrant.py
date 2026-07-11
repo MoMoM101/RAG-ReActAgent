@@ -141,6 +141,8 @@ class QdrantVectorDB(BaseVectorDB):
                 document_id=(r.payload or {}).get("document_id", ""),
                 text=(r.payload or {}).get("text", ""),
                 score=r.score,
+                document_key=(r.payload or {}).get("document_key", ""),
+                section_key=(r.payload or {}).get("section_key", ""),
             )
             for r in response.points
         ]

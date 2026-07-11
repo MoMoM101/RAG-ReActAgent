@@ -78,8 +78,16 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Backup / Restore
+    backup_max_upload_mb: int = 512
+    backup_max_extracted_mb: int = 2048
+    backup_max_members: int = 10000
+
     # Server
     secret_key: str = "change-me-in-production"
+    server_host: str = "127.0.0.1"
+    allow_remote_access: bool = False
+    admin_api_token: str = ""
 
     model_config = {
         "env_file": str(Path(__file__).resolve().parent / ".env"),

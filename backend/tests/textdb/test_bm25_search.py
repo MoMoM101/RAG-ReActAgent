@@ -189,7 +189,7 @@ async def test_insert_batch_df_no_inflation_on_reinsert(bm25):
     rows2 = await bm25._query(
         f"SELECT term, df FROM {bm25._stats} WHERE term = 'hello'"
     )
-    df2 = rows2[0][1] if rows2 else 0
+    _ = rows2[0][1] if rows2 else 0
 
     # For now, we accept that re-insert inflates df (INSERT OR REPLACE doesn't
     # track old state). The important thing is batch df = chunk count initially.

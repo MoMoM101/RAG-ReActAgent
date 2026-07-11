@@ -7,6 +7,16 @@ import pytest
 from agent.tools import RetryableError, ToolResult, WebSearchTool
 
 
+def _mock_httpx_client(mock_get_return=None, mock_get_side_effect=None):
+    """Create a mock AsyncClient context manager for patching httpx.AsyncClient."""
+    mock_client = MagicMock()
+    mock_get = AsyncMock(return_value=mock_get_return, side_effect=mock_get_side_effect)
+    mock_client.get = mock_get
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+    return mock_client
+
+
 class TestSearchBing:
     @pytest.fixture
     def tool(self):
@@ -15,9 +25,11 @@ class TestSearchBing:
     @pytest.mark.asyncio
     async def test_bing_timeout_raises_retryable(self, tool):
         """asyncio.TimeoutError → RetryableError."""
-
+        mock_client = _mock_httpx_client(
+            mock_get_side_effect=TimeoutError("timed out")
+        )
         with (
-            patch("asyncio.wait_for", AsyncMock(side_effect=TimeoutError("timed out"))),
+            patch("httpx.AsyncClient", return_value=mock_client),
             pytest.raises(RetryableError, match="Bing"),
         ):
             await tool._search_bing("test query", 3)
@@ -27,9 +39,13 @@ class TestSearchBing:
         """httpx.ConnectError → RetryableError (caught by generic except)."""
         import httpx
 
-        with patch("asyncio.wait_for", AsyncMock(
-            side_effect=httpx.ConnectError("connection refused")
-        )), pytest.raises(RetryableError, match="Bing"):
+        mock_client = _mock_httpx_client(
+            mock_get_side_effect=httpx.ConnectError("connection refused")
+        )
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            pytest.raises(RetryableError, match="Bing"),
+        ):
             await tool._search_bing("test query", 3)
 
     @pytest.mark.asyncio
@@ -52,7 +68,8 @@ class TestSearchBing:
         mock_response.status_code = 200
         mock_response.text = html
 
-        with patch("asyncio.wait_for", AsyncMock(return_value=mock_response)):
+        mock_client = _mock_httpx_client(mock_get_return=mock_response)
+        with patch("httpx.AsyncClient", return_value=mock_client):
             result = await tool._search_bing("test query", 3)
 
         assert result.success is True
@@ -66,7 +83,8 @@ class TestSearchBing:
         mock_response = MagicMock()
         mock_response.status_code = 403
 
-        with patch("asyncio.wait_for", AsyncMock(return_value=mock_response)):
+        mock_client = _mock_httpx_client(mock_get_return=mock_response)
+        with patch("httpx.AsyncClient", return_value=mock_client):
             result = await tool._search_bing("test query", 3)
 
         assert result.success is False
@@ -81,7 +99,8 @@ class TestSearchBing:
         mock_response.status_code = 200
         mock_response.text = html
 
-        with patch("asyncio.wait_for", AsyncMock(return_value=mock_response)):
+        mock_client = _mock_httpx_client(mock_get_return=mock_response)
+        with patch("httpx.AsyncClient", return_value=mock_client):
             result = await tool._search_bing("test query", 3)
 
         assert result.success is True

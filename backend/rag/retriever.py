@@ -28,6 +28,8 @@ class RetrievalResult:
     text: str
     score: float
     source: str  # "semantic" | "keyword" | "hybrid"
+    document_key: str = ""
+    section_key: str = ""
 
 
 def _rrf_fusion(
@@ -45,23 +47,30 @@ def _rrf_fusion(
         semantic_weight = settings.rrf_semantic_weight
     if keyword_weight is None:
         keyword_weight = settings.rrf_keyword_weight
-    scores: dict[str, tuple[float, str, str, str]] = {}  # chunk_id -> (score, doc_id, text, source)
+    # chunk_id -> (score, doc_id, text, source, document_key, section_key)
+    scores: dict[str, tuple[float, str, str, str, str, str]] = {}
 
     # Semantic scores
     for rank, r in enumerate(vector_results):
         rrf_score = semantic_weight / (rrf_k + rank + 1)
         if r.chunk_id in scores:
-            scores[r.chunk_id] = (scores[r.chunk_id][0] + rrf_score, r.document_id, r.text, "hybrid")
+            existing = scores[r.chunk_id]
+            scores[r.chunk_id] = (existing[0] + rrf_score, r.document_id, r.text, "hybrid",
+                                  r.document_key or existing[4], r.section_key or existing[5])
         else:
-            scores[r.chunk_id] = (rrf_score, r.document_id, r.text, "semantic")
+            scores[r.chunk_id] = (rrf_score, r.document_id, r.text, "semantic",
+                                  r.document_key, r.section_key)
 
     # Keyword scores
     for rank, tr in enumerate(text_results):
         rrf_score = keyword_weight / (rrf_k + rank + 1)
         if tr.chunk_id in scores:
-            scores[tr.chunk_id] = (scores[tr.chunk_id][0] + rrf_score, tr.document_id, tr.text, "hybrid")
+            existing = scores[tr.chunk_id]
+            scores[tr.chunk_id] = (existing[0] + rrf_score, tr.document_id, tr.text, "hybrid",
+                                   tr.document_key or existing[4], tr.section_key or existing[5])
         else:
-            scores[tr.chunk_id] = (rrf_score, tr.document_id, tr.text, "keyword")
+            scores[tr.chunk_id] = (rrf_score, tr.document_id, tr.text, "keyword",
+                                   tr.document_key, tr.section_key)
 
     # Sort by fused score descending
     sorted_items = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)
@@ -73,6 +82,8 @@ def _rrf_fusion(
             text=info[2],
             score=info[0],
             source=info[3],
+            document_key=info[4],
+            section_key=info[5],
         )
         for chunk_id, info in sorted_items[:k]
     ]

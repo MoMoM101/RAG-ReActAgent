@@ -6,7 +6,7 @@ import time
 
 from agent.context import ContextManager
 from agent.context_window import get_window, is_context_error
-from agent.tools import ToolResult, registry
+from agent.tools import registry
 from config import settings
 from llm.base import ChatMessage
 from llm.factory import create_llm
@@ -154,16 +154,19 @@ async def run_agent_loop(
                 content=assistant_content or None,
                 tool_calls=tool_calls_acc,
             ))
-            for tc in tool_calls_acc:
+
+            # Concurrent execution for parallel-safe read-only tools
+            parallel_calls = [
+                {"name": tc.name, "arguments": tc.arguments}
+                for tc in tool_calls_acc
+            ]
+            tool_results = await registry.execute_parallel(parallel_calls)
+
+            for (tool_name, result, elapsed_ms), tc in zip(tool_results, tool_calls_acc, strict=False):
                 yield {
                     "event": "tool_call",
                     "data": {"tool": tc.name, "args": tc.arguments, "call_id": tc.id},
                 }
-
-                try:
-                    result = await registry.execute(tc.name, **tc.arguments)
-                except Exception as e:
-                    result = ToolResult(success=False, error=str(e))
 
                 result_count = 0
                 if result.data:
@@ -178,11 +181,12 @@ async def run_agent_loop(
                 yield {
                     "event": "tool_result",
                     "data": {
-                        "tool": tc.name,
+                        "tool": tool_name,
                         "success": result.success,
                         "result_count": result_count,
                         "reranked": result.data.get("reranked", False) if result.data else False,
                         "error": result.error,
+                        "elapsed_ms": elapsed_ms,
                         "full_data": result.data if result.success else None,
                     },
                 }
@@ -192,7 +196,7 @@ async def run_agent_loop(
                     if result.success
                     else f"Error: {result.error}"
                 )
-                if tc.name == "search_docs" and result.success:
+                if tool_name == "search_docs" and result.success:
                     result_text = (
                         "【以下是你唯一可以使用的回答来源。只能引用这些内容回答用户，"
                         "禁止使用你自己的知识或训练数据中的信息。"
@@ -203,7 +207,7 @@ async def run_agent_loop(
                     role="tool",
                     content=result_text,
                     tool_call_id=tc.id,
-                    tool_name=tc.name,
+                    tool_name=tool_name,
                 ))
 
             # Trim after appending tool results to prevent token accumulation

@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-
 # ── Test: /api/health works without embedding API ──
 
 
@@ -101,7 +100,6 @@ async def test_health_dependencies_detects_missing_api_key():
 async def test_lazy_dimension_detection_on_first_embed():
     """First embed call should detect and cache the dimension."""
     from config import settings
-
     from embedding.factory import create_embedding, reset_embedding
     reset_embedding()
 

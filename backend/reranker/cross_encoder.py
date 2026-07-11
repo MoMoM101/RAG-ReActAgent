@@ -1,12 +1,19 @@
+"""Cross-encoder reranker with lazy model loading.
+
+sentence_transformers is imported inside the background loading thread,
+not at module level — the service can start without the dependency.
+"""
+
 import asyncio
+import logging
 import os
 import threading
 import time
 from pathlib import Path
 
-from sentence_transformers import CrossEncoder
-
 from .base import BaseReranker
+
+logger = logging.getLogger(__name__)
 
 
 def _is_model_cached(model_name: str) -> bool:
@@ -20,7 +27,10 @@ def _is_model_cached(model_name: str) -> bool:
     model_dir = cache_dir / f"models--{org}--{name}"
     if not model_dir.is_dir():
         return False
-    return any(any(snap.glob("*.safetensors")) or any(snap.glob("*.bin")) for snap in model_dir.glob("snapshots/*"))
+    return any(
+        any(snap.glob("*.safetensors")) or any(snap.glob("*.bin"))
+        for snap in model_dir.glob("snapshots/*")
+    )
 
 
 class CrossEncoderReranker(BaseReranker):
@@ -35,19 +45,30 @@ class CrossEncoderReranker(BaseReranker):
 
         def _load():
             try:
+                from sentence_transformers import CrossEncoder
+            except ImportError as exc:
+                logger.warning("sentence-transformers not installed, reranker unavailable")
+                self._ready = False
+                from .factory import set_reranker_failed
+                set_reranker_failed(str(exc))
+                return
+
+            try:
                 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
                 if not cached:
-                    print("[Reranker] 正在下载模型，首次需 1-2 分钟...", flush=True)
+                    logger.info("reranker downloading model %s ...", self._model_name)
                 start = time.time()
                 self._model = CrossEncoder(self._model_name)
                 elapsed = time.time() - start
                 self._ready = True
-                print(f"[Reranker] 模型就绪，耗时 {elapsed:.0f}s", flush=True)
+                logger.info("reranker ready model=%s elapsed=%.0fs", self._model_name, elapsed)
+                from .factory import set_reranker_ready
+                set_reranker_ready()
             except Exception as e:
-                print(f"[Reranker] 加载失败: {e}", flush=True)
-                if not cached:
-                    print("[Reranker] 请在 .env 设置 hf_endpoint=https://hf-mirror.com", flush=True)
+                logger.error("reranker load failed: %s", e)
                 self._ready = False
+                from .factory import set_reranker_failed
+                set_reranker_failed(str(e))
 
         threading.Thread(target=_load, daemon=True).start()
 

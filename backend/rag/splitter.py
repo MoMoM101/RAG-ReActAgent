@@ -9,6 +9,7 @@ class Chunk:
     text: str
     chunk_index: int
     page_num: int | None = None
+    section_key: str = ""  # stable section identifier from nearest markdown header
 
 
 def _find_table_boundary(text: str, cut: int) -> int | None:
@@ -57,6 +58,19 @@ def _choose_cut(chunk_text: str) -> int:
     return -1
 
 
+def _section_key_for_position(text: str, pos: int) -> str:
+    """Return the nearest preceding markdown header before byte position *pos*."""
+    headers = list(re.finditer(r"^#{1,6}\s+(.+)$", text, re.MULTILINE))
+    best = ""
+    for h in headers:
+        if h.start() <= pos:
+            key = re.sub(r"[^a-zA-Z0-9一-鿿_-]", "-", h.group(1).strip()).strip("-")
+            best = key[:30].lower()
+        else:
+            break
+    return best
+
+
 def split_text(
     text: str,
     chunk_size: int = 200,
@@ -86,7 +100,8 @@ def split_text(
                 trimmed = len(chunk_tokens) - actual_tokens
                 end = end - trimmed
 
-        chunks.append(Chunk(text=chunk_text.strip(), chunk_index=idx))
+        sk = _section_key_for_position(text, start) if "##" in text else ""
+        chunks.append(Chunk(text=chunk_text.strip(), chunk_index=idx, section_key=sk))
         idx += 1
         start = end - chunk_overlap if end < len(tokens) else end
 

@@ -1,16 +1,52 @@
-import os
+"""Pytest configuration — isolated temp directories for all tests.
 
-# Must set BEFORE any application imports — use test database to avoid destroying production data
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./data/test_rag_agent.db"
-os.environ["QDRANT_PATH"] = "./data/test_qdrant"
-os.environ["UPLOAD_DIR"] = "./data/test_uploads"
+Environment variables are set in pytest_configure (before any application
+imports) so that config.Settings picks up the test values.
+"""
+
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+# --- Early env setup (module level, before any local imports) ---
+# pytest_configure runs even earlier; this is the fallback for IDE runners.
+if "DATABASE_URL" not in os.environ:
+    _root = Path(tempfile.mkdtemp(prefix="rag_agent_tests_"))
+    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_root / 'test.db'}"
+    os.environ["QDRANT_PATH"] = str(_root / "qdrant")
+    os.environ["UPLOAD_DIR"] = str(_root / "uploads")
+    _root.mkdir(parents=True, exist_ok=True)
+    (_root / "qdrant").mkdir(exist_ok=True)
+    (_root / "uploads").mkdir(exist_ok=True)
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import text as sa_text
 
+# Ensure ORM models are registered with Base.metadata BEFORE init_db()
+import models.orm  # noqa: F401
 from llm.base import BaseLLM, LLMResponse
 from models.database import engine, init_db
+
+
+def pytest_configure(config):
+    """Set test environment variables before any application imports."""
+    root = Path(tempfile.mkdtemp(prefix="rag_agent_tests_"))
+    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{root / 'test.db'}"
+    os.environ["QDRANT_PATH"] = str(root / "qdrant")
+    os.environ["UPLOAD_DIR"] = str(root / "uploads")
+    (root / "qdrant").mkdir(parents=True, exist_ok=True)
+    (root / "uploads").mkdir(parents=True, exist_ok=True)
+    # Store for cleanup
+    config._rag_test_root = root
+
+
+def pytest_unconfigure(config):
+    """Clean up temporary test directories."""
+    root = getattr(config, "_rag_test_root", None)
+    if root and root.exists():
+        shutil.rmtree(root, ignore_errors=True)
 
 
 class FakeLLM(BaseLLM):

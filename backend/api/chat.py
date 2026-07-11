@@ -166,13 +166,15 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
             raise HTTPException(404, "Conversation not found")
         conv_id = conv.id
         # 打开旧会话：增量提取未处理的消息
-        from agent.session_extract import extract_session_memories
         from worker.tasks import get_task_manager
+
+        from agent.session_extract import extract_session_memories
         get_task_manager().create(extract_session_memories(conv_id), "extract_memories", metadata={"conv_id": conv_id})
     else:
         # 新会话：对上一段会话做记忆提取
-        from agent.session_extract import extract_session_memories
         from worker.tasks import get_task_manager
+
+        from agent.session_extract import extract_session_memories
         prev = await db.execute(
             select(Conversation.id).order_by(Conversation.updated_at.desc()).limit(1)
         )

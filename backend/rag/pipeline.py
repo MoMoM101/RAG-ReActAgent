@@ -21,6 +21,13 @@ logger = logging.getLogger(__name__)
 _ingestion_semaphore = None
 
 
+def _document_key(doc_id: str, filename: str) -> str:
+    """Derive a stable document_key from filename (same algorithm as qrels_schema)."""
+    import re
+    base = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return re.sub(r"[^a-zA-Z0-9-]", "-", base).strip("-").lower() or doc_id[:8]
+
+
 def _get_semaphore() -> "asyncio.Semaphore":
     import asyncio
     global _ingestion_semaphore
@@ -201,6 +208,7 @@ async def _process_document(doc_id: str, file_path: str, file_type: str):
         await fts.delete_by_document(doc_id)
 
         points = []
+        doc_key = _document_key(doc_id, doc.filename)
         for chunk, vector in zip(chunks, vectors, strict=False):
             chunk_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{doc_id}:{chunk.chunk_index}"))
             points.append({
@@ -208,8 +216,10 @@ async def _process_document(doc_id: str, file_path: str, file_type: str):
                 "vector": vector,
                 "payload": {
                     "document_id": doc_id,
+                    "document_key": doc_key,
                     "chunk_index": chunk.chunk_index,
                     "text": chunk.text,
+                    "section_key": chunk.section_key,
                 },
             })
 

@@ -8,6 +8,8 @@ class TextSearchResult:
     document_id: str
     text: str
     score: float  # BM25 score
+    document_key: str = ""
+    section_key: str = ""
 
 
 class BaseTextDB(ABC):

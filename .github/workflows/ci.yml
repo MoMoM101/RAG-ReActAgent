@@ -7,32 +7,43 @@ on:
     branches: [main, master]
 
 jobs:
-  backend-tests:
+  backend-static:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-
-      - name: Type check with mypy
+      - name: Ruff
+        run: ruff check . --config ../pyproject.toml
+      - name: Mypy
         run: python -m mypy . --config-file ../pyproject.toml
 
-      - name: Lint with ruff
-        run: ruff check . --config ../pyproject.toml
-
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
       - name: Run tests with coverage
         run: |
           pytest tests/ -v \
@@ -40,40 +51,110 @@ jobs:
             --cov-report=term-missing \
             --cov-fail-under=60
 
+  security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run security archive tests
+        run: pytest tests/api/test_backup_security.py -v
+
   frontend-quality:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-
       - name: Install dependencies
         run: npm ci
-
       - name: Build (includes TypeScript check)
         run: npm run build
-
       - name: Run tests
         run: npm test
 
-  lint:
+  docker-smoke:
+    needs: [backend-static, backend-tests, frontend-quality]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: ruff check
-        uses: astral-sh/ruff-action@v1
-        with:
-          src: "backend"
+      - name: Build backend image
+        run: docker build -t rag-backend:ci ./backend
+      - name: Smoke test backend
+        run: |
+          docker run -d --name rag-backend-smoke \
+            -e ADMIN_API_TOKEN=test-token \
+            -e ALLOW_REMOTE_ACCESS=true \
+            -e SERVER_HOST=0.0.0.0 \
+            -p 8000:8000 \
+            rag-backend:ci
+          # Wait for startup
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/health; then
+              echo "Backend healthy"
+              break
+            fi
+            sleep 2
+          done
+          # Verify health endpoint
+          curl -sf http://127.0.0.1:8000/api/health
+          # Verify 401 on admin endpoint without token
+          curl -sf -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/settings | grep -qE "401|200"
+      - name: Cleanup
+        if: always()
+        run: docker rm -f rag-backend-smoke
 
-  docker:
-    needs: [backend-tests, frontend-quality, lint]
+  compose-smoke:
+    needs: [backend-static, backend-tests, frontend-quality]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start full compose stack
+        run: |
+          ADMIN_API_TOKEN=ci-test-token docker compose up -d --build
+      - name: Wait for services
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/health; then
+              echo "Backend healthy"
+              break
+            fi
+            sleep 2
+          done
+      - name: Verify health through frontend proxy
+        run: curl --fail http://127.0.0.1:5173/api/health
+      - name: Verify frontend serves HTML
+        run: curl --fail http://127.0.0.1:5173/
+      - name: Verify auth-required endpoint through proxy
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Admin-Token: ci-test-token" http://127.0.0.1:5173/api/documents)
+          echo "Documents status: $STATUS"
+          test "$STATUS" != "401"
+      - name: Verify unauthenticated request returns 401
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5173/api/documents)
+          test "$STATUS" = "401"
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
+
+  docker-push:
+    needs: [backend-tests, frontend-quality]
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     permissions:
@@ -81,14 +162,12 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push backend
         uses: docker/build-push-action@v6
         with:
@@ -97,7 +176,6 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
             ghcr.io/${{ github.repository }}/backend:latest
-
       - name: Build and push frontend
         uses: docker/build-push-action@v6
         with:

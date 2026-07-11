@@ -405,7 +405,12 @@ def compute_metrics(
     ground_truth_texts: list[str],  # 标注相关的文本列表
     k_values: tuple[int, ...] = (3, 5, 10),
 ) -> dict:
-    """计算所有标准 IR 评测指标"""
+    """[LEGACY] 计算标准 IR 评测指标 — 使用 Jaccard 文本匹配。
+
+    已废弃：此函数使用字面 Jaccard 相似度判定相关性，可能导致 Recall > 100%。
+    新代码请使用 ``eval_metrics.compute_metrics_v2()``，基于稳定 document_key/section_key。
+    该函数仅保留用于历史结果复现，不作为正式报告入口。
+    """
     # 相关性判定：用 Jaccard 相似度（word-level）检测检索文本是否命中标注
     def is_relevant(text: str, gt_texts: list[str]) -> bool:
         if not text.strip():

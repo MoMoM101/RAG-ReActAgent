@@ -2,7 +2,6 @@
 import asyncio
 
 import pytest
-
 from worker.tasks import BackgroundTaskManager, get_task_manager, reset_task_manager
 
 
