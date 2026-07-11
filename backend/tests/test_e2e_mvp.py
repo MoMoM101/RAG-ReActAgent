@@ -21,7 +21,7 @@ async def test_health():
 
 
 @pytest.mark.asyncio
-async def test_list_documents_empty(admin_headers):
+async def test_list_documents_empty(admin_headers, enable_admin_token):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/documents", headers=admin_headers)
@@ -30,7 +30,7 @@ async def test_list_documents_empty(admin_headers):
 
 
 @pytest.mark.asyncio
-async def test_create_and_delete_conversation(admin_headers):
+async def test_create_and_delete_conversation(admin_headers, enable_admin_token):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/api/conversations", json={"title": "E2E Test"}, headers=admin_headers)
@@ -84,7 +84,7 @@ async def test_upload_duplicate(admin_headers):
 
 
 @pytest.mark.asyncio
-async def test_invalid_file_type(admin_headers):
+async def test_invalid_file_type(admin_headers, enable_admin_token):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(

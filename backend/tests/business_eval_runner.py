@@ -104,7 +104,7 @@ if __name__ == "__main__":
 
     try:
         results = asyncio.run(evaluate_rag.run_evaluation())
-        output_path = evaluate_rag.save_results(results, "evaluation_results_business.json")
+        output_path = evaluate_rag.save_results(results, "evaluation_results_business_v2.json")
         print(f"\nResults saved to: {output_path}")
     finally:
         asyncio.run(evaluate_rag.cleanup())

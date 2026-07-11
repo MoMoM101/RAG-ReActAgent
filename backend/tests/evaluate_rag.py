@@ -493,7 +493,7 @@ def _classify_query(qc: QueryCase) -> str:
     return "natural-question"
 
 
-def save_results(results: dict, filepath: str = "evaluation_results.json") -> str:
+def save_results(results: dict, filepath: str = "evaluation_results_v2.json") -> str:
     """Persist evaluation results as JSON for cross-run comparison."""
     from datetime import datetime
 
@@ -511,7 +511,9 @@ def save_results(results: dict, filepath: str = "evaluation_results.json") -> st
         })
 
     payload = {
+        "metric_version": "qrels-v2",
         "metrics_version": 2,
+        "qrels_version": "2.0",
         "timestamp": datetime.now().isoformat(),
         "git_commit": _git_commit(),
         "config": {
@@ -564,9 +566,58 @@ def save_results(results: dict, filepath: str = "evaluation_results.json") -> st
             }
 
     outpath = Path(__file__).resolve().parent / filepath
+
+    # ── Gate: validate all ratio metrics are in [0, 1] ──
+    _validate_output_metrics(payload)
+
     with open(outpath, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
     return str(outpath)
+
+
+def _validate_output_metrics(payload: dict) -> None:
+    """Gate: assert all ratio metrics in [0,1] and monotonic where expected."""
+    from eval_metrics import validate_metrics_range
+
+    ratio_containers = []
+    if payload.get("aggregate_no_rerank"):
+        ratio_containers.append(("aggregate_no_rerank", payload["aggregate_no_rerank"]))
+    if payload.get("aggregate_rerank"):
+        ratio_containers.append(("aggregate_rerank", payload["aggregate_rerank"]))
+    if payload.get("ablation"):
+        for key, val in payload["ablation"].items():
+            ratio_containers.append((f"ablation.{key}", _ablation_to_metrics(val)))
+
+    violations = []
+    for label, container in ratio_containers:
+        for v in validate_metrics_range(container):
+            violations.append(f"{label}: {v}")
+
+    # Monotonicity: Recall@K and Hit@K must not decrease as K increases
+    for label, container in ratio_containers:
+        for metric_name in ("recall", "hit"):
+            sorted_ks = sorted(container.get(metric_name, {}).keys())
+            for i in range(1, len(sorted_ks)):
+                prev_k, cur_k = sorted_ks[i - 1], sorted_ks[i]
+                if container[metric_name][cur_k] < container[metric_name][prev_k] - 1e-9:
+                    violations.append(
+                        f"{label}: {metric_name}@{cur_k} < {metric_name}@{prev_k} (not monotonic)"
+                    )
+
+    if violations:
+        msg = "Eval metrics gate FAILED:\n" + "\n".join(f"  - {v}" for v in violations)
+        raise SystemExit(msg)
+
+
+def _ablation_to_metrics(data: dict) -> dict:
+    """Convert ablation summary dict to metrics-shaped dict for validation."""
+    return {
+        "precision": {5: data.get("precision_k5", 0)},
+        "recall": {},
+        "ndcg": {5: data.get("ndcg_k5", 0)},
+        "hit": {5: data.get("hit_k5", 0)},
+        "mrr": data.get("mrr", 0),
+    }
 
 
 # ── 辅助函数 ────────────────────────────────────────────────────
@@ -962,7 +1013,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RAG Retrieval Evaluation")
     parser.add_argument("--compare", type=str, default=None,
                         help="Path to previous evaluation JSON for comparison")
-    parser.add_argument("--output", type=str, default="evaluation_results.json",
+    parser.add_argument("--output", type=str, default="evaluation_results_v2.json",
                         help="Output JSON file path")
     args = parser.parse_args()
 

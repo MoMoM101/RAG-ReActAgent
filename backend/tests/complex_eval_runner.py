@@ -162,6 +162,6 @@ if __name__ == "__main__":
 
     try:
         results = asyncio.run(evaluate_rag.run_evaluation())
-        save_results(results, "evaluation_results_complex.json")
+        save_results(results, "evaluation_results_complex_v2.json")
     finally:
         asyncio.run(evaluate_rag.cleanup())

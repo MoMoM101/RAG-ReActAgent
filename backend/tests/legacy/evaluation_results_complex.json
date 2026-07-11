@@ -318,5 +318,7 @@
       "ndcg_k5": 0.955245080913812,
       "avg_latency_ms": 664.1034482758621
     }
-  }
+  },
+  "metric_version": "legacy",
+  "legacy_note": "Generated with deprecated compute_metrics() using Jaccard text matching. Recall values may exceed 1.0."
 }
