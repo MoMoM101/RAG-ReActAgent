@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import { useToastStore } from "../../stores/toastStore";
-import { useConfirm } from "../shared/ConfirmDialog";
+import { useConfirm } from "../shared/useConfirm";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ChatIcon, DocIcon, SettingsIcon, BrainIcon, PlusIcon, TrashIcon } from "../shared/Icons";
 

@@ -1,13 +1,6 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { useState, useCallback, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-
-interface ConfirmOptions {
-  title: string;
-  message: string;
-  variant?: "default" | "danger";
-  confirmLabel?: string;
-  cancelLabel?: string;
-}
+import { ConfirmCtx, type ConfirmOptions } from "./useConfirm";
 
 interface ConfirmState extends ConfirmOptions {
   id: number;
@@ -15,10 +8,6 @@ interface ConfirmState extends ConfirmOptions {
 }
 
 let nextId = 0;
-
-const ConfirmCtx = createContext<(opts: ConfirmOptions) => Promise<boolean>>(
-  () => Promise.resolve(false),
-);
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<ConfirmState[]>([]);
@@ -71,6 +60,3 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useConfirm() {
-  return useContext(ConfirmCtx);
-}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { listMemories, updateMemory, deleteMemory, clearAllMemories, type MemoryEntry } from "../../api/memories";
-import { useConfirm } from "../shared/ConfirmDialog";
+import { useConfirm } from "../shared/useConfirm";
 import { useToastStore } from "../../stores/toastStore";
 import { TrashIcon, EditIcon } from "../shared/Icons";
 import { Skeleton } from "../shared/Skeleton";

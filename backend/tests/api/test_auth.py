@@ -68,6 +68,15 @@ class TestProtectedRoutesNoToken:
             r = await client.post("/api/chat", json={"message": "hello"})
             assert r.status_code == 401
 
+    async def test_upload_no_token(self, require_token):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/documents/upload",
+                files={"file": ("test.txt", b"content", "text/plain")},
+            )
+            assert r.status_code == 401
+
     async def test_settings_no_token(self, require_token):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -106,6 +115,16 @@ class TestWrongToken:
             )
             assert r.status_code == 401
 
+    async def test_wrong_token_upload(self, require_token):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/documents/upload",
+                files={"file": ("test.txt", b"content", "text/plain")},
+                headers={"X-Admin-Token": "wrong-token"},
+            )
+            assert r.status_code == 401
+
 
 class TestCorrectToken:
     """Correct token allows normal business status codes."""
@@ -128,6 +147,36 @@ class TestCorrectToken:
             r = await client.get("/api/metrics", headers={"X-Admin-Token": TEST_TOKEN})
             assert r.status_code == 200
 
+    async def test_upload_with_token(self, require_token):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            with open("tests/fixtures/sample.txt", "rb") as f:
+                r = await client.post(
+                    "/api/documents/upload",
+                    files={"file": ("sample.txt", f, "text/plain")},
+                    headers={"X-Admin-Token": TEST_TOKEN},
+                )
+            assert r.status_code == 200
+
+    async def test_chat_sse_with_token(self, require_token, make_fake_llm):
+        from llm.base import LLMResponse
+        # Agent loop uses two LLM calls: initial + final answer
+        make_fake_llm([
+            [LLMResponse(content="Hello!", tool_calls=None)],
+            [LLMResponse(content="Hello!")],
+        ])
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with client.stream(
+                "POST",
+                "/api/chat",
+                json={"message": "hello"},
+                headers={"X-Admin-Token": TEST_TOKEN},
+            ) as r:
+                assert r.status_code == 200
+                body = await r.aread()
+                assert b"Hello!" in body
+
 
 class TestNoTokenBackwardCompat:
     """When admin token is empty, all routes are public (backwards-compatible)."""
@@ -144,4 +193,13 @@ class TestNoTokenBackwardCompat:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             r = await client.post("/api/chat", json={"message": "hello"})
+            assert r.status_code == 200
+
+    async def test_upload_public_when_empty(self, no_token):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/documents/upload",
+                files={"file": ("compat_test_unique.txt", b"unique compat test content", "text/plain")},
+            )
             assert r.status_code == 200

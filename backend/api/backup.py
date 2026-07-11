@@ -357,6 +357,9 @@ async def restore_backup(file: UploadFile):
     # Snapshot current Qdrant collection for rollback
     old_collection = settings.qdrant_active_collection or settings.qdrant_collection
     temp_collection = f"rag_chunks_restore_{uuid.uuid4().hex[:12]}"
+    # Resolve live paths early so rollback can always reference them
+    db_path = _sqlite_db_path()
+    target_upload = _resolve_path(settings.upload_dir)
 
     try:
         # ---- Phase 1: Verify ----
@@ -387,12 +390,17 @@ async def restore_backup(file: UploadFile):
         if not db_file.exists():
             raise HTTPException(400, "备份文件不完整：缺少 rag_agent.db")
 
-        conn = sqlite3.connect(str(db_file))
+        try:
+            conn = sqlite3.connect(str(db_file))
+        except sqlite3.Error as e:
+            raise HTTPException(400, f"备份数据库无法打开: {e}") from e
         try:
             cur = conn.execute("PRAGMA integrity_check")
             result = cur.fetchone()
             if result and result[0] != "ok":
                 raise HTTPException(400, f"备份数据库完整性检查失败: {result[0]}")
+        except sqlite3.Error as e:
+            raise HTTPException(400, f"备份数据库完整性检查失败: {e}") from e
         finally:
             conn.close()
 
@@ -410,8 +418,6 @@ async def restore_backup(file: UploadFile):
 
         # ---- Phase 2: Stage current data for rollback ----
         mstate.update(MaintenancePhase.STAGING, 15, "保护当前数据用于回滚")
-        db_path = _sqlite_db_path()
-        target_upload = _resolve_path(settings.upload_dir)
 
         if db_path.exists():
             shutil.copy2(db_path, rollback_dir / "rag_agent.db")

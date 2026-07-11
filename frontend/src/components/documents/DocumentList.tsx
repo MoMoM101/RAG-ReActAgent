@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useDocumentStore } from "../../stores/documentStore";
 import { UploadZone } from "./UploadZone";
 import { ChunkViewer } from "./ChunkViewer";
-import { useConfirm } from "../shared/ConfirmDialog";
+import { useConfirm } from "../shared/useConfirm";
 import { useToastStore } from "../../stores/toastStore";
 import { TrashIcon, RefreshIcon } from "../shared/Icons";
 import { Skeleton } from "../shared/Skeleton";

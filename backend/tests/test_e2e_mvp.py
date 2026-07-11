@@ -21,40 +21,41 @@ async def test_health():
 
 
 @pytest.mark.asyncio
-async def test_list_documents_empty():
+async def test_list_documents_empty(admin_headers):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/api/documents")
+        response = await client.get("/api/documents", headers=admin_headers)
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
 
 @pytest.mark.asyncio
-async def test_create_and_delete_conversation():
+async def test_create_and_delete_conversation(admin_headers):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/api/conversations", json={"title": "E2E Test"})
+        response = await client.post("/api/conversations", json={"title": "E2E Test"}, headers=admin_headers)
         assert response.status_code == 200
         conv_id = response.json()["id"]
 
-        response = await client.get("/api/conversations")
+        response = await client.get("/api/conversations", headers=admin_headers)
         assert response.status_code == 200
         convs = response.json()
         assert any(c["id"] == conv_id for c in convs)
 
-        response = await client.delete(f"/api/conversations/{conv_id}")
+        response = await client.delete(f"/api/conversations/{conv_id}", headers=admin_headers)
         assert response.status_code == 200
 
 
 @pytest.mark.asyncio
 @needs_embedding
-async def test_upload_document():
+async def test_upload_document(admin_headers):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         with open("tests/fixtures/sample.txt", "rb") as f:
             response = await client.post(
                 "/api/documents/upload",
                 files={"file": ("sample.txt", f, "text/plain")},
+                headers=admin_headers,
             )
         assert response.status_code == 200
         doc = response.json()
@@ -64,28 +65,31 @@ async def test_upload_document():
 
 @pytest.mark.asyncio
 @needs_embedding
-async def test_upload_duplicate():
+async def test_upload_duplicate(admin_headers):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         with open("tests/fixtures/sample.txt", "rb") as f:
             await client.post(
                 "/api/documents/upload",
                 files={"file": ("sample.txt", f, "text/plain")},
+                headers=admin_headers,
             )
         with open("tests/fixtures/sample.txt", "rb") as f:
             response = await client.post(
                 "/api/documents/upload",
                 files={"file": ("sample_dup.txt", f, "text/plain")},
+                headers=admin_headers,
             )
         assert response.status_code == 409
 
 
 @pytest.mark.asyncio
-async def test_invalid_file_type():
+async def test_invalid_file_type(admin_headers):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/documents/upload",
             files={"file": ("test.exe", b"malware", "application/octet-stream")},
+            headers=admin_headers,
         )
         assert response.status_code == 400

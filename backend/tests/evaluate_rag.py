@@ -1,4 +1,4 @@
-"""RAG 检索精准度评测脚本
+"""RAG 检索精准度评测脚本 (Qrels v2)
 
 评测维度：
 - Precision@k / Recall@k: 精确率与召回率
@@ -7,6 +7,9 @@
 - Hit Rate@k: 前k个结果中至少命中1个的比例
 - Semantic vs Keyword 贡献分析
 - 重排序影响分析
+
+指标计算使用 eval_metrics.compute_metrics_v2()（基于稳定 document_key/section_key）。
+旧版 compute_metrics() 仅供历史结果读取，禁止生成新基线。
 """
 
 import io
@@ -28,6 +31,12 @@ from enum import Enum
 from typing import Any
 
 from config import settings
+from eval_metrics import (
+    QrelItem,
+    RetrievedItem,
+    aggregate_metrics as aggregate_metrics_v2,
+    compute_metrics_v2,
+)
 
 
 class AblationStrategy(Enum):
@@ -411,6 +420,14 @@ def compute_metrics(
     新代码请使用 ``eval_metrics.compute_metrics_v2()``，基于稳定 document_key/section_key。
     该函数仅保留用于历史结果复现，不作为正式报告入口。
     """
+    import warnings
+    warnings.warn(
+        "compute_metrics() is deprecated. Use eval_metrics.compute_metrics_v2() "
+        "for stable document_key/section_key matching. "
+        "This legacy function will not generate new baselines.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # 相关性判定：用 Jaccard 相似度（word-level）检测检索文本是否命中标注
     def is_relevant(text: str, gt_texts: list[str]) -> bool:
         if not text.strip():
@@ -498,13 +515,23 @@ def save_results(results: dict, filepath: str = "evaluation_results.json") -> st
         })
 
     payload = {
+        "metrics_version": 2,
         "timestamp": datetime.now().isoformat(),
+        "git_commit": _git_commit(),
         "config": {
             "embedding_provider": settings.embedding_provider,
             "embedding_model": settings.embedding_model,
+            "embedding_dim": settings.embedding_dim,
             "chunk_size": settings.chunk_size,
             "chunk_overlap": settings.chunk_overlap,
             "rerank_enabled": settings.rerank_enabled,
+            "rerank_model": settings.rerank_model,
+            "ocr_enabled": settings.ocr_enabled,
+            "retrieval_top_k": settings.retrieval_top_k,
+            "rerank_top_n": settings.rerank_top_n,
+            "rrf_k": settings.rrf_k,
+            "rrf_semantic_weight": settings.rrf_semantic_weight,
+            "rrf_keyword_weight": settings.rrf_keyword_weight,
         },
         "num_queries": len(results.get("query_cases", [])),
         "aggregate_no_rerank": {
@@ -544,6 +571,29 @@ def save_results(results: dict, filepath: str = "evaluation_results.json") -> st
     with open(outpath, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
     return str(outpath)
+
+
+# ── 辅助函数 ────────────────────────────────────────────────────
+
+
+def _stable_doc_key(filename: str) -> str:
+    """Derive a stable document_key from filename (matches rag.pipeline)."""
+    import re
+    base = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return re.sub(r"[^a-zA-Z0-9-]", "-", base).strip("-").lower()
+
+
+def _git_commit() -> str:
+    """Return current git commit hash (short) or 'unknown'."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() if result.returncode == 0 else "unknown"
+    except Exception:
+        return "unknown"
 
 
 # ── 单策略执行 ──────────────────────────────────────────────────
@@ -709,17 +759,46 @@ async def run_evaluation():
         for s in strategies
     }
 
+    # Build qrels (v2 structured) from ground truth annotations
+    qrels_per_query: list[list[QrelItem]] = []
+    for q_idx, qc in enumerate(QUERY_CASES):
+        qrels: list[QrelItem] = []
+        sources = qc.cross_doc_targets if qc.cross_doc_targets else {qc.doc_index: qc.relevant_chunk_indices}
+        for doc_idx, chunk_indices in sources.items():
+            if doc_idx >= len(TEST_DOCS):
+                continue
+            doc_def = TEST_DOCS[doc_idx]
+            doc_key = _stable_doc_key(doc_def.filename)
+            for chunk_idx in chunk_indices:
+                section_key = f"chunk_{chunk_idx}"
+                qrels.append(QrelItem(
+                    document_key=doc_key,
+                    section_key=section_key,
+                    grade=2,  # default relevance grade
+                ))
+        qrels_per_query.append(qrels)
+
     for j, qc in enumerate(QUERY_CASES):
         gt = ground_truth_texts[j]
+        qrels = qrels_per_query[j]
 
         for strategy in strategies:
             results, lat = await run_single_strategy(strategy, qc.query, top_k=10)
             strategy_results[strategy]["results"].append(results)
             strategy_results[strategy]["latencies"].append(lat)
 
-            retrieved_texts = [r.text for r in results]
-            metrics = compute_metrics(retrieved_texts, gt, k_values)
-            strategy_results[strategy]["metrics"].append(metrics)
+            # v2 metrics (primary) using stable document_key/section_key matching
+            retrieved_items = [
+                RetrievedItem(
+                    document_key=r.document_key,
+                    section_key=r.section_key,
+                    score=r.score,
+                    chunk_id=r.chunk_id,
+                )
+                for r in results
+            ]
+            metrics_v2 = compute_metrics_v2(retrieved_items, qrels, tuple(k_values))
+            strategy_results[strategy]["metrics"].append(metrics_v2)
 
         mrr = strategy_results[AblationStrategy.HYBRID_NO_RERANK]["metrics"][-1]["mrr"]
         print(f"   [{j+1:2d}/{len(QUERY_CASES)}] \"{qc.query[:40]}\" → MRR={mrr:.2f}")

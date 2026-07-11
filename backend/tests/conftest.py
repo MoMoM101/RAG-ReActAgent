@@ -66,6 +66,49 @@ class FakeLLM(BaseLLM):
             yield resp
 
 
+TEST_ADMIN_TOKEN = "evaluation-admin-token"
+
+
+@pytest.fixture
+def admin_headers() -> dict[str, str]:
+    """Return headers with the test admin token for protected routes."""
+    return {"X-Admin-Token": TEST_ADMIN_TOKEN}
+
+
+@pytest.fixture
+def enable_admin_token(monkeypatch):
+    """Enable admin token auth for the test, so require_admin enforces it."""
+    from config import settings
+    monkeypatch.setattr(settings, "admin_api_token", TEST_ADMIN_TOKEN)
+
+
+@pytest.fixture
+def mock_embedding(monkeypatch):
+    """Replace embedding factory with a mock that returns random 1536-dim vectors.
+
+    Avoids real API calls for restore/fault injection tests.
+    The 1536 dimension matches the default embedding_dim config so that
+    any Qdrant collections created during mocked tests are compatible
+    with subsequent real-embedding tests.
+    """
+    import random as _random
+    from unittest.mock import AsyncMock
+
+    mock = AsyncMock()
+
+    def _random_vec():
+        return [_random.uniform(-1, 1) for _ in range(1536)]
+
+    mock.embed = AsyncMock(return_value=[_random_vec() for _ in range(100)])
+    mock.embed_query = AsyncMock(return_value=_random_vec())
+
+    import embedding.factory
+    original = embedding.factory.create_embedding
+    embedding.factory.create_embedding = lambda: mock
+    yield mock
+    embedding.factory.create_embedding = original
+
+
 @pytest.fixture
 def make_fake_llm():
     """创建 FakeLLM 并注入到 llm.factory。auto-use setup_db 已调用 reset_llm。"""
