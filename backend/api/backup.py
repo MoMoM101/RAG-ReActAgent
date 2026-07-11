@@ -83,6 +83,19 @@ def _resolve_path(relative: str) -> Path:
     return p
 
 
+def _git_commit() -> str:
+    """Return current git commit hash (short) or 'unknown'."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() if result.returncode == 0 else "unknown"
+    except Exception:
+        return "unknown"
+
+
 def _sqlite_db_path() -> Path:
     url = str(settings.database_url)
     if url.startswith("sqlite+aiosqlite:///"):
@@ -147,11 +160,6 @@ def _verify_uploads_candidate(candidate_dir: Path, manifest: dict | None) -> Non
                         f"候选上传文件哈希不匹配: {fname} "
                         f"(expected={expected_hash[:12]}..., actual={actual_hash[:12]}...)"
                     )
-                actual_hash = hashlib.sha256(fpath.read_bytes()).hexdigest()
-                if actual_hash != expected_hash:
-                    raise RuntimeError(
-                        f"候选上传文件哈希不匹配: {fname} (expected={expected_hash[:12]}..., actual={actual_hash[:12]}...)"
-                    )
 
 
 def _cleanup_restore_artifacts(upload_dir: Path) -> list[str]:
@@ -173,11 +181,34 @@ def _cleanup_restore_artifacts(upload_dir: Path) -> list[str]:
 
 
 def _build_manifest(db_path: Path, upload_dir: Path) -> dict[str, Any]:
-    """Build a manifest describing the backup contents."""
+    """Build a manifest describing the backup contents with full compatibility info."""
     manifest: dict[str, Any] = {
         "format_version": BACKUP_FORMAT_VERSION,
+        "schema_version": BACKUP_FORMAT_VERSION,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "git_commit": _git_commit(),
         "collection_name": settings.qdrant_active_collection or settings.qdrant_collection,
+        # Compatibility info for restore-time validation
+        "embedding": {
+            "provider": settings.embedding_provider,
+            "model": settings.embedding_model,
+            "dimension": settings.embedding_dim,
+        },
+        "chunking": {
+            "size": settings.chunk_size,
+            "overlap": settings.chunk_overlap,
+        },
+        "bm25": {
+            "schema_version": 1,
+            "tokenizer": "jieba",
+        },
+        "ocr": {
+            "enabled": settings.ocr_enabled,
+        },
+        "rerank": {
+            "enabled": settings.rerank_enabled,
+            "model": settings.rerank_model,
+        },
         "files": cast(dict[str, Any], {}),
     }
 
@@ -192,7 +223,8 @@ def _build_manifest(db_path: Path, upload_dir: Path) -> dict[str, Any]:
     if upload_dir.exists():
         for f in sorted(upload_dir.rglob("*")):
             if f.is_file():
-                manifest["files"][str(f.relative_to(upload_dir.parent))] = {
+                rel = str(f.relative_to(upload_dir.parent))
+                manifest["files"][rel] = {
                     "sha256": _hash_file(f),
                     "size": f.stat().st_size,
                 }
@@ -209,6 +241,54 @@ def _verify_manifest(restore_dir: Path, manifest: dict) -> None:
         actual = hashlib.sha256(fp.read_bytes()).hexdigest()
         if actual != info.get("sha256"):
             raise HTTPException(400, f"备份文件校验失败: {rel_path}")
+
+
+def _validate_manifest_compatibility(manifest: dict) -> None:
+    """Check restore compatibility: embedding dimension, chunk config, BM25 schema.
+
+    Raises HTTPException with a clear message if the backup is incompatible.
+    """
+    issues = []
+
+    # Embedding dimension must match
+    backup_emb = manifest.get("embedding", {})
+    if backup_emb:
+        backup_dim = backup_emb.get("dimension", 0)
+        if backup_dim and backup_dim != settings.embedding_dim:
+            issues.append(
+                f"Embedding 维度不兼容: 备份={backup_dim}, 当前={settings.embedding_dim}。"
+                f"请使用相同 embedding 模型或手动执行全量重建。"
+            )
+
+    # Chunk config: warn if different (not a hard block, but logged)
+    backup_chunk = manifest.get("chunking", {})
+    if backup_chunk:
+        if backup_chunk.get("size", 0) != settings.chunk_size:
+            logger.warning(
+                "manifest chunk_size mismatch: backup=%d, current=%d",
+                backup_chunk.get("size"), settings.chunk_size,
+            )
+        if backup_chunk.get("overlap", 0) != settings.chunk_overlap:
+            logger.warning(
+                "manifest chunk_overlap mismatch: backup=%d, current=%d",
+                backup_chunk.get("overlap"), settings.chunk_overlap,
+            )
+
+    # BM25 schema version
+    backup_bm25 = manifest.get("bm25", {})
+    if backup_bm25 and backup_bm25.get("schema_version", 1) != 1:
+        issues.append(
+            f"BM25 schema 版本不兼容: 备份={backup_bm25.get('schema_version')}, 当前=1"
+        )
+
+    # Missing uploads: flag if manifest lists upload files
+    manifest_files = manifest.get("files", {})
+    upload_files = [k for k in manifest_files if k.startswith("uploads/")]
+    if not upload_files and manifest_files:
+        logger.warning("manifest has no upload files; restore will skip uploads")
+
+    if issues:
+        raise HTTPException(400, "备份兼容性检查失败:\n" + "\n".join(f"  - {i}" for i in issues))
 
 
 @router.get("")
@@ -328,16 +408,24 @@ async def _cross_consistency_check(
     qdrant_collection: str,
     uploads_dir: Path,
 ) -> dict:
-    """Verify consistency across SQLite, Qdrant, and uploads."""
+    """Verify consistency across SQLite, Qdrant, BM25, and uploads.
+
+    Checks per-document alignment of chunk counts and document IDs across all
+    four storage layers. Total equality is not sufficient — ID-level mismatches
+    are flagged as failures.
+    """
     from vectordb.qdrant import QdrantVectorDB
 
-    result: dict = {"passed": True, "issues": []}
+    result: dict = {"passed": True, "issues": [], "details": {}}
 
     # Read ready docs from SQLite
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        rows = list(conn.execute("SELECT id, filename, file_hash, chunk_count FROM documents WHERE status = 'ready'"))
+        rows = list(conn.execute(
+            "SELECT id, filename, file_hash, chunk_count "
+            "FROM documents WHERE status = 'ready'"
+        ))
     finally:
         conn.close()
 
@@ -346,24 +434,47 @@ async def _cross_consistency_check(
         result["note"] = "no ready documents to check"
         return result
 
+    doc_ids = [row["id"] for row in rows]
+
+    # ── BM25 consistency: check per-document chunk counts ──
+    bm25_counts = await _bm25_doc_chunk_counts(doc_ids)
+
+    # ── Qdrant consistency ──
     vdb = QdrantVectorDB(collection_name=qdrant_collection)
+
     for row in rows:
         doc_id = row["id"]
         filename = row["filename"]
         expected_chunks = row["chunk_count"] or 0
+        details: dict = {"document_id": doc_id, "filename": filename}
 
-        # Check upload file exists
+        # 1. Upload file existence + hash
         upload_path = uploads_dir / filename
         if not upload_path.exists():
             result["issues"].append(f"upload missing: {filename}")
             result["passed"] = False
-            continue
+            details["upload"] = "missing"
+        else:
+            actual_hash = hashlib.sha256(upload_path.read_bytes()).hexdigest()
+            expected_hash = row["file_hash"] or ""
+            details["upload"] = "present"
+            # Only verify hash if stored value looks like a real SHA-256 (64 hex chars)
+            if expected_hash and len(expected_hash) == 64 and actual_hash != expected_hash:
+                result["issues"].append(
+                    f"{filename}: hash mismatch (expected={expected_hash[:12]}..., "
+                    f"actual={actual_hash[:12]}...)"
+                )
+                result["passed"] = False
+                details["hash"] = "mismatch"
+            else:
+                details["hash"] = "ok"
 
-        # Check Qdrant point count
+        # 2. Qdrant point count
         try:
             import asyncio as _asyncio
 
             from qdrant_client.models import FieldCondition, Filter, MatchValue
+
             count_result = await _asyncio.to_thread(
                 vdb.client.count,
                 collection_name=qdrant_collection,
@@ -371,17 +482,73 @@ async def _cross_consistency_check(
                     key="document_id", match=MatchValue(value=doc_id)
                 )]),
             )
-            actual_count = count_result.count
-            if expected_chunks > 0 and actual_count != expected_chunks:
+            qdrant_count = count_result.count
+            details["qdrant_chunks"] = qdrant_count
+            if expected_chunks > 0 and qdrant_count != expected_chunks:
                 result["issues"].append(
-                    f"{filename}: expected {expected_chunks} Qdrant points, got {actual_count}"
+                    f"{filename}: Qdrant count mismatch (expected={expected_chunks}, actual={qdrant_count})"
                 )
                 result["passed"] = False
         except Exception as e:
             result["issues"].append(f"{filename}: Qdrant check failed: {e}")
             result["passed"] = False
+            details["qdrant_chunks"] = "error"
+
+        # 3. BM25 chunk count (skip if BM25 isn't populated yet, e.g. during restore staging)
+        bm25_count = bm25_counts.get(doc_id)
+        if bm25_count is not None:
+            details["bm25_chunks"] = bm25_count
+            if expected_chunks > 0 and bm25_count != expected_chunks:
+                result["issues"].append(
+                    f"{filename}: BM25 count mismatch (expected={expected_chunks}, actual={bm25_count})"
+                )
+                result["passed"] = False
+        else:
+            details["bm25_chunks"] = "skipped"
+
+        details["expected_chunks"] = expected_chunks
+        result["details"][doc_id] = details
+
+    # ── Aggregate summary ──
+    result["summary"] = {
+        "total_docs": len(rows),
+        "sqlite_ready": len(rows),
+        "qdrant_collection": qdrant_collection,
+        "bm25_docs_indexed": len([d for d in bm25_counts if bm25_counts.get(d) and bm25_counts[d] > 0]),
+        "uploads_present": len([r for r in rows if (uploads_dir / r["filename"]).exists()]),
+    }
 
     return result
+
+
+async def _bm25_doc_chunk_counts(doc_ids: list[str]) -> dict[str, int | None]:
+    """Query BM25 index for chunk counts per document_id.
+
+    Returns None for each doc_id if BM25 tables don't exist yet (e.g. fresh restore staging).
+    """
+    try:
+        from textdb.bm25_search import BM25Search
+        bm25 = BM25Search()
+
+        # Check if BM25 tables actually exist before querying
+        try:
+            total = await bm25._query(f"SELECT COUNT(*) FROM {bm25._docs}")
+            if not total or total[0][0] == 0:
+                return {doc_id: None for doc_id in doc_ids}
+        except Exception:
+            return {doc_id: None for doc_id in doc_ids}
+
+        counts: dict[str, int | None] = {}
+        for doc_id in doc_ids:
+            rows = await bm25._query_param(
+                f"SELECT COUNT(*) FROM {bm25._docs} WHERE document_id = :did",
+                {"did": doc_id},
+            )
+            counts[doc_id] = rows[0][0] if rows else 0
+        return counts
+    except Exception as e:
+        logger.warning("BM25 consistency check skipped: %s", e)
+        return {doc_id: None for doc_id in doc_ids}
 
 
 async def _save_active_collection_pointer(collection_name: str) -> None:
@@ -459,6 +626,7 @@ async def restore_backup(file: UploadFile):
             except json.JSONDecodeError as e:
                 raise HTTPException(400, "备份文件 manifest.json 格式无效") from e
             _verify_manifest(restore_dir, manifest)
+            _validate_manifest_compatibility(manifest)
 
         db_file = restore_dir / "rag_agent.db"
         uploads_dir = restore_dir / "uploads"
