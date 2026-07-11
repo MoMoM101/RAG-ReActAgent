@@ -118,6 +118,18 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
     logger.info("embedding dim (from config): %d", settings.embedding_dim)
+    # Auto-detect actual embedding dimension from API and update config
+    try:
+        from api.settings import _get_actual_embedding_dim
+        actual_dim = await _get_actual_embedding_dim()
+        if actual_dim != settings.embedding_dim:
+            logger.info("embedding dim auto-detected: config=%d -> actual=%d, updating",
+                        settings.embedding_dim, actual_dim)
+            settings.embedding_dim = actual_dim
+        else:
+            logger.info("embedding dim verified: %d matches config", actual_dim)
+    except Exception as e:
+        logger.warning("embedding dim auto-detection skipped: %s", e)
     # Clean up documents stuck in intermediate states > 30 min
     await _cleanup_stuck_documents()
     # Preload reranker model in background

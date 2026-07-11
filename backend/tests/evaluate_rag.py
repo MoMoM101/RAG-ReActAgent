@@ -667,7 +667,7 @@ async def run_single_strategy(
         results = [
             RetrievalResult(
                 chunk_id=r.chunk_id, document_id=r.document_id,
-                text=r.text, score=r.score, source="keyword"
+                text=r.text, score=r.score, source="keyword",
             )
             for r in text_results
         ]
@@ -680,7 +680,9 @@ async def run_single_strategy(
         results = [
             RetrievalResult(
                 chunk_id=r.chunk_id, document_id=r.document_id,
-                text=r.text, score=r.score, source="semantic"
+                text=r.text, score=r.score, source="semantic",
+                document_key=getattr(r, "document_key", ""),
+                section_key=getattr(r, "section_key", ""),
             )
             for r in vector_results
         ]
@@ -816,11 +818,11 @@ async def run_evaluation():
                 continue
             doc_def = TEST_DOCS[doc_idx]
             doc_key = _stable_doc_key(doc_def.filename)
-            for chunk_idx in chunk_indices:
-                section_key = f"chunk_{chunk_idx}"
+            for _chunk_idx in chunk_indices:
+                # Empty section_key = document-level match (any chunk is relevant)
                 qrels.append(QrelItem(
                     document_key=doc_key,
-                    section_key=section_key,
+                    section_key="",
                     grade=2,  # default relevance grade
                 ))
         qrels_per_query.append(qrels)
