@@ -98,6 +98,80 @@ def _backup_limits() -> ArchiveLimits:
     )
 
 
+def _move_or_copy(src: Path, dst: Path) -> None:
+    """Move directory via rename (atomic on same fs), fall back to copytree."""
+    src = Path(src)
+    dst = Path(dst)
+    try:
+        src.rename(dst)
+    except OSError:
+        shutil.copytree(str(src), str(dst))
+        shutil.rmtree(src, ignore_errors=True)
+
+
+def _verify_uploads_candidate(candidate_dir: Path, manifest: dict | None) -> None:
+    """Verify candidate uploads match the manifest (file count, size, SHA-256)."""
+    if not candidate_dir.exists():
+        return
+    actual_files = sorted(
+        [p.relative_to(candidate_dir).as_posix() for p in candidate_dir.rglob("*") if p.is_file()]
+    )
+    # Manifest verification — only check uploads/ entries
+    if manifest and "files" in manifest:
+        uploads_prefix = "uploads/"
+        manifest_upload_files = {
+            k[len(uploads_prefix):]: v
+            for k, v in manifest["files"].items()
+            if k.startswith(uploads_prefix)
+        }
+        if not manifest_upload_files:
+            return  # no upload files in manifest, nothing to verify
+        manifest_set = set(manifest_upload_files.keys())
+        actual_set = set(actual_files)
+        missing = manifest_set - actual_set
+        extra = actual_set - manifest_set
+        if missing:
+            raise RuntimeError(f"候选上传目录缺少清单中的文件: {', '.join(sorted(missing))}")
+        if extra:
+            raise RuntimeError(f"候选上传目录包含清单外的多余文件: {', '.join(sorted(extra))}")
+        # Verify SHA-256 for each upload file
+        for fname in manifest_set:
+            fpath = candidate_dir / fname
+            if not fpath.is_file():
+                raise RuntimeError(f"候选上传文件不存在: {fname}")
+            expected_hash = manifest_upload_files[fname].get("sha256", "")
+            if expected_hash:
+                actual_hash = hashlib.sha256(fpath.read_bytes()).hexdigest()
+                if actual_hash != expected_hash:
+                    raise RuntimeError(
+                        f"候选上传文件哈希不匹配: {fname} "
+                        f"(expected={expected_hash[:12]}..., actual={actual_hash[:12]}...)"
+                    )
+                actual_hash = hashlib.sha256(fpath.read_bytes()).hexdigest()
+                if actual_hash != expected_hash:
+                    raise RuntimeError(
+                        f"候选上传文件哈希不匹配: {fname} (expected={expected_hash[:12]}..., actual={actual_hash[:12]}...)"
+                    )
+
+
+def _cleanup_restore_artifacts(upload_dir: Path) -> list[str]:
+    """Clean up leftover candidate/previous directories from interrupted restores.
+
+    Called at startup. Returns list of cleaned directory names.
+    """
+    cleaned = []
+    parent = upload_dir.resolve()
+    for pattern in ("uploads.candidate.*", "uploads.previous.*"):
+        for p in sorted(parent.parent.glob(pattern)):
+            try:
+                shutil.rmtree(p, ignore_errors=False)
+                cleaned.append(p.name)
+                logger.warning("startup cleanup: removed leftover %s", p.name)
+            except OSError as e:
+                logger.warning("startup cleanup: could not remove %s: %s", p.name, e)
+    return cleaned
+
+
 def _build_manifest(db_path: Path, upload_dir: Path) -> dict[str, Any]:
     """Build a manifest describing the backup contents."""
     manifest: dict[str, Any] = {
@@ -360,6 +434,7 @@ async def restore_backup(file: UploadFile):
     # Resolve live paths early so rollback can always reference them
     db_path = _sqlite_db_path()
     target_upload = _resolve_path(settings.upload_dir)
+    restore_id = uuid.uuid4().hex[:12]
 
     try:
         # ---- Phase 1: Verify ----
@@ -477,16 +552,35 @@ async def restore_backup(file: UploadFile):
         settings.qdrant_active_collection = temp_collection
         await _save_active_collection_pointer(temp_collection)
 
-        # Uploads switch via os.replace
-        if staging_uploads.exists():
+        # Uploads atomic switch: candidate → rename → live
+        # All renames happen within the same parent directory (same filesystem),
+        # making each rename an atomic directory entry operation.
+        if staging_uploads.exists() and any(staging_uploads.iterdir()):
+            candidate_uploads = target_upload.parent / f"uploads.candidate.{restore_id}"
+            previous_uploads = target_upload.parent / f"uploads.previous.{restore_id}"
+
+            # 1. Move staging to candidate (rename if same fs, copytree fallback)
+            _move_or_copy(staging_uploads, candidate_uploads)
+
+            # 2. Verify candidate integrity before switching
+            _verify_uploads_candidate(candidate_uploads, manifest)
+
+            # 3. Atomic switch: live → previous, candidate → live
             if target_upload.exists():
-                old_uploads = target_upload.with_name(target_upload.name + ".old")
-                if old_uploads.exists():
-                    shutil.rmtree(old_uploads)
-                target_upload.rename(old_uploads)
-            shutil.copytree(staging_uploads, str(target_upload))
-            if target_upload.with_name(target_upload.name + ".old").exists():
-                shutil.rmtree(target_upload.with_name(target_upload.name + ".old"), ignore_errors=True)
+                target_upload.rename(previous_uploads)
+            try:
+                candidate_uploads.rename(target_upload)
+            except OSError:
+                # candidate → live failed: restore previous → live
+                if previous_uploads.exists():
+                    previous_uploads.rename(target_upload)
+                raise RuntimeError(
+                    "上传目录原子切换失败：candidate rename 失败，已恢复旧目录"
+                ) from None
+
+            # 4. Clean up previous after successful switch
+            if previous_uploads.exists():
+                shutil.rmtree(previous_uploads, ignore_errors=True)
 
         # ---- Phase 6: Health check ----
         mstate.update(MaintenancePhase.CLEANING, 90, "执行切换后健康检查")
@@ -557,6 +651,11 @@ async def _do_rollback(
     if rollback_uploads.exists():
         if target_upload.exists():
             shutil.rmtree(target_upload)
+        # Clean up any leftover candidate/previous from the failed switch
+        parent = target_upload.parent
+        for pattern in ("uploads.candidate.*", "uploads.previous.*"):
+            for p in sorted(parent.glob(pattern)):
+                shutil.rmtree(p, ignore_errors=True)
         shutil.copytree(rollback_uploads, str(target_upload))
 
     # Restore Qdrant pointer

@@ -96,6 +96,10 @@ async def lifespan(app: FastAPI):
     _bootstrap_admin_token()
 
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+    # Clean up leftover restore artifacts (candidate/previous dirs) from interrupted restores
+    from api.backup import _cleanup_restore_artifacts
+    upload_path = Path(settings.upload_dir).resolve()
+    _cleanup_restore_artifacts(upload_path)
     await init_db()
     # 恢复 active collection 指针（rebuild 持久化的）
     _ptr = Path(settings.qdrant_path) / "active_collections.json"
