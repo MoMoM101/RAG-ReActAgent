@@ -625,7 +625,10 @@ async def _cross_consistency_check(
         "total_docs": len(rows),
         "sqlite_ready": len(rows),
         "qdrant_collection": qdrant_collection,
-        "bm25_docs_indexed": len([d for d in bm25_counts if bm25_counts.get(d) and bm25_counts[d] > 0]),
+        "bm25_docs_indexed": len([
+            d for d in bm25_counts
+            if bm25_counts.get(d) is not None and (bm25_counts.get(d) or 0) > 0
+        ]),
         "uploads_present": len([r for r in rows if (uploads_dir / r["filename"]).exists()]),
     }
 
