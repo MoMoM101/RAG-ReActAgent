@@ -1,0 +1,42 @@
+{
+  "commit": "24469a85f102fbc6c1d1ec4cab3d70861499c9a4",
+  "generated_at": "2026-07-13T12:26:44.595988+00:00",
+  "python": "3.12.13",
+  "tests": {
+    "passed": 433,
+    "skipped": 4
+  },
+  "config": {
+    "llm_provider": "deepseek",
+    "llm_model": "deepseek-v4-flash",
+    "embedding_provider": "qwen",
+    "embedding_model": "text-embedding-v4",
+    "embedding_dim": 1024,
+    "chunk_size": 200,
+    "chunk_overlap": 40,
+    "retrieval_top_k": 8,
+    "rerank_enabled": true,
+    "rerank_model": "BAAI/bge-reranker-v2-m3",
+    "rrf_semantic_weight": 2.0,
+    "rrf_keyword_weight": 1.0,
+    "rrf_adaptive_enabled": false,
+    "query_rewrite_enabled": false,
+    "web_search_enabled": true,
+    "ocr_enabled": true,
+    "memory_enabled": true,
+    "dedup_enabled": true,
+    "max_loop_iterations": 10,
+    "max_total_time": 120,
+    "ingestion_max_concurrency": 3
+  },
+  "ocr": {
+    "status": "disabled",
+    "last_error": "",
+    "enabled": true
+  },
+  "rerank": {
+    "status": "disabled",
+    "last_error": "",
+    "model": "BAAI/bge-reranker-v2-m3"
+  }
+}
