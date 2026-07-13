@@ -165,7 +165,7 @@ class QdrantVectorDB(BaseVectorDB):
                 offset=offset,
                 with_payload=False,
             )
-            ids.extend(p.id for p in points)
+            ids.extend(str(p.id) for p in points)
             if next_offset is None:
                 break
             offset = next_offset

@@ -47,3 +47,8 @@ class BaseVectorDB(ABC):
     async def ensure_collection(self, vector_size: int) -> None:
         """Create collection if not exists. Idempotent, safe for concurrent calls."""
         ...
+
+    @abstractmethod
+    async def get_chunk_ids_by_document(self, document_id: str) -> list[str]:
+        """Return all chunk_ids for a given document_id."""
+        ...

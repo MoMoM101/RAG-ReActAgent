@@ -75,7 +75,9 @@ class SQLiteFTS5(BaseTextDB):
             result = await conn.exec_driver_sql(sql)
             return list(result.fetchall())
 
-    async def insert(self, chunk_id: str, document_id: str, text: str) -> None:
+    async def insert(self, chunk_id: str, document_id: str, text: str,
+                     document_key: str = "", section_key: str = "",
+                     chunk_index: int = 0) -> None:
         cid = _safe_id(chunk_id)
         did = _safe_id(document_id)
         escaped = _escape_sql(text)
@@ -193,3 +195,11 @@ class SQLiteFTS5(BaseTextDB):
     async def count(self) -> int:
         rows = await self._query(f"SELECT COUNT(*) FROM {self.TABLE}")
         return rows[0][0] if rows else 0
+
+    async def get_chunk_ids_by_document(self, document_id: str) -> list[str]:
+        """Return all chunk_ids for a given document_id (FTS5 table)."""
+        did = _safe_id(document_id)
+        rows = await self._query(
+            f"SELECT chunk_id FROM {self.TABLE} WHERE document_id = '{did}'"
+        )
+        return [str(r[0]) for r in rows]
