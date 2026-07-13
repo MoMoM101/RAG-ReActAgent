@@ -4,6 +4,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, cast
 
 from sqlalchemy import select
 
@@ -21,6 +22,19 @@ logger = logging.getLogger(__name__)
 RRF_CANDIDATE_MULTIPLIER = 2
 
 
+def _merge_fallback(existing: str, new: str) -> str:
+    """Merge fallback reason strings with semicolon separator."""
+    if not existing:
+        return new
+    if new not in existing:
+        return f"{existing};{new}"
+    return existing
+
+
+class RetrievalError(RuntimeError):
+    """Raised when all retrieval paths have failed."""
+
+
 @dataclass
 class RetrievalResult:
     chunk_id: str
@@ -30,6 +44,7 @@ class RetrievalResult:
     source: str  # "semantic" | "keyword" | "hybrid"
     document_key: str = ""
     section_key: str = ""
+    fallback_reason: str = ""  # non-empty when degradation occurred
 
 
 def _rrf_fusion(
@@ -90,7 +105,7 @@ def _rrf_fusion(
 
 
 def _quality_prefilter(
-    results: list[VectorSearchResult | TextSearchResult],
+    results: list[VectorSearchResult] | list[TextSearchResult],
 ) -> list:
     """Filter out low-quality chunks before RRF fusion."""
     if not settings.rrf_quality_prefilter_enabled:
@@ -256,33 +271,18 @@ async def _rerank_results(
 
 
 async def _multi_search(
-    queries,
-    vectordb,
-    fts,
-    embedding,
+    queries: list[str],
+    vectordb: Any,
+    fts: BM25Search | None,
+    embedding: Any,
     top_k: int,
     document_id: str = "",
-):
-    """Run semantic + keyword search across multiple query variants, merge results.
+) -> tuple[
+    list[VectorSearchResult], list[TextSearchResult], bool, bool
+]:
+    """Search both backends independently across query variants."""
 
-    Each source (semantic/keyword) is flattened from all query variants,
-    deduplicated by chunk_id keeping the highest score.
-    """
-    # Embed all queries in parallel
-    all_vectors = await asyncio.gather(*(embedding.embed_query(q) for q in queries))
-
-    # Parallel: all semantic searches + all keyword searches
-    sem_tasks = [vectordb.search(v, top_k=top_k * RRF_CANDIDATE_MULTIPLIER)
-                 for v in all_vectors]
-    kw_tasks = [fts.search(q, top_k=top_k * RRF_CANDIDATE_MULTIPLIER, document_id=document_id)
-                for q in queries]
-    all_sem, all_kw = await asyncio.gather(
-        asyncio.gather(*sem_tasks),
-        asyncio.gather(*kw_tasks),
-    )
-
-    # Flatten + dedup per source by chunk_id, keeping highest score
-    def _merge(results_lists):
+    def _merge(results_lists: list[list[Any]]) -> list[Any]:
         merged: dict = {}
         for rlist in results_lists:
             for r in rlist:
@@ -290,9 +290,91 @@ async def _multi_search(
                     merged[r.chunk_id] = (r.score, r)
         return [item[1] for item in sorted(merged.values(), key=lambda x: x[0], reverse=True)]
 
-    vector_results = _merge(all_sem)
-    text_results = _merge(all_kw)
-    return vector_results, text_results
+    async def _semantic():
+        if embedding is None or vectordb is None:
+            raise RuntimeError("semantic backend unavailable")
+        all_vectors = await asyncio.gather(
+            *(embedding.embed_query(q) for q in queries)
+        )
+        all_sem = await asyncio.gather(*(
+            vectordb.search(v, top_k=top_k * RRF_CANDIDATE_MULTIPLIER)
+            for v in all_vectors
+        ))
+        return _merge(all_sem)
+
+    async def _keyword():
+        if fts is None:
+            raise RuntimeError("keyword backend unavailable")
+        all_kw = await asyncio.gather(*(
+            fts.search(
+                q,
+                top_k=top_k * RRF_CANDIDATE_MULTIPLIER,
+                document_id=document_id,
+            )
+            for q in queries
+        ))
+        return _merge(all_kw)
+
+    outcomes = await asyncio.gather(
+        _semantic(), _keyword(), return_exceptions=True
+    )
+    semantic_out = outcomes[0]
+    keyword_out = outcomes[1]
+    semantic_failed = isinstance(semantic_out, BaseException)
+    keyword_failed = isinstance(keyword_out, BaseException)
+    if semantic_failed:
+        logger.warning("multi-query semantic search failed: %s", semantic_out)
+    if keyword_failed:
+        logger.warning("multi-query keyword search failed: %s", keyword_out)
+
+    vector_results = (
+        [] if semantic_failed else cast(list[VectorSearchResult], semantic_out)
+    )
+    text_results = (
+        [] if keyword_failed else cast(list[TextSearchResult], keyword_out)
+    )
+    return vector_results, text_results, semantic_failed, keyword_failed
+
+
+async def _filter_committed_generation(
+    results: list[RetrievalResult],
+) -> list[RetrievalResult]:
+    """Remove results from documents without a committed active_generation_id."""
+    if not results:
+        return results
+    doc_ids = list({r.document_id for r in results})
+    if not doc_ids:
+        return results
+
+    from sqlalchemy import text as sa_text
+    from models.database import async_session
+
+    async with async_session() as session:
+        conn = await session.connection()
+        placeholders = ",".join(f":d{i}" for i in range(len(doc_ids)))
+        params = {f"d{i}": did for i, did in enumerate(doc_ids)}
+        rows = (await conn.execute(
+            sa_text(
+                f"SELECT id, active_generation_id FROM documents WHERE id IN ({placeholders})"
+            ),
+            params,
+        )).fetchall()
+
+    active_map = {r[0]: r[1] for r in rows}
+    # Documents with no active_generation_id (legacy, pre-generation tracking)
+    # are included to avoid breaking existing indexes
+    filtered = [
+        r for r in results
+        if r.document_id not in active_map
+        or active_map[r.document_id] is None
+        or bool(active_map[r.document_id])
+    ]
+    if len(filtered) < len(results):
+        logger.info(
+            "generation filter: removed %d results from non-committed generations",
+            len(results) - len(filtered),
+        )
+    return filtered
 
 
 async def hybrid_search(query: str, top_k: int | None = None, document_id: str = "",
@@ -312,32 +394,102 @@ async def hybrid_search(query: str, top_k: int | None = None, document_id: str =
 
     t0 = time.time()
 
-    embedding = create_embedding()
-    vectordb = await create_vectordb()
-    fts = BM25Search()
+    fallback_reason = ""
+    semantic_failed = False
+    keyword_failed = False
 
-    # Multi-query rewrite: run LLM rewrite in parallel with first embedding
+    try:
+        embedding = create_embedding()
+    except Exception as e:
+        logger.warning("embedding backend creation failed: %s", e)
+        embedding = None
+        semantic_failed = True
+
+    try:
+        vectordb = await create_vectordb()
+    except Exception as e:
+        logger.warning("vector backend creation failed: %s", e)
+        vectordb = None
+        semantic_failed = True
+
+    try:
+        fts = BM25Search()
+    except Exception as e:
+        logger.warning("keyword backend creation failed: %s", e)
+        fts = None
+        keyword_failed = True
+
+    # Multi-query rewrite: fall back to original query on failure
     queries = [query]
     query_rewritten = False
     if settings.query_rewrite_enabled:
-        from rag.query_rewriter import rewrite
-        variants = await rewrite(query, n_variants=2)
-        if variants:
-            queries = [query] + variants
-            query_rewritten = True
+        try:
+            from rag.query_rewriter import rewrite
+            variants = await rewrite(query, n_variants=2)
+            if variants:
+                queries = [query] + variants
+                query_rewritten = True
+        except Exception as e:
+            logger.warning("query rewrite failed, using original query: %s", e)
 
+    # Execute both retrieval paths with per-path fault tolerance
+    vector_results: list[VectorSearchResult] = []
+    text_results: list[TextSearchResult] = []
     if query_rewritten:
-        vector_results, text_results = await _multi_search(
+        (
+            vector_results,
+            text_results,
+            multi_semantic_failed,
+            multi_keyword_failed,
+        ) = await _multi_search(
             queries, vectordb, fts, embedding, top_k, document_id,
         )
+        semantic_failed = semantic_failed or multi_semantic_failed
+        keyword_failed = keyword_failed or multi_keyword_failed
     else:
-        query_vector = await embedding.embed_query(query)
-        vector_results, text_results = await asyncio.gather(
-            vectordb.search(query_vector, top_k=top_k * RRF_CANDIDATE_MULTIPLIER),
-            fts.search(query, top_k=top_k * RRF_CANDIDATE_MULTIPLIER, document_id=document_id),
+        # Embedding — fall back to keyword-only on failure
+        query_vector = None
+        if embedding is not None and not semantic_failed:
+            try:
+                query_vector = await embedding.embed_query(query)
+            except Exception as e:
+                logger.warning("embedding failed, falling back to keyword-only: %s", e)
+                semantic_failed = True
+
+        # Semantic search (Qdrant)
+        if query_vector is not None and vectordb is not None:
+            try:
+                vector_results = list(await vectordb.search(
+                    query_vector, top_k=top_k * RRF_CANDIDATE_MULTIPLIER,
+                ))
+            except Exception as e:
+                logger.warning("semantic search failed, falling back: %s", e)
+                semantic_failed = True
+
+        # Keyword search (BM25)
+        if fts is not None and not keyword_failed:
+            try:
+                text_results = list(await fts.search(
+                    query,
+                    top_k=top_k * RRF_CANDIDATE_MULTIPLIER,
+                    document_id=document_id,
+                ))
+            except Exception as e:
+                logger.warning("keyword search failed, falling back: %s", e)
+                keyword_failed = True
+
+    if semantic_failed:
+        fallback_reason = _merge_fallback(
+            fallback_reason, "keyword_only_fallback"
         )
-        vector_results = list(vector_results)
-        text_results = list(text_results)
+    if keyword_failed:
+        fallback_reason = _merge_fallback(
+            fallback_reason, "semantic_only_fallback"
+        )
+    if semantic_failed and keyword_failed:
+        raise RetrievalError(
+            f"All retrieval paths failed for query: {query[:100]}"
+        )
 
     # Filter by document_id if specified
     if document_id:
@@ -358,16 +510,31 @@ async def hybrid_search(query: str, top_k: int | None = None, document_id: str =
     if settings.dedup_enabled:
         results = await _dedup_results(results)
 
-    # Reranker: Cross-Encoder re-scoring
+    # Filter: only return committed generation results
+    results = await _filter_committed_generation(results)
+
+    # Reranker: Cross-Encoder re-scoring with fallback to RRF order
     reranked = use_rerank and settings.rerank_enabled
     if reranked:
-        results = await _rerank_results(query, results, top_k)
+        try:
+            results = await _rerank_results(query, results, top_k)
+        except Exception as e:
+            logger.warning("rerank failed, using RRF order: %s", e)
+            results = results[:top_k]
+            fallback_reason = _merge_fallback(fallback_reason, "rerank_fallback")
 
     final = results[:top_k]
+
+    # Stamp fallback_reason on every result when degradation occurred
+    if fallback_reason:
+        for r in final:
+            r.fallback_reason = fallback_reason
+
     elapsed = int((time.time() - t0) * 1000)
+    from tracing import peek_request_id
     logger.info(
-        "search queries=%d semantic=%d keyword=%d fused=%d dedup=%d rerank=%s final=%d elapsed_ms=%d",
-        len(queries), len(vector_results), len(text_results), n_fused, len(results),
-        str(reranked).lower(), len(final), elapsed,
+        "search rid=%s queries=%d semantic=%d keyword=%d fused=%d dedup=%d rerank=%s final=%d elapsed_ms=%d fallback=%s",
+        peek_request_id(), len(queries), len(vector_results), len(text_results), n_fused, len(results),
+        str(reranked).lower(), len(final), elapsed, fallback_reason or "none",
     )
     return final

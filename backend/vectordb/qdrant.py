@@ -147,6 +147,30 @@ class QdrantVectorDB(BaseVectorDB):
             for r in response.points
         ]
 
+    async def get_chunk_ids_by_document(self, document_id: str) -> list[str]:
+        """Return all chunk_ids for a given document_id from Qdrant."""
+        ids: list[str] = []
+        offset = None
+        while True:
+            points, next_offset = await asyncio.to_thread(
+                self.client.scroll,
+                collection_name=self.collection,
+                scroll_filter=Filter(
+                    must=[FieldCondition(
+                        key="document_id",
+                        match=MatchValue(value=document_id),
+                    )]
+                ),
+                limit=1000,
+                offset=offset,
+                with_payload=False,
+            )
+            ids.extend(p.id for p in points)
+            if next_offset is None:
+                break
+            offset = next_offset
+        return ids
+
     async def delete_by_document(self, document_id: str) -> None:
         try:
             await asyncio.to_thread(

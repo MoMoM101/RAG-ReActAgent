@@ -104,6 +104,9 @@ class BM25Search(BaseTextDB):
         stmts = [
             f"CREATE TABLE IF NOT EXISTS {self._docs} ("
             "  chunk_id TEXT PRIMARY KEY, document_id TEXT NOT NULL,"
+            "  document_key TEXT NOT NULL DEFAULT '',"
+            "  section_key TEXT NOT NULL DEFAULT '',"
+            "  chunk_index INTEGER NOT NULL DEFAULT 0,"
             "  text TEXT NOT NULL, token_count INTEGER NOT NULL DEFAULT 0)",
             f"CREATE TABLE IF NOT EXISTS {self._idx} ("
             "  term TEXT NOT NULL, chunk_id TEXT NOT NULL, tf INTEGER NOT NULL,"
@@ -181,20 +184,48 @@ class BM25Search(BaseTextDB):
 
     # ── BaseTextDB interface ──────────────────────────────────────
 
-    async def insert(self, chunk_id: str, document_id: str, text: str) -> None:
+    async def insert(self, chunk_id: str, document_id: str, text: str,
+                     document_key: str = "", section_key: str = "",
+                     chunk_index: int = 0) -> None:
         await self._ensure_tables()
         tokens = tokenize(text)
         tf_counter = Counter(tokens)
         token_count = len(tokens)
 
-        stmts: list[tuple[str, dict]] = [
-            (
-                f"INSERT OR REPLACE INTO {self._docs} (chunk_id, document_id, text, token_count) "
-                f"VALUES (:cid, :did, :text, :tokens)",
-                {"cid": chunk_id, "did": document_id, "text": text, "tokens": token_count},
-            ),
-        ]
+        stmts: list[tuple[str, dict]] = []
 
+        # Step 1: remove old posting and decrement df for re-inserts
+        old_rows = await self._query_param(
+            f"SELECT term FROM {self._idx} WHERE chunk_id = :cid",
+            {"cid": chunk_id},
+        )
+        if old_rows:
+            old_terms = {row[0] for row in old_rows}
+            stmts.append((
+                f"DELETE FROM {self._idx} WHERE chunk_id = :cid",
+                {"cid": chunk_id},
+            ))
+            for term in old_terms:
+                stmts.append((
+                    f"UPDATE {self._stats} SET df = MAX(0, df - 1) WHERE term = :term",
+                    {"term": term},
+                ))
+                stmts.append((
+                    f"DELETE FROM {self._stats} WHERE term = :term AND df <= 0",
+                    {"term": term},
+                ))
+
+        # Step 2: write new doc record
+        stmts.append((
+            f"INSERT OR REPLACE INTO {self._docs} "
+            f"(chunk_id, document_id, document_key, section_key, chunk_index, text, token_count) "
+            f"VALUES (:cid, :did, :dkey, :skey, :cindex, :text, :tokens)",
+            {"cid": chunk_id, "did": document_id, "dkey": document_key,
+             "skey": section_key, "cindex": chunk_index,
+             "text": text, "tokens": token_count},
+        ))
+
+        # Step 3: write new index entries
         for term, tf in tf_counter.items():
             stmts.append((
                 f"INSERT INTO {self._idx} (term, chunk_id, tf) "
@@ -203,7 +234,7 @@ class BM25Search(BaseTextDB):
                 {"term": term, "cid": chunk_id, "tf": tf, "tf2": tf},
             ))
 
-        # Update df for each unique term
+        # Step 4: increment df for new terms
         for term in tf_counter:
             stmts.append((
                 f"INSERT INTO {self._stats} (term, df) VALUES (:term, 1) "
@@ -215,19 +246,53 @@ class BM25Search(BaseTextDB):
         self._invalidate_cache()
 
     async def insert_batch(
-        self, entries: list[tuple[str, str, str]]
+        self, entries: list[tuple[str, str, str, str, int, str]]
     ) -> None:
         """Insert multiple chunks in a single transaction.
-        entries: [(chunk_id, document_id, text), ...]
+        entries: [(chunk_id, document_id, document_key, section_key, chunk_index, text), ...]
         """
         if not entries:
             return
         await self._ensure_tables()
 
         stmts: list[tuple[str, dict]] = []
+
+        # Step 1: remove old postings and decrement df for re-inserted chunks
+        entry_chunk_ids = [e[0] for e in entries]
+        placeholders = ", ".join(f":c{i}" for i in range(len(entry_chunk_ids)))
+        cid_params = {f"c{i}": cid for i, cid in enumerate(entry_chunk_ids)}
+        old_rows = await self._query_param(
+            f"SELECT term, chunk_id FROM {self._idx} "
+            f"WHERE chunk_id IN ({placeholders})",
+            cid_params,
+        )
+        if old_rows:
+            # Collect old term -> set of chunk_ids for df adjustment
+            old_term_chunks: dict[str, set[str]] = {}
+            for term, cid in old_rows:
+                if term not in old_term_chunks:
+                    old_term_chunks[term] = set()
+                old_term_chunks[term].add(cid)
+
+            stmts.append((
+                f"DELETE FROM {self._idx} WHERE chunk_id IN ({placeholders})",
+                dict(cid_params),
+            ))
+            for term, cid_set in old_term_chunks.items():
+                delta = len(cid_set)
+                stmts.append((
+                    f"UPDATE {self._stats} SET df = MAX(0, df - :delta) WHERE term = :term",
+                    {"term": term, "delta": delta},
+                ))
+                stmts.append((
+                    f"DELETE FROM {self._stats} WHERE term = :term AND df <= 0",
+                    {"term": term},
+                ))
+
+        # Step 2: write new docs and index entries
         all_terms: dict[str, set[str]] = {}  # term -> set of chunk_ids
 
-        for chunk_id, document_id, text in entries:
+        for chunk_id, document_id, document_key, section_key, chunk_index, text in entries:
             tokens = tokenize(text)
             tf_counter: dict[str, int] = {}
             for t in tokens:
@@ -236,9 +301,12 @@ class BM25Search(BaseTextDB):
             token_count = len(tokens)
 
             stmts.append((
-                f"INSERT OR REPLACE INTO {self._docs} (chunk_id, document_id, text, token_count) "
-                f"VALUES (:cid, :did, :text, :tokens)",
-                {"cid": chunk_id, "did": document_id, "text": text, "tokens": token_count},
+                f"INSERT OR REPLACE INTO {self._docs} "
+                f"(chunk_id, document_id, document_key, section_key, chunk_index, text, token_count) "
+                f"VALUES (:cid, :did, :dkey, :skey, :cindex, :text, :tokens)",
+                {"cid": chunk_id, "did": document_id, "dkey": document_key,
+                 "skey": section_key, "cindex": chunk_index,
+                 "text": text, "tokens": token_count},
             ))
             for term, tf in tf_counter.items():
                 stmts.append((
@@ -251,7 +319,7 @@ class BM25Search(BaseTextDB):
                     all_terms[term] = set()
                 all_terms[term].add(chunk_id)
 
-        # Stats: increment df by number of chunks containing each term
+        # Step 3: increment df by number of chunks containing each term
         for term, chunk_ids in all_terms.items():
             delta = len(chunk_ids)
             stmts.append((
@@ -282,7 +350,8 @@ class BM25Search(BaseTextDB):
         candidates: dict[str, dict[str, Any]] = {}
         for t in query_tokens:
             sql = (
-                f"SELECT i.chunk_id, i.tf, d.token_count, d.text, d.document_id "
+                f"SELECT i.chunk_id, i.tf, d.token_count, d.text, d.document_id,"
+                f" d.document_key, d.section_key "
                 f"FROM {self._idx} i "
                 f"JOIN {self._docs} d ON i.chunk_id = d.chunk_id "
                 f"WHERE i.term = :term"
@@ -299,6 +368,8 @@ class BM25Search(BaseTextDB):
                     candidates[chunk_id] = {
                         "chunk_id": chunk_id,
                         "document_id": row[4],
+                        "document_key": row[5],
+                        "section_key": row[6],
                         "text": row[3],
                         "token_count": row[2],
                         "term_tfs": {},
@@ -321,7 +392,7 @@ class BM25Search(BaseTextDB):
             df_map = {}
 
         # Compute BM25 scores
-        scored: list[tuple[float, str, str, str]] = []
+        scored: list[tuple[float, str, str, str, str, str]] = []
         for chunk_id, c in candidates.items():
             score = 0.0
             dl = c["token_count"]
@@ -331,7 +402,8 @@ class BM25Search(BaseTextDB):
                 numerator = tf * (BM25_K1 + 1.0)
                 denominator = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * dl / avgdl)
                 score += idf * numerator / denominator
-            scored.append((score, chunk_id, c["document_id"], c["text"]))
+            scored.append((score, chunk_id, c["document_id"], c["text"],
+                          c["document_key"], c["section_key"]))
 
         scored.sort(key=lambda x: x[0], reverse=True)
 
@@ -341,9 +413,20 @@ class BM25Search(BaseTextDB):
                 document_id=doc_id,
                 text=text,
                 score=score,
+                document_key=doc_key,
+                section_key=sec_key,
             )
-            for score, chunk_id, doc_id, text in scored[:top_k]
+            for score, chunk_id, doc_id, text, doc_key, sec_key in scored[:top_k]
         ]
+
+    async def get_chunk_ids_by_document(self, document_id: str) -> list[str]:
+        """Return all chunk_ids for a given document_id from BM25."""
+        await self._ensure_tables()
+        rows = await self._query_param(
+            f"SELECT chunk_id FROM {self._docs} WHERE document_id=:did",
+            {"did": document_id},
+        )
+        return [r[0] for r in rows]
 
     async def delete_by_document(self, document_id: str) -> None:
         await self._ensure_tables()

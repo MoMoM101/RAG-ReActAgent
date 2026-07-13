@@ -160,6 +160,7 @@ async def init_db():
             ("expected_chunk_count", "INTEGER"),
             ("vector_chunk_count", "INTEGER"),
             ("chunk_ids_hash", "TEXT"),
+            ("chunk_ids_consistent", "INTEGER NOT NULL DEFAULT 0"),
             ("error_stage", "TEXT"),
             ("error_message", "TEXT"),
         ]:
