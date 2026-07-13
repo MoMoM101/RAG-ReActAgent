@@ -99,7 +99,10 @@ class TestGenerationStates:
         async with async_session() as session:
             conn = await session.connection()
             row = (await conn.execute(
-                sa_text("SELECT status, vector_chunk_count, bm25_count, error_stage, error_message FROM index_generations WHERE id=:id"),
+                sa_text(
+                    "SELECT status, vector_chunk_count, bm25_count, error_stage, error_message "
+                    "FROM index_generations WHERE id=:id"
+                ),
                 {"id": gen_id},
             )).fetchone()
         assert row[0] == "failed"

@@ -1,6 +1,5 @@
 """Fault injection tests: verify degradation behavior under failure conditions."""
 
-import pytest
 
 
 class TestRetrievalFallbacks:
@@ -35,6 +34,7 @@ class TestRetrievalFallbacks:
         from unittest.mock import patch
 
         import pytest as pt
+
         from config import settings
         from rag.retriever import RetrievalError, hybrid_search
         from textdb.bm25_search import BM25Search
@@ -42,8 +42,8 @@ class TestRetrievalFallbacks:
         old_host = settings.qdrant_host
         try:
             settings.qdrant_host = "127.0.0.1:19999"
-            with patch.object(BM25Search, "search", side_effect=RuntimeError("BM25 unavailable")):
-                with pt.raises(RetrievalError):
-                    await hybrid_search("测试")
+            with patch.object(BM25Search, "search", side_effect=RuntimeError("BM25 unavailable")), \
+                 pt.raises(RetrievalError):
+                await hybrid_search("测试")
         finally:
             settings.qdrant_host = old_host

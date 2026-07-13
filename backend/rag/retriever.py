@@ -347,6 +347,7 @@ async def _filter_committed_generation(
         return results
 
     from sqlalchemy import text as sa_text
+
     from models.database import async_session
 
     async with async_session() as session:
@@ -375,6 +376,10 @@ async def _filter_committed_generation(
             committed_docs.add(doc_id)
 
     valid_docs = legacy_docs | committed_docs
+    db_doc_ids = {row[0] for row in rows}
+    for r in results:
+        if r.document_id not in db_doc_ids:
+            valid_docs.add(r.document_id)  # not in DB = legacy/pre-generation-tracking
     filtered = [r for r in results if r.document_id in valid_docs]
     if len(filtered) < len(results):
         logger.info(
