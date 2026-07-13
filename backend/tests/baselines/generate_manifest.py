@@ -100,7 +100,7 @@ def _hash_qrels_and_dataset() -> dict:
         dataset_dir / "gen_complex_docs.py",
     ]
     result = {
-        "qrels_v2_sha256": _hash_file(qrels_path) if qrels_path.exists() else "missing",
+        "qrels_v2_sha256": _hash_file(qrels_path),
     }
     for doc in eval_docs:
         result[f"{doc.stem}_sha256"] = _hash_file(doc)
@@ -117,10 +117,10 @@ def _get_test_stats() -> dict:
         import re as _re
         match = _re.search(r"(\d+)\s+passed.*?(\d+)\s+skipped", result.stdout + result.stderr)
         if match:
-            return {"passed": int(match.group(1)), "skipped": int(match.group(2))}
+            return {"passed": int(match.group(1)), "skipped": int(match.group(2)), "live": True}
     except Exception:
         pass
-    return {"passed": 433, "skipped": 4}
+    return {"passed": 433, "skipped": 4, "live": False, "error": "pytest run failed, using baseline snapshot"}
 
 
 def _verify_env_sync() -> dict:
@@ -163,7 +163,7 @@ def main():
     }
     # Add dataset_sha256 to main manifest
     qrels_path = BASELINES_DIR.parent / "qrels_data_v2.json"
-    manifest["dataset_sha256"] = _hash_file(qrels_path) if qrels_path.exists() else "missing"
+    manifest["dataset_sha256"] = _hash_file(qrels_path)
 
     manifest_path = BASELINES_DIR / "release_9_1_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")

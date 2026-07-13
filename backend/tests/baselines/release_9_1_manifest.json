@@ -1,10 +1,11 @@
 {
-  "commit": "1bd7ecc1be39b7129aa767bc20228b848e915de1",
-  "generated_at": "2026-07-13T12:30:25.005557+00:00",
+  "commit": "8cc558c5719402a283f66c662f646353d026beae",
+  "generated_at": "2026-07-13T12:37:09.600860+00:00",
   "python": "3.12.13",
   "tests": {
     "passed": 433,
-    "skipped": 4
+    "skipped": 4,
+    "live": true
   },
   "config": {
     "llm_provider": "deepseek",
