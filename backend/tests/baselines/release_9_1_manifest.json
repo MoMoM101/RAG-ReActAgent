@@ -1,6 +1,6 @@
 {
-  "commit": "24469a85f102fbc6c1d1ec4cab3d70861499c9a4",
-  "generated_at": "2026-07-13T12:26:44.595988+00:00",
+  "commit": "1bd7ecc1be39b7129aa767bc20228b848e915de1",
+  "generated_at": "2026-07-13T12:30:25.005557+00:00",
   "python": "3.12.13",
   "tests": {
     "passed": 433,
@@ -38,5 +38,10 @@
     "status": "disabled",
     "last_error": "",
     "model": "BAAI/bge-reranker-v2-m3"
-  }
+  },
+  "env_sync": {
+    "status": "ok",
+    "issues": []
+  },
+  "dataset_sha256": "eb58b221eeedf12d2981d693e9db9e698db3e161695d63dcd4b5988590badad2"
 }
