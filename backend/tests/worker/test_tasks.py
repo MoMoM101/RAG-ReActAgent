@@ -1,5 +1,6 @@
 """Tests for BackgroundTaskManager."""
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 from worker.tasks import BackgroundTaskManager, get_task_manager, reset_task_manager
@@ -19,7 +20,7 @@ async def test_create_and_complete():
     async def _ok():
         return 42
 
-    tm.create(_ok(), "test_ok")
+    tm.create(_ok, "test_ok")
     # Task runs immediately with asyncio.create_task, wait briefly
     await asyncio.sleep(0.1)
 
@@ -37,7 +38,7 @@ async def test_create_and_fail():
     async def _fail():
         raise RuntimeError("boom")
 
-    tm.create(_fail(), "test_fail")
+    tm.create(_fail, "test_fail")
     await asyncio.sleep(0.1)
 
     status = tm.get_status()
@@ -54,7 +55,7 @@ async def test_get_status_shows_running():
     async def _slow():
         await event.wait()
 
-    tm.create(_slow(), "test_slow")
+    tm.create(_slow, "test_slow")
     await asyncio.sleep(0.05)
 
     status = tm.get_status()
@@ -82,7 +83,7 @@ async def test_shutdown_cancels_running_tasks():
         except asyncio.CancelledError:
             cancelled.set()
 
-    tm.create(_cancel_aware(), "test_cancel")
+    tm.create(_cancel_aware, "test_cancel")
     await started.wait()
 
     await tm.shutdown()
@@ -98,3 +99,68 @@ async def test_get_task_manager_singleton():
     tm1 = get_task_manager()
     tm2 = get_task_manager()
     assert tm1 is tm2
+
+
+@pytest.mark.asyncio
+async def test_create_orders_persistence_before_running(monkeypatch):
+    tm = BackgroundTaskManager()
+    calls: list[str] = []
+
+    async def _create(*_args, **_kwargs):
+        calls.append("create")
+
+    async def _update(_name, status, error=None):
+        calls.append(status)
+
+    monkeypatch.setattr(tm, "_persist_create", _create)
+    monkeypatch.setattr(tm, "_persist_update", _update)
+
+    task = tm.create(lambda: asyncio.sleep(0), "ordered")
+    await task
+
+    assert calls[:2] == ["create", "running"]
+    assert calls[-1] == "done"
+
+
+@pytest.mark.asyncio
+async def test_immediate_cancel_does_not_create_coroutine(monkeypatch):
+    tm = BackgroundTaskManager()
+    invoked = False
+
+    async def _persist_create(*_args, **_kwargs):
+        await asyncio.sleep(0)
+
+    def _factory():
+        nonlocal invoked
+        invoked = True
+        return asyncio.sleep(0)
+
+    monkeypatch.setattr(tm, "_persist_create", _persist_create)
+    task = tm.create(_factory, "cancel_before_start")
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert invoked is False
+
+
+@pytest.mark.asyncio
+async def test_running_task_sends_heartbeat(monkeypatch):
+    tm = BackgroundTaskManager()
+    heartbeat = AsyncMock()
+    finished = asyncio.Event()
+
+    monkeypatch.setattr("worker.tasks._HEARTBEAT_INTERVAL", 0.01)
+    monkeypatch.setattr(tm, "_persist_create", AsyncMock())
+    monkeypatch.setattr(tm, "_persist_update", AsyncMock())
+    monkeypatch.setattr(tm, "_persist_heartbeat", heartbeat)
+
+    async def _work():
+        await finished.wait()
+
+    task = tm.create(_work, "heartbeat")
+    await asyncio.sleep(0.04)
+    finished.set()
+    await task
+
+    assert heartbeat.await_count >= 1

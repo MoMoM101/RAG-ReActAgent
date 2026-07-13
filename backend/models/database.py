@@ -141,6 +141,31 @@ async def init_db():
             ")"
         )
 
+        # Migration: task_queue extended columns for idempotent replay
+        tq_cols = (await conn.exec_driver_sql("PRAGMA table_info(task_queue)")).fetchall()
+        tq_existing = {row[1] for row in tq_cols}
+        for col, spec in [
+            ("task_type", "TEXT"),
+            ("payload_json", "TEXT"),
+            ("idempotency_key", "TEXT"),
+            ("attempt", "INTEGER NOT NULL DEFAULT 0"),
+            ("max_attempts", "INTEGER NOT NULL DEFAULT 3"),
+            ("next_run_at", "TEXT"),
+            ("worker_id", "TEXT"),
+        ]:
+            if col not in tq_existing:
+                await conn.exec_driver_sql(
+                    f"ALTER TABLE task_queue ADD COLUMN {col} {spec}"
+                )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_task_queue_idempotency "
+            "ON task_queue(idempotency_key)"
+        )
+        await conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_task_queue_status_next "
+            "ON task_queue(status, next_run_at)"
+        )
+
         # Migration: rename index_generations columns (old -> new names)
         gen_cols_all = (await conn.exec_driver_sql("PRAGMA table_info(index_generations)")).fetchall()
         gen_existing_all = {row[1] for row in gen_cols_all}
