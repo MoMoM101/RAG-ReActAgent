@@ -18,6 +18,15 @@ class DocStatus(enum.StrEnum):
     failed = "failed"
 
 
+class GenerationStatus(enum.StrEnum):
+    preparing = "preparing"
+    writing_vector = "writing_vector"
+    writing_bm25 = "writing_bm25"
+    verifying = "verifying"
+    committed = "committed"
+    failed = "failed"
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -35,6 +44,27 @@ class Document(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunk_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    active_generation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class IndexGeneration(Base):
+    __tablename__ = "index_generations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    status: Mapped[GenerationStatus] = mapped_column(
+        SAEnum(GenerationStatus), default=GenerationStatus.preparing, index=True
+    )
+    expected_chunk_count: Mapped[int] = mapped_column(Integer, nullable=True)
+    vector_chunk_count: Mapped[int] = mapped_column(Integer, nullable=True)
+    bm25_chunk_count: Mapped[int] = mapped_column(Integer, nullable=True)
+    chunk_ids_hash: Mapped[str] = mapped_column(String(64), nullable=True)
+    error_stage: Mapped[str] = mapped_column(String(50), nullable=True)
+    error_message: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+    committed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
 
 class Conversation(Base):

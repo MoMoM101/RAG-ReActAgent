@@ -85,6 +85,9 @@ async def init_db():
         for stmt in [
             "CREATE TABLE IF NOT EXISTS bm25_docs ("
             "  chunk_id TEXT PRIMARY KEY, document_id TEXT NOT NULL,"
+            "  document_key TEXT NOT NULL DEFAULT '',"
+            "  section_key TEXT NOT NULL DEFAULT '',"
+            "  chunk_index INTEGER NOT NULL DEFAULT 0,"
             "  text TEXT NOT NULL, token_count INTEGER NOT NULL DEFAULT 0)",
             "CREATE TABLE IF NOT EXISTS bm25_index ("
             "  term TEXT NOT NULL, chunk_id TEXT NOT NULL, tf INTEGER NOT NULL,"
@@ -95,6 +98,69 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_bm25_index_term ON bm25_index(term)",
         ]:
             await conn.exec_driver_sql(stmt)
+
+        # 迁移: bm25_docs 新增 document_key, section_key, chunk_index
+        bm25_cols = (await conn.exec_driver_sql("PRAGMA table_info(bm25_docs)")).fetchall()
+        bm25_existing = {row[1] for row in bm25_cols}
+        for col, spec in [
+            ("document_key", "TEXT NOT NULL DEFAULT ''"),
+            ("section_key", "TEXT NOT NULL DEFAULT ''"),
+            ("chunk_index", "INTEGER NOT NULL DEFAULT 0"),
+        ]:
+            if col not in bm25_existing:
+                await conn.exec_driver_sql(
+                    f"ALTER TABLE bm25_docs ADD COLUMN {col} {spec}"
+                )
+
+        # Generation tracking for cross-store atomic indexing
+        await conn.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS index_generations ("
+            "  id TEXT PRIMARY KEY,"
+            "  doc_id TEXT NOT NULL,"
+            "  status TEXT NOT NULL DEFAULT 'staging',"  # staging | committed | failed
+            "  qdrant_count INTEGER,"
+            "  bm25_count INTEGER,"
+            "  chunk_ids_consistent INTEGER NOT NULL DEFAULT 0,"
+            "  created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+            "  committed_at TEXT"
+            ")"
+        )
+
+        # Persistent task queue for restart recovery
+        await conn.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS task_queue ("
+            "  id TEXT PRIMARY KEY,"
+            "  name TEXT NOT NULL,"
+            "  status TEXT NOT NULL DEFAULT 'pending',"  # pending | running | done | failed
+            "  metadata TEXT,"
+            "  error TEXT,"
+            "  heartbeat_at TEXT,"
+            "  created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+            "  completed_at TEXT"
+            ")"
+        )
+
+        # Migration: index_generations new columns for atomic visibility
+        gen_cols = (await conn.exec_driver_sql("PRAGMA table_info(index_generations)")).fetchall()
+        gen_existing = {row[1] for row in gen_cols}
+        for col, spec in [
+            ("expected_chunk_count", "INTEGER"),
+            ("vector_chunk_count", "INTEGER"),
+            ("chunk_ids_hash", "TEXT"),
+            ("error_stage", "TEXT"),
+            ("error_message", "TEXT"),
+        ]:
+            if col not in gen_existing:
+                await conn.exec_driver_sql(
+                    f"ALTER TABLE index_generations ADD COLUMN {col} {spec}"
+                )
+        # Migration: documents.active_generation_id
+        doc_cols2 = (await conn.exec_driver_sql("PRAGMA table_info(documents)")).fetchall()
+        doc_existing2 = {row[1] for row in doc_cols2}
+        if "active_generation_id" not in doc_existing2:
+            await conn.exec_driver_sql(
+                "ALTER TABLE documents ADD COLUMN active_generation_id TEXT"
+            )
 
 
 async def get_db():
