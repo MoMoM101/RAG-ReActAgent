@@ -41,6 +41,17 @@ class Settings(BaseSettings):
     chunk_overlap: int = 40
     retrieval_top_k: int = 8
 
+    # Timeouts (seconds)
+    llm_connect_timeout: float = 10.0
+    llm_read_timeout: float = 60.0
+    llm_first_token_timeout: float = 30.0
+    tool_default_timeout: float = 60.0
+    embedding_timeout: float = 30.0
+
+    # LLM retry
+    llm_max_retries: int = 3
+    llm_retry_backoff: float = 1.0
+
     # Retrieval dedup
     dedup_enabled: bool = True
     dedup_similarity_threshold: float = 0.85
@@ -144,6 +155,22 @@ def _init_settings() -> Settings:
 
     env_file = s.model_config.get("env_file", ".env")
     env_path = Path(str(env_file)) if not isinstance(env_file, Path) else env_file
+
+    # Resolve CWD-dependent paths to absolute (based on backend directory)
+    _backend_dir = Path(__file__).resolve().parent
+    # database_url: sqlite+aiosqlite:///./data/... → absolute path
+    if s.database_url.startswith("sqlite+aiosqlite:///") and "./" in s.database_url:
+        import re as _re
+        db_rel = s.database_url[len("sqlite+aiosqlite:///"):]
+        if not Path(db_rel).is_absolute():
+            db_abs = (_backend_dir / db_rel).resolve()
+            s.database_url = f"sqlite+aiosqlite:///{db_abs}"
+    # upload_dir
+    if not Path(s.upload_dir).is_absolute():
+        s.upload_dir = str((_backend_dir / s.upload_dir).resolve())
+    # qdrant_path
+    if not Path(s.qdrant_path).is_absolute():
+        s.qdrant_path = str((_backend_dir / s.qdrant_path).resolve())
 
     # secret_key 为默认值时自动生成随机密钥（写入前检查避免多 worker 竞争）
     if s.secret_key == "change-me-in-production":
