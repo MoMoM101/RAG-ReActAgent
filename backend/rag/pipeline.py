@@ -405,27 +405,32 @@ async def _process_document(doc_id: str, file_path: str, file_type: str):
             await _commit_generation(gen_id, len(qdrant_read_ids), len(fts_read_ids), expected_hash)
             await _switch_active_generation(doc_id, gen_id)
 
+            # Done — finalize document in same try block for consistency
+            doc.status = DocStatus.ready
+            doc.chunk_count = len(chunks)
+            doc.embedding_model = settings.embedding_model
+            doc.embedding_dim = settings.embedding_dim
+            doc.chunk_size = actual_chunk_size
+            await session.commit()
+
+            progress.publish(doc_id, {
+                "status": "ready",
+                "chunk_count": len(chunks),
+                "message": "入库完成",
+            })
+
             idx_elapsed = int((time.time() - t_idx) * 1000)
             logger.info("indexing done doc_id=%s elapsed_ms=%d gen_id=%s chunks=%d",
                         doc_id, idx_elapsed, gen_id[:8], expected_count)
         except Exception:
+            # Clean up Qdrant data written before the failure
+            try:
+                await vectordb.delete_by_document(doc_id)
+            except Exception as cleanup_err:
+                logger.warning("failed to clean Qdrant after indexing failure: %s", cleanup_err)
             await _fail_generation(
                 gen_id, 0, 0,
                 error_stage="indexing",
                 error_message="Indexing failed, see logs for details",
             )
             raise
-
-        # Done
-        doc.status = DocStatus.ready
-        doc.chunk_count = len(chunks)
-        doc.embedding_model = settings.embedding_model
-        doc.embedding_dim = settings.embedding_dim
-        doc.chunk_size = actual_chunk_size
-        await session.commit()
-
-        progress.publish(doc_id, {
-            "status": "ready",
-            "chunk_count": len(chunks),
-            "message": "入库完成",
-        })

@@ -339,7 +339,7 @@ async def _multi_search(
 async def _filter_committed_generation(
     results: list[RetrievalResult],
 ) -> list[RetrievalResult]:
-    """Remove results from documents without a committed active_generation_id."""
+    """Remove results whose generation is not committed (active AND committed)."""
     if not results:
         return results
     doc_ids = list({r.document_id for r in results})
@@ -353,22 +353,29 @@ async def _filter_committed_generation(
         conn = await session.connection()
         placeholders = ",".join(f":d{i}" for i in range(len(doc_ids)))
         params = {f"d{i}": did for i, did in enumerate(doc_ids)}
+        # Join documents with index_generations to verify committed status
         rows = (await conn.execute(
             sa_text(
-                f"SELECT id, active_generation_id FROM documents WHERE id IN ({placeholders})"
+                f"SELECT d.id, d.active_generation_id, g.status "
+                f"FROM documents d "
+                f"LEFT JOIN index_generations g ON d.active_generation_id = g.id "
+                f"WHERE d.id IN ({placeholders})"
             ),
             params,
         )).fetchall()
 
-    active_map = {r[0]: r[1] for r in rows}
-    # Documents with no active_generation_id (legacy, pre-generation tracking)
-    # are included to avoid breaking existing indexes
-    filtered = [
-        r for r in results
-        if r.document_id not in active_map
-        or active_map[r.document_id] is None
-        or bool(active_map[r.document_id])
-    ]
+    # Build a set of doc_ids whose active generation is committed
+    committed_docs: set[str] = set()
+    legacy_docs: set[str] = set()
+    for row in rows:
+        doc_id, active_gen_id, gen_status = row
+        if active_gen_id is None:
+            legacy_docs.add(doc_id)  # pre-generation-tracking docs, include them
+        elif gen_status == "committed":
+            committed_docs.add(doc_id)
+
+    valid_docs = legacy_docs | committed_docs
+    filtered = [r for r in results if r.document_id in valid_docs]
     if len(filtered) < len(results):
         logger.info(
             "generation filter: removed %d results from non-committed generations",
