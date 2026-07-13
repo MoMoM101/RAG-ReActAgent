@@ -57,7 +57,7 @@ class IndexGeneration(Base):
     )
     expected_chunk_count: Mapped[int] = mapped_column(Integer, nullable=True)
     vector_chunk_count: Mapped[int] = mapped_column(Integer, nullable=True)
-    bm25_chunk_count: Mapped[int] = mapped_column(Integer, nullable=True)
+    bm25_chunk_count: Mapped[int] = mapped_column("bm25_count", Integer, nullable=True)
     chunk_ids_hash: Mapped[str] = mapped_column(String(64), nullable=True)
     error_stage: Mapped[str] = mapped_column(String(50), nullable=True)
     error_message: Mapped[str] = mapped_column(Text, nullable=True)
