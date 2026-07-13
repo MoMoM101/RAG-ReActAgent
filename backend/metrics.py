@@ -57,6 +57,18 @@ class MetricsCollector:
         self.embedding_tokens_total: int = 0
         self.embedding_requests: int = 0
 
+        # Retrieval
+        self.retrieval_semantic_calls: int = 0
+        self.retrieval_keyword_calls: int = 0
+        self.retrieval_fallbacks: dict[str, int] = defaultdict(int)
+        self.retrieval_empty_results: int = 0
+
+        # Generation
+        self.generation_statuses: dict[str, int] = defaultdict(int)
+
+        # Dead-letter
+        self.dead_letter_count: int = 0
+
         self._max_samples = 1000  # cap latency samples to bound memory
 
     # ── HTTP ──────────────────────────────────────────────────
@@ -120,6 +132,32 @@ class MetricsCollector:
         with self._lock:
             self.embedding_tokens_total += tokens
             self.embedding_requests += 1
+
+    # ── Retrieval ──────────────────────────────────────────────
+
+    def record_retrieval(self, semantic_count: int, keyword_count: int,
+                         fallback_reason: str = "", empty: bool = False):
+        with self._lock:
+            self.retrieval_semantic_calls += 1 if semantic_count > 0 else 0
+            self.retrieval_keyword_calls += 1 if keyword_count > 0 else 0
+            if fallback_reason:
+                for reason in fallback_reason.split(";"):
+                    if reason.strip():
+                        self.retrieval_fallbacks[reason.strip()] += 1
+            if empty:
+                self.retrieval_empty_results += 1
+
+    # ── Generation ─────────────────────────────────────────────
+
+    def record_generation_status(self, status: str):
+        with self._lock:
+            self.generation_statuses[status] += 1
+
+    # ── Dead-letter ────────────────────────────────────────────
+
+    def record_dead_letter(self, count: int = 1):
+        with self._lock:
+            self.dead_letter_count += count
 
     # ── Snapshot ──────────────────────────────────────────────
 
@@ -188,6 +226,18 @@ class MetricsCollector:
                     "total_estimated_tokens": self.embedding_tokens_total,
                     "requests": self.embedding_requests,
                 },
+                "retrieval": {
+                    "semantic_calls": self.retrieval_semantic_calls,
+                    "keyword_calls": self.retrieval_keyword_calls,
+                    "fallbacks": dict(self.retrieval_fallbacks),
+                    "empty_results": self.retrieval_empty_results,
+                },
+                "generation": {
+                    "statuses": dict(self.generation_statuses),
+                },
+                "dead_letter": {
+                    "count": self.dead_letter_count,
+                },
             }
 
 
@@ -200,3 +250,56 @@ def get_metrics() -> MetricsCollector:
     if _collector is None:
         _collector = MetricsCollector()
     return _collector
+
+
+def export_prometheus() -> str:
+    """Export current metrics in Prometheus text format."""
+    m = get_metrics()
+    snap = m.snapshot()
+    lines: list[str] = []
+
+    # HTTP
+    for key, count in snap["http"]["requests_by_path"].items():
+        method, path = key.split(":", 1)
+        path_clean = path.replace("/", "_").replace("-", "_").strip("_")
+        lines.append(f'http_requests_total{{method="{method}",path="/{path_clean}"}} {count}')
+    for status, count in snap["http"]["errors_by_status"].items():
+        lines.append(f'http_errors_total{{status="{status}"}} {count}')
+    lat = snap["http"]["latency_ms"]
+    if lat["samples"] > 0:
+        lines.append(f'http_latency_ms{{quantile="0.5"}} {lat["p50"]}')
+        lines.append(f'http_latency_ms{{quantile="0.95"}} {lat["p95"]}')
+        lines.append(f'http_latency_ms{{quantile="0.99"}} {lat["p99"]}')
+
+    # Agent
+    lines.append(f'agent_timeouts_total {snap["agent"]["timeouts"]}')
+    lines.append(f'agent_loop_limits_total {snap["agent"]["loop_limits"]}')
+
+    # Tools
+    for name, info in snap["tools"].items():
+        lines.append(f'tool_calls_total{{tool="{name}"}} {info["calls"]}')
+        lines.append(f'tool_success_rate{{tool="{name}"}} {info["success_rate"]:.2f}')
+        lines.append(f'tool_latency_ms{{tool="{name}",quantile="0.5"}} {info["latency_ms"]["p50"]:.1f}')
+
+    # Ingestion
+    lines.append(f'ingestion_total {snap["ingestion"]["total"]}')
+    lines.append(f'ingestion_failures_total {snap["ingestion"]["failures"]}')
+
+    # LLM / Embedding
+    lines.append(f'llm_tokens_total {snap["llm"]["total_tokens"]}')
+    lines.append(f'llm_requests_total {snap["llm"]["requests"]}')
+    lines.append(f'embedding_tokens_total {snap["embedding"]["total_estimated_tokens"]}')
+    lines.append(f'embedding_requests_total {snap["embedding"]["requests"]}')
+
+    # Retrieval
+    lines.append(f'retrieval_semantic_calls_total {snap["retrieval"]["semantic_calls"]}')
+    lines.append(f'retrieval_keyword_calls_total {snap["retrieval"]["keyword_calls"]}')
+    lines.append(f'retrieval_empty_results_total {snap["retrieval"]["empty_results"]}')
+    for reason, count in snap["retrieval"]["fallbacks"].items():
+        reason_clean = reason.replace(" ", "_").replace("-", "_")
+        lines.append(f'retrieval_fallbacks_total{{reason="{reason_clean}"}} {count}')
+    for status, count in snap["generation"]["statuses"].items():
+        lines.append(f'generation_status_total{{status="{status}"}} {count}')
+    lines.append(f'dead_letter_tasks_total {snap["dead_letter"]["count"]}')
+
+    return "\n".join(lines) + "\n"
