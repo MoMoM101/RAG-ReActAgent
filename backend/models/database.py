@@ -117,9 +117,10 @@ async def init_db():
             "CREATE TABLE IF NOT EXISTS index_generations ("
             "  id TEXT PRIMARY KEY,"
             "  doc_id TEXT NOT NULL,"
-            "  status TEXT NOT NULL DEFAULT 'staging',"  # staging | committed | failed
-            "  qdrant_count INTEGER,"
+            "  status TEXT NOT NULL DEFAULT 'preparing',"
+            "  vector_chunk_count INTEGER,"
             "  bm25_count INTEGER,"
+            "  chunk_ids_hash TEXT,"
             "  chunk_ids_consistent INTEGER NOT NULL DEFAULT 0,"
             "  created_at TEXT NOT NULL DEFAULT (datetime('now')),"
             "  committed_at TEXT"
@@ -139,6 +140,18 @@ async def init_db():
             "  completed_at TEXT"
             ")"
         )
+
+        # Migration: rename index_generations columns (old -> new names)
+        gen_cols_all = (await conn.exec_driver_sql("PRAGMA table_info(index_generations)")).fetchall()
+        gen_existing_all = {row[1] for row in gen_cols_all}
+        if "qdrant_count" in gen_existing_all and "vector_chunk_count" not in gen_existing_all:
+            await conn.exec_driver_sql(
+                "ALTER TABLE index_generations ADD COLUMN vector_chunk_count INTEGER"
+            )
+        if "chunk_ids_consistent" in gen_existing_all and "chunk_ids_hash" not in gen_existing_all:
+            await conn.exec_driver_sql(
+                "ALTER TABLE index_generations ADD COLUMN chunk_ids_hash TEXT"
+            )
 
         # Migration: index_generations new columns for atomic visibility
         gen_cols = (await conn.exec_driver_sql("PRAGMA table_info(index_generations)")).fetchall()
