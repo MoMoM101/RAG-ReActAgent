@@ -87,6 +87,33 @@ def _bootstrap_admin_token() -> None:
     logger.info("Generated new admin API token (saved to %s)", env_path)
 
 
+async def _bootstrap_user() -> None:
+    """Create a default system_admin user if no users exist."""
+    from sqlalchemy import select
+    from models.database import async_session
+    from models.orm import User
+    from auth.jwt import hash_password
+
+    async with async_session() as session:
+        result = await session.execute(select(User).limit(1))
+        if result.scalar_one_or_none():
+            return
+
+        import uuid as _uuid
+        admin_id = str(_uuid.uuid4())
+        session.add(User(
+            id=admin_id,
+            username="admin",
+            password_hash=hash_password("admin123"),
+            role="system_admin",
+        ))
+        await session.commit()
+        logger.warning(
+            "Bootstrap admin user created — username='admin', password='admin123'. "
+            "Change immediately!"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from logging_config import setup_logging
@@ -94,6 +121,9 @@ async def lifespan(app: FastAPI):
 
     # Bootstrap admin token on first run
     _bootstrap_admin_token()
+
+    # Bootstrap default admin user if no users exist
+    await _bootstrap_user()
 
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     # Clean up leftover restore artifacts (candidate/previous dirs) from interrupted restores
@@ -130,8 +160,19 @@ async def lifespan(app: FastAPI):
             logger.info("embedding dim verified: %d matches config", actual_dim)
     except Exception as e:
         logger.warning("embedding dim auto-detection skipped: %s", e)
-    # Clean up documents stuck in intermediate states > 30 min
-    await _cleanup_stuck_documents()
+    # Clean up orphaned staging generations (crashed mid-index)
+    from rag.pipeline import cleanup_staging_generations, recover_incomplete_documents
+    cleaned_gens = await cleanup_staging_generations()
+    if cleaned_gens:
+        logger.info("cleaned up %d orphaned staging generations", cleaned_gens)
+    recovered_docs = await recover_incomplete_documents()
+    if recovered_docs:
+        logger.info("rescheduled %d incomplete documents", recovered_docs)
+    # Recover stale background tasks (crashed mid-execution)
+    from worker.tasks import recover_tasks_on_startup
+    recovered = await recover_tasks_on_startup()
+    if recovered:
+        logger.info("recovered %d stale background tasks", recovered)
     # Preload reranker model in background
     if settings.hf_endpoint:
         os.environ["HF_ENDPOINT"] = settings.hf_endpoint
@@ -210,6 +251,14 @@ async def metrics(_admin: None = Depends(require_admin)):
     """Structured metrics endpoint — no raw queries, content, or API keys."""
     from metrics import get_metrics
     return get_metrics().snapshot()
+
+
+@app.get("/api/metrics/prometheus")
+async def metrics_prometheus(_admin: None = Depends(require_admin)):
+    """Prometheus text format metrics endpoint."""
+    from fastapi.responses import PlainTextResponse
+    from metrics import export_prometheus
+    return PlainTextResponse(content=export_prometheus(), media_type="text/plain; charset=utf-8")
 
 
 @app.get("/api/health/dependencies")
@@ -310,6 +359,11 @@ app.include_router(memories_router, dependencies=[Depends(require_admin)])
 from api.backup import router as backup_router
 
 app.include_router(backup_router, dependencies=[Depends(require_admin)])
+
+# Auth routes (public — no auth dependency)
+from api.auth import router as auth_router
+
+app.include_router(auth_router)
 
 if __name__ == "__main__":
     import uvicorn
