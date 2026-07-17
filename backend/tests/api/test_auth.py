@@ -208,3 +208,85 @@ class TestNoTokenBackwardCompat:
                 files={"file": ("compat_test_unique.txt", b"unique compat test content", "text/plain")},
             )
             assert r.status_code == 200
+
+
+class TestJwtAuth:
+    """JWT-based authentication tests."""
+
+    @pytest.fixture
+    def jwt_mode(self, monkeypatch):
+        """Disable legacy token, enable JWT-only mode."""
+        from config import settings
+        monkeypatch.setattr(settings, "legacy_admin_token_enabled", False)
+        monkeypatch.setattr(settings, "admin_api_token", "")
+
+    async def _get_token(self, client) -> str:
+        r = await client.post("/api/auth/login", json={
+            "username": "admin",
+            "password": "admin123",
+        })
+        assert r.status_code == 200, f"Login failed: {r.text}"
+        return r.json()["access_token"]
+
+    async def test_login_returns_tokens(self, jwt_mode, setup_db):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/api/auth/login", json={
+                "username": "admin",
+                "password": "admin123",
+            })
+            assert r.status_code == 200
+            data = r.json()
+            assert "access_token" in data
+            assert "refresh_token" in data
+            assert data["user"]["role"] == "system_admin"
+
+    async def test_login_wrong_password(self, jwt_mode, setup_db):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/api/auth/login", json={
+                "username": "admin",
+                "password": "wrong",
+            })
+            assert r.status_code == 401
+
+    async def test_no_access_without_token(self, jwt_mode, setup_db):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/api/documents")
+            assert r.status_code == 401
+
+    async def test_access_with_valid_jwt(self, jwt_mode, setup_db):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            token = await self._get_token(client)
+            r = await client.get("/api/documents", headers={
+                "Authorization": f"Bearer {token}",
+            })
+            assert r.status_code == 200
+
+    async def test_me_endpoint(self, jwt_mode, setup_db):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            token = await self._get_token(client)
+            r = await client.get("/api/auth/me", headers={
+                "Authorization": f"Bearer {token}",
+            })
+            assert r.status_code == 200
+            data = r.json()
+            assert data["username"] == "admin"
+            assert data["role"] == "system_admin"
+
+    async def test_refresh_token(self, jwt_mode, setup_db):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post("/api/auth/login", json={
+                "username": "admin",
+                "password": "admin123",
+            })
+            refresh = r.json()["refresh_token"]
+            r = await client.post("/api/auth/refresh", json={
+                "refresh_token": refresh,
+            })
+            assert r.status_code == 200
+            assert "access_token" in r.json()
