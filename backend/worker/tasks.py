@@ -116,6 +116,7 @@ class BackgroundTaskManager:
 
     async def _persist_update(
         self, name: str, status: str, error: str | None = None,
+        *, metadata: dict | None = None,
     ) -> None:
         try:
             from sqlalchemy import text as sa_text
@@ -128,6 +129,12 @@ class BackgroundTaskManager:
                         "UPDATE task_queue SET status='running', heartbeat_at=datetime('now') "
                         "WHERE id=:id"
                     ), {"id": name})
+                elif status == "retry_wait":
+                    delay = (metadata or {}).get("retry_delay_sec", 60)
+                    await conn.execute(sa_text(
+                        "UPDATE task_queue SET status='retry_wait', error=:err, "
+                        "next_run_at=datetime('now', :delay) WHERE id=:id"
+                    ), {"err": error, "delay": f"+{int(delay)} seconds", "id": name})
                 elif status in ("done", "failed"):
                     await conn.execute(sa_text(
                         "UPDATE task_queue SET status=:st, error=:err, "
@@ -167,6 +174,7 @@ class BackgroundTaskManager:
             return False
         try:
             from sqlalchemy import text as sa_text
+
             from models.database import async_session
             async with async_session() as session:
                 conn = await session.connection()
@@ -182,6 +190,7 @@ class BackgroundTaskManager:
         """Atomically claim a pending or stale running task. Returns True if claimed."""
         try:
             from sqlalchemy import text as sa_text
+
             from models.database import async_session
             async with async_session() as session:
                 conn = await session.connection()
@@ -200,6 +209,7 @@ class BackgroundTaskManager:
         """Move a task to dead-letter state after max attempts."""
         try:
             from sqlalchemy import text as sa_text
+
             from models.database import async_session
             async with async_session() as session:
                 conn = await session.connection()
@@ -297,6 +307,14 @@ class BackgroundTaskManager:
             from models.database import async_session
             async with async_session() as session:
                 conn = await session.connection()
+                # Re-enqueue retry_wait tasks whose next_run_at has passed
+                retry_wait_result = await conn.execute(sa_text(
+                    "UPDATE task_queue SET status='pending', worker_id=NULL, "
+                    "next_run_at=NULL WHERE status='retry_wait' "
+                    "AND next_run_at <= datetime('now')"
+                ))
+                retry_wait_count = retry_wait_result.rowcount
+
                 # Move exhausted tasks to dead-letter
                 dead_result = await conn.execute(sa_text(
                     "UPDATE task_queue SET status=:dl, error='dead_letter: max attempts reached' "
@@ -314,10 +332,11 @@ class BackgroundTaskManager:
                 retry_count = retry_result.rowcount
                 await session.commit()
 
-                total = dead_count + retry_count
+                total = dead_count + retry_count + retry_wait_count
                 if total:
                     logger.warning(
-                        "task recovery: %d dead-lettered, %d re-enqueued", dead_count, retry_count
+                        "task recovery: %d dead-lettered, %d re-enqueued, %d retry_wait",
+                        dead_count, retry_count, retry_wait_count,
                     )
                 return total
         except Exception as e:
