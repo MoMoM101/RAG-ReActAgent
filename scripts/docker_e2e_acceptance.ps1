@@ -54,6 +54,7 @@ $RunTimestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
 $ShortGuid = (New-Guid).ToString().Substring(0, 8)
 $RunId = "ragagent-e2e-${RunTimestamp}-${ShortGuid}"
 $OutputDir = Join-Path $ArtifactsBase $RunId
+New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 $ProjectNamePattern = '^ragagent-e2e-\d{8}-\d{6}-[0-9a-f]{8}$'
 
 # ─── Token resolution ─────────────────────────────────────────────────────────
@@ -167,7 +168,7 @@ function Get-HashSafe {
     try {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($val)
         $hash = [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
-        return [BitConverter]::ToString($hash) -replace "-", "" -replace "^"
+        return [BitConverter]::ToString($hash).Replace("-", "").ToLower()
     } catch {
         return "error"
     }
@@ -232,10 +233,6 @@ function Invoke-Pytest {
     Write-Host "  Running pytest: $TestPath"
     $env:BACKEND_URL = "http://127.0.0.1:${BackendPort}"
     $env:DOCKER_E2E_REQUIRED = "1"
-    $pytestArgs = @(
-        "-m", "pwsh", "-c",
-        "python -m pytest `"$TestPath`" -v --tb=short --junitxml=`"$OutputDir/pytest_${Description}.xml`" 2>&1"
-    )
     $output = & python -m pytest $TestPath -v --tb=short --junitxml="$OutputDir/pytest_${Description}.xml" 2>&1
     $exitCode = $LASTEXITCODE
     Write-Host "  Pytest exit code: $exitCode"
