@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from audit import record_audit
 from auth.jwt import (
     create_access_token,
     create_refresh_token,
@@ -37,8 +38,12 @@ async def login(req: LoginRequest):
         )
         user = result.scalar_one_or_none()
         if not user or user.disabled:
+            await record_audit("login_failure", result="failure",
+                               detail=f"username={req.username}")
             raise HTTPException(401, "Invalid credentials")
         if not verify_password(req.password, user.password_hash):
+            await record_audit("login_failure", result="failure",
+                               detail=f"username={req.username}")
             raise HTTPException(401, "Invalid credentials")
 
         user.last_login_at = datetime.now(UTC)
@@ -46,6 +51,9 @@ async def login(req: LoginRequest):
 
         access_token = create_access_token(user.id, user.username, str(user.role))
         refresh_token = create_refresh_token(user.id)
+        await record_audit("login_success",
+                           object_id=user.id, detail=f"username={user.username}",
+                           actor_id=user.id, actor_username=user.username)
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from audit import audit_from_request
 from auth.jwt import hash_password
 from models.database import async_session
 from models.orm import User
@@ -71,6 +72,9 @@ async def create_user(
         )
         session.add(user)
         await session.commit()
+        await audit_from_request(request, "user_create",
+                                 object_type="user", object_id=user.id,
+                                 detail=f"username={user.username}, role={user.role}")
         return {
             "id": user.id,
             "username": user.username,
@@ -104,6 +108,9 @@ async def update_user(
             user.disabled = req.disabled
 
         await session.commit()
+        await audit_from_request(request, "user_update",
+                                 object_type="user", object_id=user_id,
+                                 detail=f"changes={req.model_dump(exclude_none=True)}")
         return {
             "id": user.id,
             "username": user.username,
@@ -131,4 +138,6 @@ async def delete_user(
             raise HTTPException(404, "User not found")
         await session.delete(user)
         await session.commit()
+        await audit_from_request(request, "user_delete",
+                                 object_type="user", object_id=user_id)
     return {"status": "deleted", "id": user_id}

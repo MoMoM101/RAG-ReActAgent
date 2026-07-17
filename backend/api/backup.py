@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 from maintenance import MaintenancePhase, get_maintenance_state
 from starlette.background import BackgroundTask
 
+from audit import record_audit
 from config import settings
 from utils.safe_archive import (
     ArchiveLimits,
@@ -431,6 +432,7 @@ async def create_backup():
                 tar.add(upload_dir, arcname="uploads")
 
         logger.info("backup created db=%s size=%d", db_path, tar_path.stat().st_size)
+        await record_audit("backup_download")
         return FileResponse(
             tar_path,
             media_type="application/gzip",
@@ -548,7 +550,7 @@ async def _cross_consistency_check(
     doc_ids = [row["id"] for row in rows]
 
     # ── BM25 consistency: check per-document chunk counts ──
-    bm25_counts = await _bm25_doc_chunk_counts(doc_ids)
+    bm25_counts = await _bm25_doc_chunk_counts(doc_ids, db_path=db_path)
 
     # ── Qdrant consistency ──
     vdb = QdrantVectorDB(collection_name=qdrant_collection)
@@ -635,11 +637,40 @@ async def _cross_consistency_check(
     return result
 
 
-async def _bm25_doc_chunk_counts(doc_ids: list[str]) -> dict[str, int | None]:
+async def _bm25_doc_chunk_counts(
+    doc_ids: list[str], *, db_path: Path | None = None,
+) -> dict[str, int | None]:
     """Query BM25 index for chunk counts per document_id.
 
-    Returns None for each doc_id if BM25 tables don't exist yet (e.g. fresh restore staging).
+    During restore, ``db_path`` is the staged database. Reading the live async
+    engine here would validate unrelated online data instead of the candidate
+    being switched in. Returns None when an older backup has no BM25 tables.
     """
+    if db_path is not None:
+        try:
+            conn = sqlite3.connect(str(db_path))
+            try:
+                table = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bm25_docs'"
+                ).fetchone()
+                if table is None:
+                    return {doc_id: None for doc_id in doc_ids}
+                total = conn.execute("SELECT COUNT(*) FROM bm25_docs").fetchone()
+                if not total or total[0] == 0:
+                    return {doc_id: None for doc_id in doc_ids}
+                return {
+                    doc_id: int(conn.execute(
+                        "SELECT COUNT(*) FROM bm25_docs WHERE document_id = ?",
+                        (doc_id,),
+                    ).fetchone()[0])
+                    for doc_id in doc_ids
+                }
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning("staged BM25 consistency check skipped: %s", e)
+            return {doc_id: None for doc_id in doc_ids}
+
     try:
         from textdb.bm25_search import BM25Search
         bm25 = BM25Search()
@@ -668,6 +699,7 @@ async def _bm25_doc_chunk_counts(doc_ids: list[str]) -> dict[str, int | None]:
 async def _save_active_collection_pointer(collection_name: str) -> None:
     """Persist the active Qdrant collection name to active_collections.json."""
     ptr_file = Path(settings.qdrant_path) / "active_collections.json"
+    ptr_file.parent.mkdir(parents=True, exist_ok=True)
     data = {}
     if ptr_file.exists():
         with contextlib.suppress(Exception):
@@ -892,7 +924,10 @@ async def restore_backup(file: UploadFile):
             old_active=old_collection,
             temp_collection=temp_collection,
         )
+        documents_restored = len(restore_docs)
 
+        await record_audit("backup_restore",
+                           detail=f"documents_restored={documents_restored}")
         return {
             "status": "ok",
             "documents_total": len(staging_rows),

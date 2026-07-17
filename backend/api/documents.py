@@ -1,21 +1,27 @@
 import asyncio
+import hashlib
 import json
+import logging
 import os
 import re
 
+from audit import audit_from_request, record_audit
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from limiter import limiter
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from storage.files import create_upload_temp, delete_file
 
-from config import settings
+from config import DOCUMENT_UPLOAD_HARD_LIMIT_MB, settings
 from models.database import async_session, get_db
 from models.orm import DocStatus, Document
-from rag.pipeline import _process_document, ingest_document
+from rag.answer_cache import bump_collection_version
+from rag.pipeline import _process_document, ingest_document_from_path
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
 
 ALLOWED_TYPES = {
     ".pdf": "application/pdf",
@@ -26,7 +32,53 @@ ALLOWED_TYPES = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB
+SSE_HEARTBEAT_SECONDS = 15
+TERMINAL_DOCUMENT_STATUSES = {"ready", "failed", "not_found"}
+
+
+def _max_file_size_bytes() -> int:
+    return settings.document_max_upload_mb * 1024 * 1024
+
+
+def _document_payload(doc: Document) -> dict:
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "file_size": doc.file_size,
+        "file_type": doc.file_type,
+        "status": doc.status.value,
+        "chunk_count": doc.chunk_count,
+        "created_at": doc.created_at.isoformat(),
+    }
+
+
+async def _stream_upload_to_temp(file: UploadFile) -> tuple[str, str, int]:
+    """Stream an upload to disk while hashing and enforcing the size limit."""
+    temp_path = create_upload_temp()
+    digest = hashlib.sha256()
+    total = 0
+    max_file_size = _max_file_size_bytes()
+    try:
+        with open(temp_path, "wb") as output:
+            while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+                total += len(chunk)
+                if total > max_file_size:
+                    raise HTTPException(
+                        413,
+                        "File too large: exceeds "
+                        f"{settings.document_max_upload_mb} MB",
+                    )
+                digest.update(chunk)
+                await asyncio.to_thread(output.write, chunk)
+        if total == 0:
+            raise HTTPException(400, "File is empty")
+        return temp_path, digest.hexdigest(), total
+    except BaseException:
+        delete_file(temp_path)
+        raise
+    finally:
+        await file.close()
 
 
 @router.post("/upload")
@@ -41,30 +93,142 @@ async def upload_document(
     if ext not in ALLOWED_TYPES:
         raise HTTPException(400, f"Unsupported file type: {ext}")
 
-    # Validate size
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(400, f"File too large: {len(content)} bytes (max {MAX_FILE_SIZE})")
-
+    temp_path, file_hash, file_size = await _stream_upload_to_temp(file)
     try:
-        doc_id = await ingest_document(
+        doc_id = await ingest_document_from_path(
             filename=file.filename or "unknown",
-            file_content=content,
+            temp_path=temp_path,
+            file_hash=file_hash,
+            file_size=file_size,
             file_type=ext,
             background=True,
         )
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
+    finally:
+        # No-op after atomic finalize; removes staging data on early failures.
+        delete_file(temp_path)
 
     doc = (await db.execute(select(Document).where(Document.id == doc_id))).scalar_one()
+    await audit_from_request(request, "document_upload",
+                             object_type="document", object_id=doc_id,
+                             detail=f"filename={doc.filename}")
+    return _document_payload(doc)
+
+
+@router.post("/upload-batch")
+@limiter.limit("10/minute")
+async def upload_document_batch(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload multiple files with per-file failure isolation."""
+    if not files:
+        raise HTTPException(400, "No files provided")
+    if len(files) > settings.document_batch_max_files:
+        raise HTTPException(
+            400,
+            f"Too many files: maximum {settings.document_batch_max_files} per batch",
+        )
+    known_total = sum(file.size or 0 for file in files)
+    total_limit = settings.document_batch_max_total_mb * 1024 * 1024
+    if known_total > total_limit:
+        raise HTTPException(
+            413,
+            "Batch too large: exceeds "
+            f"{settings.document_batch_max_total_mb} MB total limit",
+        )
+
+    items: list[dict] = []
+    streamed_total = 0
+    for file in files:
+        filename = file.filename or "unknown"
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in ALLOWED_TYPES:
+            await file.close()
+            items.append({
+                "filename": filename,
+                "success": False,
+                "status_code": 400,
+                "error": f"Unsupported file type: {ext}",
+            })
+            continue
+
+        temp_path = ""
+        try:
+            temp_path, file_hash, file_size = await _stream_upload_to_temp(file)
+            streamed_total += file_size
+            if streamed_total > total_limit:
+                items.append({
+                    "filename": filename,
+                    "success": False,
+                    "status_code": 413,
+                    "error": "Batch total size limit exceeded",
+                })
+                continue
+            doc_id = await ingest_document_from_path(
+                filename=filename,
+                temp_path=temp_path,
+                file_hash=file_hash,
+                file_size=file_size,
+                file_type=ext,
+                background=True,
+            )
+            doc = (
+                await db.execute(select(Document).where(Document.id == doc_id))
+            ).scalar_one()
+            items.append({
+                "filename": filename,
+                "success": True,
+                "document": _document_payload(doc),
+            })
+        except HTTPException as exc:
+            items.append({
+                "filename": filename,
+                "success": False,
+                "status_code": exc.status_code,
+                "error": str(exc.detail),
+            })
+        except ValueError as exc:
+            items.append({
+                "filename": filename,
+                "success": False,
+                "status_code": 409,
+                "error": str(exc),
+            })
+        except Exception:
+            logger.exception("Batch upload failed for file=%s", filename)
+            items.append({
+                "filename": filename,
+                "success": False,
+                "status_code": 500,
+                "error": "Internal processing error",
+            })
+        finally:
+            if temp_path:
+                delete_file(temp_path)
+
+    succeeded = sum(bool(item["success"]) for item in items)
+    failed = sum(not item["success"] for item in items)
+    await audit_from_request(request, "document_upload_batch",
+                             detail=f"succeeded={succeeded}, failed={failed}")
     return {
-        "id": doc.id,
-        "filename": doc.filename,
-        "file_size": doc.file_size,
-        "file_type": doc.file_type,
-        "status": doc.status.value,
-        "chunk_count": doc.chunk_count,
-        "created_at": doc.created_at.isoformat(),
+        "items": items,
+        "total": len(items),
+        "succeeded": succeeded,
+        "failed": failed,
+    }
+
+
+@router.get("/upload-config")
+async def upload_config():
+    return {
+        "max_upload_mb": settings.document_max_upload_mb,
+        "hard_limit_mb": DOCUMENT_UPLOAD_HARD_LIMIT_MB,
+        "batch_max_files": settings.document_batch_max_files,
+        "batch_max_total_mb": settings.document_batch_max_total_mb,
+        "allowed_extensions": sorted(ALLOWED_TYPES),
     }
 
 
@@ -104,6 +268,16 @@ async def clear_all_documents(db: AsyncSession = Depends(get_db)):
     if not docs:
         return {"status": "cleared", "count": 0}
 
+    active = [
+        doc for doc in docs
+        if doc.status not in (DocStatus.ready, DocStatus.failed)
+    ]
+    if active:
+        raise HTTPException(
+            409,
+            f"仍有 {len(active)} 个文档正在处理，请等待完成或失败后再清空",
+        )
+
     vectordb = await create_vectordb()
     fts = BM25Search()
     upload_dir = settings.upload_dir
@@ -122,7 +296,9 @@ async def clear_all_documents(db: AsyncSession = Depends(get_db)):
     count = len(docs)
     await db.execute(sa_delete(Document))
     await db.commit()
-
+    bump_collection_version()
+    await record_audit("document_clear_all",
+                       detail=f"count={count}")
     return {"status": "cleared", "count": count}
 
 @router.delete("/{doc_id}")
@@ -136,6 +312,8 @@ async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "Document not found")
+    if doc.status not in (DocStatus.ready, DocStatus.failed):
+        raise HTTPException(409, "Document is still being processed")
 
     # Clean up in order
     vectordb = await create_vectordb()
@@ -155,6 +333,9 @@ async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
 
     await db.delete(doc)
     await db.commit()
+    bump_collection_version()
+    await record_audit("document_delete",
+                       object_type="document", object_id=doc_id)
     return {"status": "deleted", "id": doc_id}
 
 
@@ -186,26 +367,20 @@ async def get_document_chunks(doc_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.post("/{doc_id}/reprocess")
+@router.post("/{doc_id}/reprocess", status_code=202)
 async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
-    # Atomic status check-and-claim to prevent concurrent reprocess
-    result = await db.execute(
-        update(Document)
-        .where(Document.id == doc_id)
-        .where(Document.status.in_((DocStatus.failed, DocStatus.ready)))
-        .values(status=DocStatus.uploaded, error_message=None)
-        .returning(Document.filename, Document.file_type)
-    )
-    row = result.one_or_none()
-    if not row:
-        # Either doc doesn't exist or status is not failed/ready
-        check = await db.execute(select(Document.id).where(Document.id == doc_id))
-        if check.scalar_one_or_none() is None:
-            raise HTTPException(404, "Document not found")
+    # Validate the document and source file before claiming it. The previous
+    # order could leave a missing-file retry permanently stuck as "uploaded".
+    doc = (
+        await db.execute(select(Document).where(Document.id == doc_id))
+    ).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(404, "Document not found")
+    if doc.status not in (DocStatus.failed, DocStatus.ready):
         raise HTTPException(400, "Only failed or ready documents can be reprocessed")
-    await db.commit()
 
-    filename, file_type = row
+    filename = doc.filename
+    file_type = doc.file_type
 
     # Find file path
     upload_dir = settings.upload_dir
@@ -225,56 +400,121 @@ async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     if not file_path:
         raise HTTPException(404, "Original file not found")
 
-    try:
-        await _process_document(doc_id, file_path, file_type)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        await db.execute(
-            update(Document)
-            .where(Document.id == doc_id)
-            .values(status=DocStatus.failed, error_message=str(e))
-        )
-        await db.commit()
-        raise HTTPException(500, f"Reprocessing failed: {e}") from e
+    # Atomic claim prevents duplicate clicks from scheduling duplicate work.
+    claimed = await db.execute(
+        update(Document)
+        .where(Document.id == doc_id)
+        .where(Document.status.in_((DocStatus.failed, DocStatus.ready)))
+        .values(status=DocStatus.uploaded, error_message=None)
+    )
+    if claimed.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(409, "Document is already being processed")
+    await db.commit()
+    bump_collection_version()
 
-    return {"status": "reprocessed", "id": doc_id}
+    from worker.tasks import get_task_manager
+
+    from rag.progress import progress
+
+    progress.publish(doc_id, {"status": "uploaded", "message": "已提交重新处理"})
+
+    async def _background_reprocess():
+        try:
+            await _process_document(doc_id, file_path, file_type)
+        except Exception as exc:
+            error = str(exc)[:500]
+            async with async_session() as session:
+                await session.execute(
+                    update(Document)
+                    .where(Document.id == doc_id)
+                    .values(status=DocStatus.failed, error_message=error)
+                )
+                await session.commit()
+            progress.publish(doc_id, {
+                "status": "failed",
+                "message": "重新处理失败",
+                "error": error,
+            })
+
+    get_task_manager().create(
+        _background_reprocess,
+        f"reprocess_{doc_id[:8]}",
+        metadata={"doc_id": doc_id},
+    )
+
+    return {"status": "queued", "id": doc_id}
+
+
+async def _load_document_progress(doc_id: str) -> dict:
+    """Load durable progress so SSE can recover from missed in-process events."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Document).where(Document.id == doc_id)
+        )
+        doc = result.scalar_one_or_none()
+        if doc is None:
+            return {"status": "not_found", "error": "Document not found"}
+
+        event = {
+            "status": doc.status.value,
+            "chunk_count": doc.chunk_count,
+        }
+        if doc.error_message:
+            event["error"] = doc.error_message
+        return event
+
+
+def _sse_data(event: dict) -> str:
+    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+async def _document_progress_events(doc_id: str):
+    from rag.progress import progress
+
+    q = await progress.subscribe(doc_id)
+    try:
+        yield "retry: 3000\n\n"
+
+        current = await _load_document_progress(doc_id)
+        last_status = current["status"]
+        yield _sse_data(current)
+        if last_status in TERMINAL_DOCUMENT_STATUSES:
+            return
+
+        while True:
+            try:
+                event = await asyncio.wait_for(
+                    q.get(), timeout=SSE_HEARTBEAT_SECONDS
+                )
+            except TimeoutError:
+                # The event bus is process-local. Querying durable state also
+                # recovers completion after event loss, restart, or reconnect.
+                current = await _load_document_progress(doc_id)
+                status = current["status"]
+                if status != last_status or status in TERMINAL_DOCUMENT_STATUSES:
+                    last_status = status
+                    yield _sse_data(current)
+                else:
+                    yield ": keepalive\n\n"
+                if status in TERMINAL_DOCUMENT_STATUSES:
+                    return
+                continue
+
+            status = event.get("status", last_status)
+            last_status = status
+            yield _sse_data(event)
+            if status in TERMINAL_DOCUMENT_STATUSES:
+                return
+    finally:
+        progress.unsubscribe(doc_id, q)
 
 
 @router.get("/{doc_id}/progress")
 async def document_progress(doc_id: str):
-    from rag.progress import progress
-
-    async def event_stream():
-        q = await progress.subscribe(doc_id)
-        try:
-            # 先推送当前状态
-            async with async_session() as session:
-                result = await session.execute(
-                    select(Document).where(Document.id == doc_id)
-                )
-                doc = result.scalar_one_or_none()
-                if doc:
-                    yield f"data: {{\"status\": \"{doc.status.value}\"}}\n\n"
-                else:
-                    yield "data: {\"status\": \"not_found\"}\n\n"
-                    return
-
-            # 推送进度事件
-            while True:
-                try:
-                    event = await asyncio.wait_for(q.get(), timeout=30)
-                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                    if event.get("status") in ("ready", "failed"):
-                        break
-                except TimeoutError:
-                    yield "data: {\"status\": \"timeout\"}\n\n"
-                    break
-        finally:
-            progress.unsubscribe(doc_id, q)
 
     return StreamingResponse(
-        event_stream(),
+        _document_progress_events(doc_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
