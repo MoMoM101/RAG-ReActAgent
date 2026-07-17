@@ -5,6 +5,7 @@
 # Environment
 .env
 .venv/
+.python-runtime/
 
 # Python
 __pycache__/
@@ -27,6 +28,10 @@ htmlcov/
 # Data (keep test db out of repo)
 data/test_*.db
 data/test_*
+
+# Benchmark fixtures (generated, large files)
+fixtures_benchmark/
+artifacts/
 
 # Node
 node_modules/
