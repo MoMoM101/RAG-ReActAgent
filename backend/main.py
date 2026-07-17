@@ -365,6 +365,11 @@ from api.auth import router as auth_router
 
 app.include_router(auth_router)
 
+# User management routes (system_admin only — auth enforced per-endpoint)
+from api.users import router as users_router
+
+app.include_router(users_router)
+
 if __name__ == "__main__":
     import uvicorn
 

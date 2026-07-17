@@ -1,0 +1,134 @@
+"""User management API — system_admin only."""
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+
+from auth.jwt import hash_password
+from models.database import async_session
+from models.orm import User
+from security import get_current_user, require_role
+
+router = APIRouter(prefix="/api/users", tags=["users"])
+
+
+class CreateUserRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=100)
+    password: str = Field(..., min_length=6, max_length=128)
+    role: str = "viewer"
+
+
+class UpdateUserRequest(BaseModel):
+    role: str | None = None
+    disabled: int | None = None
+
+
+@router.get("/")
+async def list_users(
+    request: Request,
+    _auth: None = Depends(get_current_user),
+    _enforce: None = Depends(require_role("system_admin")),
+):
+    async with async_session() as session:
+        result = await session.execute(select(User).order_by(User.created_at))
+        users = result.scalars().all()
+        return [
+            {
+                "id": u.id,
+                "username": u.username,
+                "role": str(u.role),
+                "disabled": bool(u.disabled),
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+            }
+            for u in users
+        ]
+
+
+@router.post("/", status_code=201)
+async def create_user(
+    req: CreateUserRequest,
+    request: Request,
+    _auth: None = Depends(get_current_user),
+    _enforce: None = Depends(require_role("system_admin")),
+):
+    if req.role not in ("viewer", "editor", "knowledge_admin", "system_admin"):
+        raise HTTPException(400, f"Invalid role: {req.role}")
+
+    import uuid
+    async with async_session() as session:
+        existing = (await session.execute(
+            select(User).where(User.username == req.username)
+        )).scalar_one_or_none()
+        if existing:
+            raise HTTPException(409, f"Username '{req.username}' already exists")
+
+        user = User(
+            id=str(uuid.uuid4()),
+            username=req.username,
+            password_hash=hash_password(req.password),
+            role=req.role,
+        )
+        session.add(user)
+        await session.commit()
+        return {
+            "id": user.id,
+            "username": user.username,
+            "role": str(user.role),
+        }
+
+
+@router.patch("/{user_id}")
+async def update_user(
+    user_id: str,
+    req: UpdateUserRequest,
+    request: Request,
+    _auth: None = Depends(get_current_user),
+    _enforce: None = Depends(require_role("system_admin")),
+):
+    async with async_session() as session:
+        user = (await session.execute(
+            select(User).where(User.id == user_id)
+        )).scalar_one_or_none()
+        if not user:
+            raise HTTPException(404, "User not found")
+
+        if req.role is not None:
+            if req.role not in ("viewer", "editor", "knowledge_admin", "system_admin"):
+                raise HTTPException(400, f"Invalid role: {req.role}")
+            user.role = req.role
+        if req.disabled is not None:
+            current = get_current_user(request)
+            if user.id == current.user_id:
+                raise HTTPException(400, "Cannot disable yourself")
+            user.disabled = req.disabled
+
+        await session.commit()
+        return {
+            "id": user.id,
+            "username": user.username,
+            "role": str(user.role),
+            "disabled": bool(user.disabled),
+        }
+
+
+@router.delete("/{user_id}")
+async def delete_user(
+    user_id: str,
+    request: Request,
+    _auth: None = Depends(get_current_user),
+    _enforce: None = Depends(require_role("system_admin")),
+):
+    current = get_current_user(request)
+    if user_id == current.user_id:
+        raise HTTPException(400, "Cannot delete yourself")
+
+    async with async_session() as session:
+        user = (await session.execute(
+            select(User).where(User.id == user_id)
+        )).scalar_one_or_none()
+        if not user:
+            raise HTTPException(404, "User not found")
+        await session.delete(user)
+        await session.commit()
+    return {"status": "deleted", "id": user_id}
