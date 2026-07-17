@@ -64,7 +64,7 @@ async def _get_generation(gen_id: str) -> dict | None:
             "doc_id": gen.doc_id,
             "status": str(gen.status),
             "vector_chunk_count": gen.vector_chunk_count,
-            "bm25_count": gen.bm25_count,
+            "bm25_count": gen.bm25_chunk_count,
         }
 
 
