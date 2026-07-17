@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from limiter import limiter
-from security import require_admin
+from security import jwt_auth, require_admin
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -338,27 +338,27 @@ async def health_tasks():
 
 from api.documents import router as documents_router
 
-app.include_router(documents_router, dependencies=[Depends(require_admin)])
+app.include_router(documents_router, dependencies=[Depends(jwt_auth)])
 
 from api.chat import router as chat_router
 
-app.include_router(chat_router, dependencies=[Depends(require_admin)])
+app.include_router(chat_router, dependencies=[Depends(jwt_auth)])
 
 from api.conversations import router as conversations_router
 
-app.include_router(conversations_router, dependencies=[Depends(require_admin)])
+app.include_router(conversations_router, dependencies=[Depends(jwt_auth)])
 
 from api.settings import router as settings_router
 
-app.include_router(settings_router, dependencies=[Depends(require_admin)])
+app.include_router(settings_router, dependencies=[Depends(jwt_auth)])
 
 from api.memories import router as memories_router
 
-app.include_router(memories_router, dependencies=[Depends(require_admin)])
+app.include_router(memories_router, dependencies=[Depends(jwt_auth)])
 
 from api.backup import router as backup_router
 
-app.include_router(backup_router, dependencies=[Depends(require_admin)])
+app.include_router(backup_router, dependencies=[Depends(jwt_auth)])
 
 # Auth routes (public — no auth dependency)
 from api.auth import router as auth_router
