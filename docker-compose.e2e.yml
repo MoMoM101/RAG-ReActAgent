@@ -1,0 +1,28 @@
+services:
+  backend:
+    ports: !override
+      - "127.0.0.1:${E2E_BACKEND_PORT:-18000}:8000"
+    environment:
+      ADMIN_API_TOKEN: ${E2E_ADMIN_API_TOKEN:?E2E_ADMIN_API_TOKEN is required}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 10s
+
+  frontend:
+    ports: !override
+      - "127.0.0.1:${E2E_FRONTEND_PORT:-15173}:5173"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 10s
