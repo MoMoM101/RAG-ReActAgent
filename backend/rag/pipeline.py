@@ -305,30 +305,70 @@ async def _run_document_ingestion(
             async with sem:
                 started = time.time()
                 logger.info("ingestion started doc_id=%s filename=%s", doc_id, filename)
+                # ── Idempotency guard: skip if already committed ──
+                from models.orm import IndexGeneration, GenerationStatus
+                async with async_session() as session:
+                    doc = (await session.execute(
+                        select(Document).where(Document.id == doc_id)
+                    )).scalar_one()
+                    if doc.active_generation_id:
+                        gen = (await session.execute(
+                            select(IndexGeneration).where(
+                                IndexGeneration.id == doc.active_generation_id
+                            )
+                        )).scalar_one_or_none()
+                        if gen and gen.status == GenerationStatus.committed:
+                            if doc.status != DocStatus.ready:
+                                doc.status = DocStatus.ready
+                                await session.commit()
+                            logger.info(
+                                "ingestion skipped: generation already committed "
+                                "doc_id=%s gen_id=%s", doc_id, doc.active_generation_id[:8],
+                            )
+                            return
+
                 from rag.progress import progress
-                for attempt in range(2):
+                for attempt in range(settings.ingestion_max_retries):
                     try:
                         await _process_document(doc_id, file_path, file_type)
                         elapsed = (time.time() - started) * 1000
-                        logger.info("ingestion complete doc_id=%s elapsed_ms=%d", doc_id, int(elapsed))
+                        logger.info(
+                            "ingestion complete doc_id=%s elapsed_ms=%d attempt=%d",
+                            doc_id, int(elapsed), attempt,
+                        )
                         from metrics import get_metrics
                         get_metrics().record_ingestion(success=True, latency_ms=elapsed)
                         return
                     except Exception as e:
-                        if attempt == 0:
-                            logger.warning("ingestion retry doc_id=%s error=%s", doc_id, str(e)[:200])
-                            await asyncio.sleep(10)
-                        else:
+                        error_type = _classify_error(e)
+                        is_last = (attempt == settings.ingestion_max_retries - 1)
+                        if error_type == "permanent" or is_last:
                             async with async_session() as session:
-                                result = await session.execute(select(Document).where(Document.id == doc_id))
-                                doc = result.scalar_one()
+                                doc = (await session.execute(
+                                    select(Document).where(Document.id == doc_id)
+                                )).scalar_one()
                                 doc.status = DocStatus.failed
-                                doc.error_message = f"[重试1次后失败] {e}"
+                                doc.error_message = str(e)[:500]
                                 await session.commit()
-                            logger.error("ingestion failed doc_id=%s error=%s", doc_id, str(e)[:200])
+                            logger.error(
+                                "ingestion failed doc_id=%s type=%s error=%s",
+                                doc_id, error_type, str(e)[:200],
+                            )
                             from metrics import get_metrics
-                            get_metrics().record_ingestion(success=False, latency_ms=(time.time() - started) * 1000)
-                            progress.publish(doc_id, {"status": "failed", "error": str(e)[:200]})
+                            get_metrics().record_ingestion(
+                                success=False, latency_ms=(time.time() - started) * 1000,
+                            )
+                            progress.publish(doc_id, {
+                                "status": "failed", "error": str(e)[:200],
+                            })
+                            return
+                        delay = _retry_delay(attempt, error_type)
+                        logger.warning(
+                            "ingestion retry doc_id=%s attempt=%d/%d type=%s delay=%.1fs error=%s",
+                            doc_id, attempt + 1, settings.ingestion_max_retries,
+                            error_type, delay, str(e)[:200],
+                        )
+                        await asyncio.sleep(delay)
         from worker.tasks import get_task_manager
         get_task_manager().create(
             _bg_process,
