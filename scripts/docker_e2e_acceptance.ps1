@@ -130,7 +130,7 @@ function Invoke-Stage {
         $sw.Stop()
         $stageResult.elapsed_s = [math]::Round($sw.Elapsed.TotalSeconds, 2)
         $stageResult.status = "passed"
-        Write-Host "  [PASS] $Name (${elapsed_s}s)" -ForegroundColor Green
+        Write-Host "  [PASS] $Name ($($stageResult.elapsed_s)s)" -ForegroundColor Green
     }
     catch {
         $sw.Stop()
@@ -142,7 +142,7 @@ function Invoke-Stage {
             $errMsg = $errMsg -replace [regex]::Escape($Token), "***"
         }
         $stageResult.error = $errMsg
-        Write-Host "  [FAIL] $Name (${elapsed_s}s): $errMsg" -ForegroundColor Red
+        Write-Host "  [FAIL] $Name ($($stageResult.elapsed_s)s): $errMsg" -ForegroundColor Red
         throw
     }
 }
@@ -702,7 +702,7 @@ try {
 
                 # Parse SSE output: split by event: and data: prefixes
                 $events = [ordered]@{}
-                $lines = $output -split "`n"
+                $lines = ($output -replace "`r`n", "`n") -split "`n"
                 $currentEvent = ""
                 for ($i = 0; $i -lt $lines.Count; $i++) {
                     $line = $lines[$i].Trim()
@@ -712,7 +712,7 @@ try {
                             $events[$currentEvent] = @()
                         }
                     } elseif ($line -match "^data:\s*(.+)$") {
-                        $dataStr = $Matches[1]
+                        $dataStr = $Matches[1].TrimEnd("`r")
                         if ($currentEvent) {
                             $events[$currentEvent] += $dataStr
                         }
