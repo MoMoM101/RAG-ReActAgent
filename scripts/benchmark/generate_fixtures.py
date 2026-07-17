@@ -10,7 +10,6 @@ import csv
 import hashlib
 import io
 import json
-import os
 import random
 import sys
 from pathlib import Path
@@ -195,7 +194,7 @@ def generate_scenario(scenario: str, output_dir: Path) -> dict:
             "sha256": _compute_sha256(fake_exe), "note": "wrong_extension",
         })
         empty = out / "empty.txt"
-        empty.write_text("")
+        empty.write_text("", encoding="utf-8")
         manifest["documents"].append({
             "path": "empty.txt", "size": 0,
             "sha256": _compute_sha256(empty), "note": "empty",
