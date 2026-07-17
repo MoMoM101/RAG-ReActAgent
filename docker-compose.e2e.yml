@@ -1,6 +1,6 @@
 services:
   backend:
-    ports: !override
+    ports:
       - "127.0.0.1:${E2E_BACKEND_PORT:-18000}:8000"
     environment:
       ADMIN_API_TOKEN: ${E2E_ADMIN_API_TOKEN:?E2E_ADMIN_API_TOKEN is required}
@@ -18,7 +18,7 @@ services:
       start_period: 10s
 
   frontend:
-    ports: !override
+    ports:
       - "127.0.0.1:${E2E_FRONTEND_PORT:-15173}:5173"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
