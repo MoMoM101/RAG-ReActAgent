@@ -124,6 +124,13 @@ class Settings(BaseSettings):
     rag_ttft_p95_target_ms: int = 2500
     rag_total_p95_target_ms: int = 5000
 
+    # Phase-level timeout budgets (seconds, 0 = unlimited)
+    rag_timeout_intent: float = 5.0       # intent classification
+    rag_timeout_retrieval: float = 10.0   # retrieval (semantic + BM25 + rerank)
+    rag_timeout_generation: float = 60.0  # LLM draft generation
+    rag_timeout_verification: float = 5.0 # verification
+    rag_timeout_repair: float = 10.0      # LLM repair (reuses grounding_repair_timeout)
+
     # Web Search
     web_search_enabled: bool = False
     web_search_max_results: int = 5

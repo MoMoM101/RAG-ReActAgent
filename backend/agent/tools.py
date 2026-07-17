@@ -1,13 +1,45 @@
 """Tool registry for the ReAct agent loop."""
 
+from __future__ import annotations
+
 import ast
 import asyncio
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_tool_params(tool: BaseTool, kwargs: dict[str, Any]) -> str:
+    """Validate tool parameters against its JSON Schema. Returns error message or empty string."""
+    try:
+        import jsonschema
+    except ImportError:
+        logger.warning("jsonschema is unavailable; skipping tool parameter validation")
+        return ""
+
+    try:
+        schema = tool.parameters
+        if not schema or not isinstance(schema, dict):
+            return ""
+        # The tool's parameters field is the full JSON Schema for arguments
+        jsonschema.validate(instance=kwargs, schema=schema)
+        return ""
+    except jsonschema.ValidationError as e:
+        return f"工具 {tool.name} 参数校验失败: {e.message}"
+    except Exception:
+        return ""  # Don't block execution if validation itself fails
+
+
+def _record_tool_metric(name: str, success: bool, retries: int, elapsed: float):
+    try:
+        from metrics import get_metrics
+        get_metrics().record_tool_call(name, success, retries, elapsed * 1000)
+    except Exception:
+        pass
 
 from sqlalchemy import select
 
@@ -72,6 +104,7 @@ class BaseTool(ABC):
     max_retries: int = 3
     retry_backoff: float = 1.0
     retry_strategy: str = "exponential"  # "exponential" | "none"
+    timeout: float | None = None  # per-call timeout (None → use settings.tool_default_timeout)
     parallel_safe: bool = True      # can run concurrently with other tools
     side_effecting: bool = False    # writes data — keep serial if True
 
@@ -113,11 +146,14 @@ class SearchDocsTool(BaseTool):
         from reranker.factory import is_reranker_ready
 
         try:
-            results = await hybrid_search(
-                query,
-                top_k=top_k or settings.retrieval_top_k,
-                document_id=document_id,
-                use_rerank=True,
+            results = await asyncio.wait_for(
+                hybrid_search(
+                    query,
+                    top_k=top_k or settings.retrieval_top_k,
+                    document_id=document_id,
+                    use_rerank=True,
+                ),
+                timeout=settings.rag_timeout_retrieval,
             )
             # Look up filenames for document_ids
             doc_ids = list({r.document_id for r in results})
@@ -136,14 +172,25 @@ class SearchDocsTool(BaseTool):
                     "reranked": is_reranker_ready(),
                     "results": [
                         {
+                            "citation_id": f"S{index}",
+                            "chunk_id": r.chunk_id,
                             "text": r.text,
                             "document_id": r.document_id,
+                            "document_key": r.document_key,
+                            "section_key": r.section_key,
                             "filename": filenames.get(r.document_id, r.document_id[:8]),
                             "score": r.score,
+                            "rerank_ms": getattr(r, "rerank_ms", 0.0),
                         }
-                        for r in results
+                        for index, r in enumerate(results, 1)
                     ],
                 },
+            )
+        except asyncio.TimeoutError:
+            logger.warning("retrieval timed out for query: %s", query[:100])
+            return ToolResult(
+                success=True,
+                data={"count": 0, "reranked": False, "results": []},
             )
         except Exception as e:
             _raise_if_retryable(e, "SearchDocs")
@@ -162,8 +209,17 @@ class ToolRegistry:
         return [t.to_llm_schema() for t in self._tools.values()]
 
     async def execute(self, name: str, **kwargs) -> ToolResult:
-        """Execute a single tool with retry logic."""
-        tool = self._tools[name]
+        """Execute a single tool with retry logic and parameter validation."""
+        tool = self._tools.get(name)
+        if tool is None:
+            return ToolResult(
+                success=False,
+                error=f"未知工具: {name}，可用工具: {', '.join(sorted(self._tools.keys()))}",
+            )
+        # Validate parameters against tool's JSON Schema
+        validation_error = _validate_tool_params(tool, kwargs)
+        if validation_error:
+            return ToolResult(success=False, error=validation_error)
         return await self._execute_one(tool, **kwargs)
 
     async def execute_parallel(
@@ -179,11 +235,18 @@ class ToolRegistry:
         """
         import time as _time
 
-        tool_objects = [self._tools[tc["name"]] for tc in calls]
-        has_side_effects = any(t.side_effecting for t in tool_objects)
+        tool_objects: list[BaseTool | None] = []
+        unknown_tools: list[str] = []
+        for tc in calls:
+            t = self._tools.get(tc["name"])
+            tool_objects.append(t)
+            if t is None:
+                unknown_tools.append(tc["name"])
 
-        if len(calls) <= 1 or has_side_effects:
-            # Serial execution for single call or side-effecting tools
+        has_side_effects = any(t is not None and t.side_effecting for t in tool_objects)
+
+        if len(calls) <= 1 or has_side_effects or unknown_tools:
+            # Serial execution for single call, side-effecting tools, or unknown tools
             serial_results: list[tuple[str, ToolResult, float]] = []
             for tc in calls:
                 t0 = _time.time()
@@ -196,7 +259,16 @@ class ToolRegistry:
         async def _run_one(idx: int, tc: dict) -> tuple[int, str, ToolResult, float]:
             t0 = _time.time()
             tool = tool_objects[idx]
+            if tool is None:
+                return (idx, tc["name"],
+                        ToolResult(success=False, error=f"未知工具: {tc['name']}"),
+                        float(int((_time.time() - t0) * 1000)))
             try:
+                validation_error = _validate_tool_params(tool, tc.get("arguments", {}))
+                if validation_error:
+                    return (idx, tc["name"],
+                            ToolResult(success=False, error=validation_error),
+                            float(int((_time.time() - t0) * 1000)))
                 async with self._semaphore:
                     result = await self._execute_one(tool, **tc.get("arguments", {}))
             except Exception as e:
@@ -219,32 +291,54 @@ class ToolRegistry:
         return [(name, result, elapsed) for _, name, result, elapsed in indexed]
 
     async def _execute_one(self, tool: BaseTool, **kwargs) -> ToolResult:
-        """Internal: execute a single tool with retry logic."""
+        """Internal: execute a single tool with retry logic and timeout."""
+        from config import settings
+
+        timeout = tool.timeout or settings.tool_default_timeout
+
+        t_start = time.time()
+
         if tool.retry_strategy == "none":
             try:
-                result = await tool.execute(**kwargs)
+                async with asyncio.timeout(timeout):
+                    result = await tool.execute(**kwargs)
                 result.retries = 0
+                _record_tool_metric(tool.name, result.success, 0, time.time() - t_start)
                 return result
+            except TimeoutError:
+                _record_tool_metric(tool.name, False, 0, time.time() - t_start)
+                return ToolResult(success=False, error=f"工具执行超时 ({timeout}s)", retries=0)
             except RetryableError as e:
+                _record_tool_metric(tool.name, False, 0, time.time() - t_start)
                 return ToolResult(success=False, error=str(e), retries=0)
             except Exception as e:
+                _record_tool_metric(tool.name, False, 0, time.time() - t_start)
                 return ToolResult(success=False, error=str(e), retries=0)
         elif tool.retry_strategy == "exponential":
-            from config import settings
-
             max_retries = min(tool.max_retries, settings.max_tool_retries)
             for attempt in range(max_retries + 1):
                 try:
-                    result = await tool.execute(**kwargs)
+                    async with asyncio.timeout(timeout):
+                        result = await tool.execute(**kwargs)
                     result.retries = attempt
+                    _record_tool_metric(tool.name, result.success, attempt, time.time() - t_start)
                     return result
+                except TimeoutError:
+                    if attempt == max_retries:
+                        _record_tool_metric(tool.name, False, attempt, time.time() - t_start)
+                        return ToolResult(
+                            success=False, error=f"工具执行超时 ({timeout}s)", retries=attempt,
+                        )
+                    await asyncio.sleep(tool.retry_backoff * (2 ** attempt))
                 except RetryableError as e:
                     if attempt == max_retries:
+                        _record_tool_metric(tool.name, False, attempt, time.time() - t_start)
                         return ToolResult(
                             success=False, error=str(e), retries=attempt
                         )
                     await asyncio.sleep(tool.retry_backoff * (2 ** attempt))
                 except Exception as e:
+                    _record_tool_metric(tool.name, False, attempt, time.time() - t_start)
                     return ToolResult(
                         success=False, error=str(e), retries=attempt
                     )
