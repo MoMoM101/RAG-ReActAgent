@@ -218,6 +218,22 @@ async def init_db():
             ")"
         )
 
+        # Migration: audit_logs table
+        await conn.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS audit_logs ("
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  actor_id TEXT NOT NULL,"
+            "  actor_username TEXT NOT NULL,"
+            "  action TEXT NOT NULL,"
+            "  object_type TEXT DEFAULT '',"
+            "  object_id TEXT DEFAULT '',"
+            "  result TEXT NOT NULL DEFAULT 'success',"
+            "  detail TEXT DEFAULT '',"
+            "  request_id TEXT DEFAULT '',"
+            "  created_at TEXT NOT NULL DEFAULT (datetime('now'))"
+            ")"
+        )
+
 
 async def get_db():
     async with async_session() as session:
