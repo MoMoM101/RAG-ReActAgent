@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     grounding_repair_max_attempts: int = 1
 
     # Answer cache
-    rag_answer_cache_enabled: bool = False
+    rag_answer_cache_enabled: bool = True
     rag_answer_cache_ttl_seconds: int = 300
     rag_answer_cache_max_entries: int = 1000
 
