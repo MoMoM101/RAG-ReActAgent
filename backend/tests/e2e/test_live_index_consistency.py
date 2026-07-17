@@ -17,7 +17,6 @@ from sqlalchemy import select
 from models.database import async_session
 from models.orm import Document, DocStatus, GenerationStatus, IndexGeneration
 from textdb.bm25_search import BM25Search
-from vectordb.factory import create_vectordb
 
 IS_STRICT = os.environ.get("DOCKER_E2E_REQUIRED", "") == "1"
 
@@ -77,6 +76,7 @@ async def _get_bm25_chunk_ids(document_id: str) -> set[str]:
 
 async def _get_qdrant_chunk_ids(document_id: str) -> set[str]:
     """Get chunk IDs from the active Qdrant collection for a document."""
+    from vectordb.factory import create_vectordb  # lazy import: needs qdrant_client
     vectordb = await create_vectordb()
     ids = await vectordb.get_chunk_ids_by_document(document_id)
     return set(ids)
