@@ -37,9 +37,9 @@ class Document(Base):
     file_type: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[DocStatus] = mapped_column(SAEnum(DocStatus), default=DocStatus.uploaded, index=True)
     chunk_count: Mapped[int] = mapped_column(default=0)
-    embedding_model: Mapped[str] = mapped_column(String(100), nullable=True)
-    embedding_dim: Mapped[int] = mapped_column(nullable=True)
-    error_message: Mapped[str] = mapped_column(Text, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    embedding_dim: Mapped[int | None] = mapped_column(nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -55,16 +55,16 @@ class IndexGeneration(Base):
     status: Mapped[GenerationStatus] = mapped_column(
         SAEnum(GenerationStatus), default=GenerationStatus.preparing, index=True
     )
-    expected_chunk_count: Mapped[int] = mapped_column(Integer, nullable=True)
-    vector_chunk_count: Mapped[int] = mapped_column(Integer, nullable=True)
-    bm25_chunk_count: Mapped[int] = mapped_column("bm25_count", Integer, nullable=True)
-    chunk_ids_hash: Mapped[str] = mapped_column(String(64), nullable=True)
-    error_stage: Mapped[str] = mapped_column(String(50), nullable=True)
-    error_message: Mapped[str] = mapped_column(Text, nullable=True)
+    expected_chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vector_chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bm25_chunk_count: Mapped[int | None] = mapped_column("bm25_count", Integer, nullable=True)
+    chunk_ids_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_stage: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC)
     )
-    committed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Conversation(Base):
@@ -91,6 +91,7 @@ class Message(Base):
     tool_name: Mapped[str] = mapped_column(String(100), nullable=True)
     tool_args: Mapped[str] = mapped_column(Text, nullable=True)
     sources: Mapped[str] = mapped_column(Text, nullable=True)
+    verification: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
@@ -119,3 +120,22 @@ class UserProfile(Base):
     memory_ids: Mapped[list] = mapped_column(JSON, nullable=True, default=list)
     version: Mapped[int] = mapped_column(Integer, default=1)
     generated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class UserRole(enum.StrEnum):
+    viewer = "viewer"
+    editor = "editor"
+    knowledge_admin = "knowledge_admin"
+    system_admin = "system_admin"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.viewer)
+    disabled: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

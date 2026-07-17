@@ -44,6 +44,10 @@ async def init_db():
             await conn.exec_driver_sql(
                 "ALTER TABLE messages ADD COLUMN tool_result_json TEXT"
             )
+        if "verification" not in msg_existing:
+            await conn.exec_driver_sql(
+                "ALTER TABLE messages ADD COLUMN verification TEXT"
+            )
         # 迁移: documents 表新增 raw_text、chunk_size 列
         doc_cols = (await conn.exec_driver_sql("PRAGMA table_info(documents)")).fetchall()
         doc_existing = {row[1] for row in doc_cols}
@@ -200,6 +204,19 @@ async def init_db():
             await conn.exec_driver_sql(
                 "ALTER TABLE documents ADD COLUMN active_generation_id TEXT"
             )
+
+        # Migration: users table
+        await conn.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS users ("
+            "  id TEXT PRIMARY KEY,"
+            "  username TEXT NOT NULL UNIQUE,"
+            "  password_hash TEXT NOT NULL,"
+            "  role TEXT NOT NULL DEFAULT 'viewer',"
+            "  disabled INTEGER NOT NULL DEFAULT 0,"
+            "  created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+            "  last_login_at TEXT"
+            ")"
+        )
 
 
 async def get_db():

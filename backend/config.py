@@ -163,6 +163,12 @@ class Settings(BaseSettings):
     allow_remote_access: bool = False
     admin_api_token: str = ""
 
+    # JWT
+    jwt_secret: str = ""                           # auto-generated if empty
+    jwt_access_token_expire_minutes: int = 60      # 1 hour
+    jwt_refresh_token_expire_days: int = 7         # 7 days
+    legacy_admin_token_enabled: bool = True        # transition period
+
     model_config = {
         "env_file": str(Path(__file__).resolve().parent / ".env"),
         "env_file_encoding": "utf-8",
