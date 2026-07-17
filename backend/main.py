@@ -370,6 +370,10 @@ from api.users import router as users_router
 
 app.include_router(users_router)
 
+from api.audit import router as audit_router
+
+app.include_router(audit_router)
+
 if __name__ == "__main__":
     import uvicorn
 
