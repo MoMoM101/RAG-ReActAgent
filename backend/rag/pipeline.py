@@ -6,7 +6,7 @@ import time
 import uuid
 
 from sqlalchemy import select
-from storage.files import save_upload
+from storage.files import delete_file, finalize_upload, find_upload, save_upload
 
 from config import settings
 from embedding.factory import create_embedding
@@ -20,6 +20,30 @@ from vectordb.factory import create_vectordb
 logger = logging.getLogger(__name__)
 
 _ingestion_semaphore = None
+
+
+def _classify_error(error: Exception) -> str:
+    """Classify ingestion error: 'rate_limit' | 'transient' | 'permanent'."""
+    msg = str(error).lower()
+    if "429" in msg or "rate limit" in msg or "too many requests" in msg:
+        return "rate_limit"
+    if isinstance(error, (TimeoutError, ConnectionError)):
+        return "transient"
+    if any(kw in msg for kw in ("timeout", "connection", "reset", "refused")):
+        return "transient"
+    return "permanent"
+
+
+def _retry_delay(attempt: int, error_type: str) -> float:
+    """Calculate backoff delay with jitter for a given attempt and error type."""
+    import random
+
+    base = settings.ingestion_retry_base_sec
+    if error_type == "rate_limit":
+        base = base * 4  # 429 needs longer cooling
+    delay = min(base * (2 ** attempt), settings.ingestion_retry_max_sec)
+    jitter = delay * settings.ingestion_retry_jitter
+    return delay + random.uniform(-jitter, jitter)
 
 
 def _hash_chunk_ids(chunk_ids: set[str]) -> str:
@@ -117,7 +141,10 @@ async def cleanup_staging_generations() -> int:
     async with async_session() as session:
         conn = await session.connection()
         rows = (await conn.execute(sa_text(
-            "SELECT id, doc_id FROM index_generations WHERE status IN ('preparing', 'staging')"
+            "SELECT g.id, g.doc_id, d.active_generation_id "
+            "FROM index_generations g "
+            "LEFT JOIN documents d ON d.id = g.doc_id "
+            "WHERE g.status IN ('preparing', 'staging')"
         ))).fetchall()
 
     if not rows:
@@ -130,8 +157,23 @@ async def cleanup_staging_generations() -> int:
         vectordb = None
 
     fts = BM25Search()
-    for gen_id, doc_id in rows:
+    for gen_id, doc_id, active_generation_id in rows:
         try:
+            # A stale attempt can coexist with a newer committed generation.
+            # Deleting by document_id here would destroy the active generation's
+            # Qdrant and BM25 data during the next restart.
+            if active_generation_id and active_generation_id != gen_id:
+                await _fail_generation(
+                    gen_id, 0, 0,
+                    error_stage="startup_cleanup",
+                    error_message="Superseded by active generation",
+                )
+                logger.warning(
+                    "marked superseded staging generation failed without deleting active data "
+                    "gen_id=%s doc_id=%s active_gen_id=%s",
+                    gen_id[:8], doc_id, active_generation_id[:8],
+                )
+                continue
             if vectordb is not None:
                 await vectordb.delete_by_document(doc_id)
             await fts.delete_by_document(doc_id)
@@ -168,8 +210,6 @@ async def ingest_document(
 
     If background=True, processing runs asynchronously and the function returns immediately.
     """
-    import asyncio
-
     doc_id = str(uuid.uuid4())
     file_hash = hashlib.sha256(file_content).hexdigest()
     file_size = len(file_content)
@@ -198,7 +238,67 @@ async def ingest_document(
         session.add(doc)
         await session.commit()
 
-    # 4. Run ingestion steps (sync or background)
+    return await _run_document_ingestion(
+        doc_id, filename, file_path, file_type, background
+    )
+
+
+async def ingest_document_from_path(
+    filename: str,
+    temp_path: str,
+    file_hash: str,
+    file_size: int,
+    file_type: str,
+    background: bool = False,
+) -> str:
+    """Register and ingest a file that has already been streamed to disk."""
+    from sqlalchemy.exc import IntegrityError
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(Document).where(Document.file_hash == file_hash)
+        )
+        if result.scalar_one_or_none():
+            delete_file(temp_path)
+            raise ValueError(f"File '{filename}' already exists (hash matched)")
+
+    try:
+        file_path = finalize_upload(temp_path, filename)
+    except Exception:
+        delete_file(temp_path)
+        raise
+    doc_id = str(uuid.uuid4())
+    try:
+        async with async_session() as session:
+            session.add(Document(
+                id=doc_id,
+                filename=filename,
+                file_hash=file_hash,
+                file_size=file_size,
+                file_type=file_type,
+                status=DocStatus.uploaded,
+            ))
+            await session.commit()
+    except IntegrityError as exc:
+        delete_file(file_path)
+        raise ValueError(f"File '{filename}' already exists (hash matched)") from exc
+    except Exception:
+        delete_file(file_path)
+        raise
+
+    return await _run_document_ingestion(
+        doc_id, filename, file_path, file_type, background
+    )
+
+
+async def _run_document_ingestion(
+    doc_id: str,
+    filename: str,
+    file_path: str,
+    file_type: str,
+    background: bool,
+) -> str:
+    """Start document processing after file and database record are durable."""
     if background:
         async def _bg_process():
             sem = _get_semaphore()
@@ -249,6 +349,53 @@ async def ingest_document(
         raise
 
     return doc_id
+
+
+async def recover_incomplete_documents() -> int:
+    """Reschedule durable, non-terminal documents after a service restart."""
+    incomplete = (
+        DocStatus.uploaded,
+        DocStatus.parsing,
+        DocStatus.chunking,
+        DocStatus.embedding,
+        DocStatus.indexing,
+    )
+    async with async_session() as session:
+        result = await session.execute(
+            select(Document).where(Document.status.in_(incomplete))
+        )
+        documents = list(result.scalars().all())
+
+        recoverable: list[tuple[str, str, str, str]] = []
+        for doc in documents:
+            file_path = find_upload(doc.filename, doc.file_type)
+            if file_path is None:
+                doc.status = DocStatus.failed
+                doc.error_message = "服务重启后无法恢复：原始文件不存在"
+                continue
+            doc.status = DocStatus.uploaded
+            doc.error_message = None
+            recoverable.append((doc.id, doc.filename, file_path, doc.file_type))
+        await session.commit()
+
+    scheduled = 0
+    for doc_id, filename, file_path, file_type in recoverable:
+        try:
+            await _run_document_ingestion(
+                doc_id, filename, file_path, file_type, background=True
+            )
+            scheduled += 1
+        except Exception as exc:
+            async with async_session() as session:
+                result = await session.execute(
+                    select(Document).where(Document.id == doc_id)
+                )
+                failed_doc = result.scalar_one_or_none()
+                if failed_doc is not None:
+                    failed_doc.status = DocStatus.failed
+                    failed_doc.error_message = f"恢复任务调度失败: {str(exc)[:300]}"
+                    await session.commit()
+    return scheduled
 
 
 async def _process_document(doc_id: str, file_path: str, file_type: str):
@@ -418,6 +565,13 @@ async def _process_document(doc_id: str, file_path: str, file_type: str):
                 "chunk_count": len(chunks),
                 "message": "入库完成",
             })
+
+            # V4: Invalidate answer cache on document change
+            try:
+                from rag.answer_cache import bump_collection_version
+                bump_collection_version()
+            except Exception:
+                pass
 
             idx_elapsed = int((time.time() - t_idx) * 1000)
             logger.info("indexing done doc_id=%s elapsed_ms=%d gen_id=%s chunks=%d",
