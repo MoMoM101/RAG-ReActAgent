@@ -66,7 +66,7 @@ async def run_scenario(scenario: str, fixtures_dir: Path, base_url: str,
     scenario_dir = fixtures_dir / scenario
     file_paths = [scenario_dir / doc["path"] for doc in manifest["documents"]]
 
-    async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as client:
+    async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=30.0) as client:
         cleared = await clear_all(client)
         print(f"  Cleared {cleared} existing documents")
 
@@ -135,7 +135,11 @@ def main():
         print(f"Manifest not found: {manifest_path}", file=sys.stderr)
         sys.exit(1)
 
-    file_count = len(list(scenario_dir.iterdir()))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    file_count = len(manifest.get("documents", []))
+    if file_count == 0:
+        print("Manifest has no documents", file=sys.stderr)
+        sys.exit(1)
     timeout = file_count * args.timeout
 
     print(f"Upload benchmark: {args.scenario} ({file_count} files, timeout {timeout}s)")
