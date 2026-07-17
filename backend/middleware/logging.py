@@ -13,22 +13,42 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4())[:8])
         request.state.request_id = request_id
+        from tracing import set_request_id, span
+        set_request_id(request_id)
         t0 = time.time()
 
-        response = await call_next(request)
+        with span(f"http.{request.method}", path=request.url.path):
+            response = await call_next(request)
 
         elapsed_ms = int((time.time() - t0) * 1000)
         _log_request(request_id, request.method, request.url.path, response.status_code, elapsed_ms)
         response.headers["X-Request-ID"] = request_id
+
+        # Metrics
+        from metrics import get_metrics
+        get_metrics().record_request(request.method, request.url.path)
+        get_metrics().record_latency(float(elapsed_ms))
+        if response.status_code >= 400:
+            get_metrics().record_error(response.status_code)
+
         return response
 
 
+def _sanitize_path(path: str) -> str:
+    """Mask sensitive query parameter values in access logs."""
+    import re
+    for key in ("token", "secret", "key", "api_key", "password"):
+        path = re.sub(rf"({key}=)[^&\s]+", r"\1***", path, flags=re.IGNORECASE)
+    return path
+
+
 def _log_request(request_id: str, method: str, path: str, status: int, elapsed_ms: int):
+    from tracing import peek_request_id
     record = {
         "ts": datetime.now(UTC).isoformat(),
-        "rid": request_id,
+        "rid": peek_request_id() or request_id,
         "method": method,
-        "path": path,
+        "path": _sanitize_path(path),
         "status": status,
         "elapsed_ms": elapsed_ms,
     }
