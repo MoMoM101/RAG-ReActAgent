@@ -140,8 +140,12 @@ async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: 
     skip_verification = False
     cancelled = asyncio.Event()
 
+    from metrics import get_metrics
+    get_metrics().record_sse_connection("open")
+
     async for event in run_agent_loop(user_message, history, cancelled=cancelled):
         event_type = event["event"]
+        get_metrics().record_stream_event(event_type)
         if event_type == "done":
             verification_data = None
             if (
@@ -180,6 +184,7 @@ async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: 
                 verification=verification_data,
             )
             yield "event: done\ndata: {}\n\n"
+            get_metrics().record_sse_connection("done")
             continue
 
         data = json.dumps(event["data"], ensure_ascii=False)
