@@ -74,3 +74,50 @@ class TestCrossEncoderReranker:
         reranker = CrossEncoderReranker("BAAI/bge-reranker-v2-m3")
         results = await reranker.rerank("query", [])
         assert results == []
+
+
+class TestRerankerWarmup:
+    def test_ready_only_after_warmup_inference(self, monkeypatch):
+        """加载完成后必须先跑一次 dummy 推理(预热),再置 ready。"""
+        import sys
+        import threading
+        import time as _time
+        import types
+
+        release = threading.Event()
+        calls: list = []
+
+        class FakeCrossEncoder:
+            def __init__(self, model_name):
+                pass
+
+            def predict(self, pairs):
+                calls.append(pairs)
+                release.wait(timeout=5)
+                return [0.5] * len(pairs)
+
+        fake_module = types.ModuleType("sentence_transformers")
+        fake_module.CrossEncoder = FakeCrossEncoder
+        monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+
+        from reranker.cross_encoder import CrossEncoderReranker
+
+        r = CrossEncoderReranker("fake-model-for-warmup-test")
+        r.preload_async()
+
+        # 等到预热 predict 被调用(模型"加载"是瞬时的)
+        deadline = _time.time() + 2
+        while not calls and _time.time() < deadline:
+            _time.sleep(0.01)
+        assert calls, "warmup predict was never called"
+        assert calls[0] == [["warmup", "warmup"]]
+
+        # 预热尚未完成(predict 阻塞中)→ 不得 ready
+        assert r.ready is False
+
+        # 放行预热 → ready
+        release.set()
+        deadline = _time.time() + 2
+        while not r.ready and _time.time() < deadline:
+            _time.sleep(0.01)
+        assert r.ready is True

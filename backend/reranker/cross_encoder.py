@@ -59,6 +59,9 @@ class CrossEncoderReranker(BaseReranker):
                     logger.info("reranker downloading model %s ...", self._model_name)
                 start = time.time()
                 self._model = CrossEncoder(self._model_name)
+                # Warmup: torch 首次推理有数秒惰性初始化,在后台线程消化掉,
+                # 避免算进第一个真实请求导致检索超时
+                self._model.predict([["warmup", "warmup"]])
                 elapsed = time.time() - start
                 self._ready = True
                 logger.info("reranker ready model=%s elapsed=%.0fs", self._model_name, elapsed)
