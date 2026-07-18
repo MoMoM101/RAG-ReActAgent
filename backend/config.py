@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     # Reranker
     rerank_enabled: bool = False
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
-    rerank_top_n: int = 16
+    rerank_top_n: int = 8
     rrf_k: int = 60
     rrf_semantic_weight: float = 2.0
     rrf_keyword_weight: float = 1.0
@@ -127,6 +127,7 @@ class Settings(BaseSettings):
     # Phase-level timeout budgets (seconds, 0 = unlimited)
     rag_timeout_intent: float = 5.0       # intent classification
     rag_timeout_retrieval: float = 10.0   # retrieval (semantic + BM25 + rerank)
+    rag_timeout_rerank: float = 5.0       # rerank budget within retrieval; on timeout fall back to RRF order
     rag_timeout_generation: float = 60.0  # LLM draft generation
     rag_timeout_verification: float = 5.0 # verification
     rag_timeout_repair: float = 10.0      # LLM repair (reuses grounding_repair_timeout)

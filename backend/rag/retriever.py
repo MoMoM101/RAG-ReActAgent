@@ -539,7 +539,17 @@ async def hybrid_search(query: str, top_k: int | None = None, document_id: str =
     reranked = use_rerank and settings.rerank_enabled
     if reranked:
         try:
-            results = await _rerank_results(query, results, top_k)
+            results = await asyncio.wait_for(
+                _rerank_results(query, results, top_k),
+                timeout=settings.rag_timeout_rerank,
+            )
+        except TimeoutError:
+            logger.warning(
+                "rerank timed out after %.1fs, using RRF order",
+                settings.rag_timeout_rerank,
+            )
+            results = results[:top_k]
+            fallback_reason = _merge_fallback(fallback_reason, "rerank_timeout")
         except Exception as e:
             logger.warning("rerank failed, using RRF order: %s", e)
             results = results[:top_k]
