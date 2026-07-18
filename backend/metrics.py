@@ -69,6 +69,21 @@ class MetricsCollector:
         # Dead-letter
         self.dead_letter_count: int = 0
 
+        # ── V4 Grounding & Repair ───────────────────────────────
+        self.grounding_repair_trigger: dict[str, int] = defaultdict(int)   # reason → count
+        self.grounding_repair_accept: dict[str, int] = defaultdict(int)    # reason → count
+        self.deterministic_repair: dict[str, int] = defaultdict(int)       # type → count
+        self.answer_cache: dict[str, int] = defaultdict(int)               # hit|miss|stale → count
+        self.stream_unit: dict[str, int] = defaultdict(int)                # verified|repaired|held|dropped → count
+        self.full_refusal: dict[str, int] = defaultdict(int)               # accepted|rechecked|converted_partial → count
+
+        # ── V4 Phase timing ─────────────────────────────────────
+        self.phase_timings: dict[str, list[float]] = defaultdict(list)     # phase_name → latencies ms
+
+        # ── SSE ───────────────────────────────────────────────────
+        self.sse_connections: dict[str, int] = defaultdict(int)    # open|done|disconnect → count
+        self.stream_events: dict[str, int] = defaultdict(int)      # event_type → count
+
         self._max_samples = 1000  # cap latency samples to bound memory
 
     # ── HTTP ──────────────────────────────────────────────────
@@ -159,6 +174,50 @@ class MetricsCollector:
         with self._lock:
             self.dead_letter_count += count
 
+    # ── V4 Grounding & Repair ──────────────────────────────────
+
+    def record_repair_trigger(self, reason: str):
+        with self._lock:
+            self.grounding_repair_trigger[reason] += 1
+
+    def record_repair_accept(self, reason: str):
+        with self._lock:
+            self.grounding_repair_accept[reason] += 1
+
+    def record_deterministic_repair(self, repair_type: str):
+        with self._lock:
+            self.deterministic_repair[repair_type] += 1
+
+    def record_answer_cache(self, result: str):
+        with self._lock:
+            self.answer_cache[result] += 1
+
+    def record_stream_unit(self, result: str):
+        with self._lock:
+            self.stream_unit[result] += 1
+
+    def record_full_refusal(self, result: str):
+        with self._lock:
+            self.full_refusal[result] += 1
+
+    def record_phase_timing(self, phase: str, ms: float):
+        with self._lock:
+            self.phase_timings[phase].append(ms)
+            if len(self.phase_timings[phase]) > self._max_samples:
+                self.phase_timings[phase] = self.phase_timings[phase][-self._max_samples:]
+
+    # ── SSE ─────────────────────────────────────────────────────
+
+    def record_sse_connection(self, event: str):
+        """Record SSE connection lifecycle events: open, done, disconnect."""
+        with self._lock:
+            self.sse_connections[event] += 1
+
+    def record_stream_event(self, event_type: str):
+        """Record SSE stream events by type: answer_chunk, sources, verification, done, error."""
+        with self._lock:
+            self.stream_events[event_type] += 1
+
     # ── Snapshot ──────────────────────────────────────────────
 
     def _percentile(self, samples: list[float], p: float) -> float:
@@ -238,6 +297,31 @@ class MetricsCollector:
                 "dead_letter": {
                     "count": self.dead_letter_count,
                 },
+                "v4_grounding": {
+                    "repair_trigger_by_reason": dict(self.grounding_repair_trigger),
+                    "repair_accept_by_reason": dict(self.grounding_repair_accept),
+                    "deterministic_repair_by_type": dict(self.deterministic_repair),
+                },
+                "v4_cache": {
+                    "by_result": dict(self.answer_cache),
+                },
+                "v4_stream": {
+                    "unit_by_result": dict(self.stream_unit),
+                },
+                "v4_refusal": {
+                    "by_result": dict(self.full_refusal),
+                },
+                "sse_connections": dict(self.sse_connections),
+                "stream_events": dict(self.stream_events),
+                "v4_phase_timing": {
+                    phase: {
+                        "p50": self._percentile(samples, 50),
+                        "p95": self._percentile(samples, 95),
+                        "p99": self._percentile(samples, 99),
+                        "samples": len(samples),
+                    }
+                    for phase, samples in self.phase_timings.items()
+                },
             }
 
 
@@ -250,6 +334,42 @@ def get_metrics() -> MetricsCollector:
     if _collector is None:
         _collector = MetricsCollector()
     return _collector
+
+
+def _collect_system_state(db_path: str) -> dict:
+    """Query system state for gauge metrics (sync sqlite3, not ORM)."""
+    import sqlite3
+    import time as _time
+
+    result: dict = {"queue_depth": {}, "oldest_task_age_seconds": 0.0}
+
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT status, COUNT(*) FROM task_queue "
+                "WHERE status IN ('pending','running','retry_wait') "
+                "GROUP BY status"
+            ).fetchall()
+            result["queue_depth"] = {str(row[0]): row[1] for row in rows}
+
+            row = conn.execute(
+                "SELECT created_at FROM task_queue "
+                "WHERE status IN ('pending','running','retry_wait') "
+                "ORDER BY created_at ASC LIMIT 1"
+            ).fetchone()
+            if row and row[0]:
+                try:
+                    created = _time.strptime(str(row[0]), "%Y-%m-%d %H:%M:%S")
+                    result["oldest_task_age_seconds"] = _time.time() - _time.mktime(created)
+                except (ValueError, OverflowError):
+                    pass
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    return result
 
 
 def export_prometheus() -> str:
@@ -301,5 +421,54 @@ def export_prometheus() -> str:
     for status, count in snap["generation"]["statuses"].items():
         lines.append(f'generation_status_total{{status="{status}"}} {count}')
     lines.append(f'dead_letter_tasks_total {snap["dead_letter"]["count"]}')
+
+    # V4 Grounding
+    for reason, count in snap["v4_grounding"]["repair_trigger_by_reason"].items():
+        lines.append(f'rag_grounding_repair_trigger_total{{reason="{reason}"}} {count}')
+    for reason, count in snap["v4_grounding"]["repair_accept_by_reason"].items():
+        lines.append(f'rag_grounding_repair_accept_total{{reason="{reason}"}} {count}')
+    for rtype, count in snap["v4_grounding"]["deterministic_repair_by_type"].items():
+        lines.append(f'rag_deterministic_repair_total{{type="{rtype}"}} {count}')
+
+    # V4 Cache
+    for result, count in snap["v4_cache"]["by_result"].items():
+        lines.append(f'rag_answer_cache_total{{result="{result}"}} {count}')
+
+    # V4 Stream
+    for result, count in snap["v4_stream"]["unit_by_result"].items():
+        lines.append(f'rag_stream_unit_total{{result="{result}"}} {count}')
+
+    # V4 Refusal
+    for result, count in snap["v4_refusal"]["by_result"].items():
+        lines.append(f'rag_full_refusal_total{{result="{result}"}} {count}')
+
+    # V4 Phase timing percentiles
+    for phase, stats in snap["v4_phase_timing"].items():
+        if stats["samples"] > 0:
+            lines.append(f'rag_phase_timing_ms{{phase="{phase}",quantile="0.5"}} {stats["p50"]:.1f}')
+            lines.append(f'rag_phase_timing_ms{{phase="{phase}",quantile="0.95"}} {stats["p95"]:.1f}')
+            lines.append(f'rag_phase_timing_ms{{phase="{phase}",quantile="0.99"}} {stats["p99"]:.1f}')
+
+    # SSE
+    for event, count in snap.get("sse_connections", {}).items():
+        lines.append(f'rag_sse_connections_total{{event="{event}"}} {count}')
+    for event_type, count in snap.get("stream_events", {}).items():
+        lines.append(f'rag_stream_events_total{{type="{event_type}"}} {count}')
+
+    # System state gauges (query DB for live values)
+    from config import settings
+    from pathlib import Path as _Path
+    db_url = settings.database_url
+    if db_url.startswith("sqlite+aiosqlite:///"):
+        db_path = db_url[len("sqlite+aiosqlite:///"):]
+        if db_path.startswith("./"):
+            db_path = str((_Path(__file__).resolve().parent / db_path).resolve())
+    else:
+        db_path = db_url
+
+    state = _collect_system_state(db_path)
+    for status, count in state["queue_depth"].items():
+        lines.append(f'rag_ingestion_queue_depth{{status="{status}"}} {count}')
+    lines.append(f'rag_oldest_task_age_seconds {state["oldest_task_age_seconds"]:.1f}')
 
     return "\n".join(lines) + "\n"
