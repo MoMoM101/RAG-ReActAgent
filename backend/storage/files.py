@@ -1,6 +1,9 @@
+import hashlib
 import os
+import tempfile
 from contextlib import suppress
 from pathlib import Path
+from typing import AsyncIterator
 
 from config import settings
 
@@ -34,6 +37,53 @@ def save_upload(file_content: bytes, filename: str) -> str:
     return str(file_path)
 
 
+def create_upload_temp() -> str:
+    """Create a temporary upload file on the destination filesystem."""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    fd, path = tempfile.mkstemp(prefix=".upload-", suffix=".tmp", dir=UPLOAD_DIR)
+    os.close(fd)
+    return path
+
+
+def finalize_upload(temp_path: str, filename: str) -> str:
+    """Atomically move a completed temporary upload to its final safe path."""
+    source = Path(temp_path).resolve()
+    if not source.is_relative_to(UPLOAD_DIR):
+        raise ValueError("Temporary upload is outside the upload directory")
+
+    file_path = _safe_path(filename)
+    if file_path.exists():
+        stem, suffix = file_path.stem, file_path.suffix
+        counter = 1
+        while file_path.exists():
+            file_path = _safe_path(f"{stem}_{counter}{suffix}")
+            counter += 1
+
+    os.replace(source, file_path)
+    return str(file_path)
+
+
+def find_upload(filename: str, file_type: str) -> str | None:
+    """Locate an original upload, including collision-suffixed filenames."""
+    if not UPLOAD_DIR.is_dir():
+        return None
+    exact = _safe_path(filename)
+    if exact.is_file():
+        return str(exact)
+
+    stem = Path(filename).stem
+    if not stem:
+        return None
+    for candidate in UPLOAD_DIR.iterdir():
+        if (
+            candidate.is_file()
+            and candidate.name.startswith(f"{stem}_")
+            and candidate.name.endswith(file_type)
+        ):
+            return str(candidate)
+    return None
+
+
 def delete_file(file_path: str) -> None:
     """Delete uploaded file from disk. Only allows deletion within UPLOAD_DIR."""
     resolved = Path(file_path).resolve()
@@ -41,3 +91,120 @@ def delete_file(file_path: str) -> None:
         return
     with suppress(FileNotFoundError):
         os.remove(file_path)
+
+
+# ---------------------------------------------------------------------------
+# LocalFileStorage — streaming storage backend implementing FileStorage
+# ---------------------------------------------------------------------------
+
+from storage.base import FileStorage, StagedObject, StoredObject
+
+
+class LocalFileStorage(FileStorage):
+    """File storage backed by a local directory.
+
+    Enforces path safety, atomic commit via rename, and streaming I/O.
+    """
+
+    def __init__(self, root_dir: str):
+        self._root = Path(root_dir).resolve()
+        self._root.mkdir(parents=True, exist_ok=True)
+        self._staging_dir = self._root / ".staging"
+        self._staging_dir.mkdir(parents=True, exist_ok=True)
+
+    def _safe_path(self, key: str) -> Path:
+        """Resolve a storage key and verify it's within the root directory."""
+        p = (self._root / key).resolve()
+        if not str(p).startswith(str(self._root)):
+            raise ValueError(f"Path traversal blocked: {key}")
+        return p
+
+    async def create_staging(self, filename: str) -> StagedObject:
+        staged = StagedObject(filename=filename)
+        staged.temp_path = str(self._staging_dir / f".upload-{staged.staging_id}")
+        # Create the temp file empty
+        Path(staged.temp_path).touch()
+        return staged
+
+    async def append(self, staged: StagedObject, chunk: bytes) -> None:
+        with open(staged.temp_path, "ab") as f:
+            f.write(chunk)
+        staged.size = os.path.getsize(staged.temp_path)
+
+    async def commit(
+        self, staged: StagedObject, *, expected_sha256: str | None = None
+    ) -> StoredObject:
+        # Compute hash from the temp file
+        sha = hashlib.sha256()
+        with open(staged.temp_path, "rb") as f:
+            while True:
+                data = f.read(64 * 1024)
+                if not data:
+                    break
+                sha.update(data)
+        staged.sha256 = sha.hexdigest()
+
+        if expected_sha256 and staged.sha256 != expected_sha256:
+            raise ValueError(
+                f"Hash mismatch: expected {expected_sha256[:16]}..., "
+                f"got {staged.sha256[:16]}..."
+            )
+
+        # Generate unique storage key from hash
+        storage_key = f"{staged.sha256[:2]}/{staged.sha256[2:4]}/{staged.sha256}"
+        dest = self._safe_path(storage_key)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        # Atomic rename; if destination already exists (content-
+        # addressable dedup), skip and clean up the staging file.
+        if dest.exists():
+            # Verify content integrity — the existing file must match.
+            existing_sha = hashlib.sha256()
+            with open(dest, "rb") as f:
+                while True:
+                    data = f.read(64 * 1024)
+                    if not data:
+                        break
+                    existing_sha.update(data)
+            if existing_sha.hexdigest() != staged.sha256:
+                raise ValueError("Storage collision: same key but different content")
+            os.unlink(staged.temp_path)
+        else:
+            os.rename(staged.temp_path, dest)
+
+        return StoredObject(
+            storage_key=storage_key,
+            filename=staged.filename,
+            size=staged.size,
+            sha256=staged.sha256,
+        )
+
+    async def abort(self, staged: StagedObject) -> None:
+        path = Path(staged.temp_path) if staged.temp_path else None
+        if path and path.exists():
+            path.unlink()
+
+    async def open_read(self, storage_key: str) -> AsyncIterator[bytes]:
+        path = self._safe_path(storage_key)
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(64 * 1024)
+                if not chunk:
+                    return
+                yield chunk
+
+    async def delete(self, storage_key: str) -> None:
+        path = self._safe_path(storage_key)
+        if path.exists():
+            path.unlink()
+            # Clean up empty parent dirs
+            for parent in path.parents:
+                if parent == self._root:
+                    break
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+
+    async def exists(self, storage_key: str) -> bool:
+        return self._safe_path(storage_key).exists()
