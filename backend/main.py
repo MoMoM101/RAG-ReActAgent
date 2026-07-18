@@ -368,14 +368,14 @@ from api.auth import router as auth_router
 
 app.include_router(auth_router)
 
-# User management routes (system_admin only — auth enforced per-endpoint)
+# User management routes (system_admin only — role enforced per-endpoint)
 from api.users import router as users_router
 
-app.include_router(users_router)
+app.include_router(users_router, dependencies=[Depends(jwt_auth)])
 
 from api.audit import router as audit_router
 
-app.include_router(audit_router)
+app.include_router(audit_router, dependencies=[Depends(jwt_auth)])
 
 # ── Metrics (no auth required — Prometheus scrape endpoint) ──
 from api.metrics import router as metrics_router

@@ -21,7 +21,7 @@ class TestUsersApi:
         assert r.status_code == 200, f"Login failed: {r.text}"
         return r.json()["access_token"]
 
-    async def test_list_users(self, jwt_mode, setup_db):
+    async def test_list_users(self, jwt_mode, bootstrap_admin):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             token = await self._get_token(client)
@@ -33,7 +33,7 @@ class TestUsersApi:
             assert len(users) >= 1
             assert any(u["username"] == "admin" for u in users)
 
-    async def test_create_and_delete_user(self, jwt_mode, setup_db):
+    async def test_create_and_delete_user(self, jwt_mode, bootstrap_admin):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             token = await self._get_token(client)
@@ -51,7 +51,7 @@ class TestUsersApi:
             assert r.status_code == 200
             assert r.json()["status"] == "deleted"
 
-    async def test_cannot_delete_self(self, jwt_mode, setup_db):
+    async def test_cannot_delete_self(self, jwt_mode, bootstrap_admin):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             token = await self._get_token(client)
@@ -64,7 +64,7 @@ class TestUsersApi:
             })
             assert r.status_code == 400
 
-    async def test_duplicate_username_rejected(self, jwt_mode, setup_db):
+    async def test_duplicate_username_rejected(self, jwt_mode, bootstrap_admin):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             token = await self._get_token(client)

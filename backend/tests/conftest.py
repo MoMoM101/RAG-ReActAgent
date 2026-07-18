@@ -142,6 +142,13 @@ async def setup_db():
     yield
 
 
+@pytest_asyncio.fixture
+async def bootstrap_admin(setup_db):
+    """Create the bootstrap admin user (lifespan doesn't run under ASGITransport)."""
+    from main import _bootstrap_user
+    await _bootstrap_user()
+
+
 def pytest_collection_modifyitems(items):
     """Auto-add 'db' marker and setup_db fixture to tests that need database access."""
     db_subdirs = {"api", "agent", "memory", "rag", "textdb", "vectordb", "storage",

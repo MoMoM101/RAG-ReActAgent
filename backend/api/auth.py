@@ -16,7 +16,7 @@ from auth.jwt import (
 )
 from models.database import session_scope
 from models.orm import User
-from security import UserContext, get_current_user
+from security import UserContext, get_current_user, jwt_auth
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -87,8 +87,8 @@ async def refresh(req: RefreshRequest):
 
 
 @router.get("/me")
-async def me(request: Request, _auth: None = Depends(get_current_user)):
-    user: UserContext = request.state.user
+async def me(request: Request, _auth: None = Depends(jwt_auth)):
+    user: UserContext = get_current_user(request)
     return {
         "user_id": user.user_id,
         "username": user.username,
