@@ -28,7 +28,7 @@ class UpdateUserRequest(BaseModel):
 async def list_users(
     request: Request,
     _auth: None = Depends(get_current_user),
-    _enforce: None = Depends(require_role("system_admin")),
+    _enforce: None = require_role("system_admin"),
 ):
     async with session_scope() as session:
         result = await session.execute(select(User).order_by(User.created_at))
@@ -51,7 +51,7 @@ async def create_user(
     req: CreateUserRequest,
     request: Request,
     _auth: None = Depends(get_current_user),
-    _enforce: None = Depends(require_role("system_admin")),
+    _enforce: None = require_role("system_admin"),
 ):
     if req.role not in ("viewer", "editor", "knowledge_admin", "system_admin"):
         raise HTTPException(400, f"Invalid role: {req.role}")
@@ -88,7 +88,7 @@ async def update_user(
     req: UpdateUserRequest,
     request: Request,
     _auth: None = Depends(get_current_user),
-    _enforce: None = Depends(require_role("system_admin")),
+    _enforce: None = require_role("system_admin"),
 ):
     async with session_scope() as session:
         user = (await session.execute(
@@ -124,7 +124,7 @@ async def delete_user(
     user_id: str,
     request: Request,
     _auth: None = Depends(get_current_user),
-    _enforce: None = Depends(require_role("system_admin")),
+    _enforce: None = require_role("system_admin"),
 ):
     current = get_current_user(request)
     if user_id == current.user_id:

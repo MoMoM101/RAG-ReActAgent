@@ -120,6 +120,15 @@ async def check_revision_gate() -> None:
 
         if current is None:
             if db_exists:
+                if _auto_migrate_enabled():
+                    # Dev/test: existing DB without revision — stamp at head
+                    from alembic.config import Config as AlcCfg
+                    from alembic import command as alc_cmd
+
+                    backend_dir = str(_Path(__file__).resolve().parent.parent)
+                    cfg = AlcCfg(str(_Path(backend_dir) / "alembic.ini"))
+                    alc_cmd.stamp(cfg, "head")
+                    return
                 raise RuntimeError(
                     "Database exists but has no Alembic revision. "
                     "Run the legacy database adoption procedure: "

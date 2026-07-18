@@ -57,7 +57,7 @@ def upgrade() -> None:
         sa.Column("chunk_ids_consistent", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("error_stage", sa.String(50), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.String(), nullable=False),
+        sa.Column("created_at", sa.String(), nullable=False, server_default=sa.text("(datetime('now'))")),
         sa.Column("committed_at", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -118,7 +118,7 @@ def upgrade() -> None:
         sa.Column("password_hash", sa.String(128), nullable=False),
         sa.Column("role", sa.String(20), nullable=False, server_default="viewer"),
         sa.Column("disabled", sa.Integer(), nullable=False, server_default=sa.text("0")),
-        sa.Column("created_at", sa.String(), nullable=False),
+        sa.Column("created_at", sa.String(), nullable=False, server_default=sa.text("(datetime('now'))")),
         sa.Column("last_login_at", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("username"),
@@ -134,7 +134,7 @@ def upgrade() -> None:
         sa.Column("metadata", sa.Text(), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("heartbeat_at", sa.String(), nullable=True),
-        sa.Column("created_at", sa.String(), nullable=False),
+        sa.Column("created_at", sa.String(), nullable=False, server_default=sa.text("(datetime('now'))")),
         sa.Column("completed_at", sa.String(), nullable=True),
         sa.Column("task_type", sa.String(), nullable=True),
         sa.Column("payload_json", sa.Text(), nullable=True),
@@ -157,7 +157,7 @@ def upgrade() -> None:
         sa.Column("result", sa.String(), nullable=False, server_default="success"),
         sa.Column("detail", sa.Text(), nullable=True, server_default=""),
         sa.Column("request_id", sa.String(), nullable=True, server_default=""),
-        sa.Column("created_at", sa.String(), nullable=False),
+        sa.Column("created_at", sa.String(), nullable=False, server_default=sa.text("(datetime('now'))")),
         sa.PrimaryKeyConstraint("id"),
     )
 

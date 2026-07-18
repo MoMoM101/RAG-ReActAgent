@@ -16,7 +16,7 @@ async def list_audit_logs(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     _auth: None = Depends(get_current_user),
-    _enforce: None = Depends(require_role("system_admin")),
+    _enforce: None = require_role("system_admin"),
 ):
     async with session_scope() as session:
         conn = await session.connection()
