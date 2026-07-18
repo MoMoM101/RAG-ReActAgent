@@ -43,7 +43,7 @@ def _record_tool_metric(name: str, success: bool, retries: int, elapsed: float):
 
 from sqlalchemy import select
 
-from models.database import async_session
+from models.database import session_scope
 from models.orm import Document
 
 
@@ -159,7 +159,7 @@ class SearchDocsTool(BaseTool):
             doc_ids = list({r.document_id for r in results})
             filenames: dict[str, str] = {}
             if doc_ids:
-                async with async_session() as session:
+                async with session_scope() as session:
                     db_result = await session.execute(
                         select(Document.id, Document.filename).where(Document.id.in_(doc_ids))
                     )
@@ -432,7 +432,7 @@ class ListDocumentsTool(BaseTool):
 
     async def execute(self) -> ToolResult:
         try:
-            async with async_session() as session:
+            async with session_scope() as session:
                 result = await session.execute(
                     select(Document).order_by(Document.created_at.desc())
                 )
@@ -480,7 +480,7 @@ class GetDocumentInfoTool(BaseTool):
 
     async def execute(self, document_id: str) -> ToolResult:
         try:
-            async with async_session() as session:
+            async with session_scope() as session:
                 result = await session.execute(
                     select(Document).where(Document.id == document_id)
                 )

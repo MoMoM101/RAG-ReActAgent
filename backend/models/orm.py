@@ -35,6 +35,7 @@ class Document(Base):
     file_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     file_size: Mapped[int] = mapped_column(nullable=False)
     file_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[DocStatus] = mapped_column(SAEnum(DocStatus), default=DocStatus.uploaded, index=True)
     chunk_count: Mapped[int] = mapped_column(default=0)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)

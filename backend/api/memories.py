@@ -86,11 +86,11 @@ async def delete_memory(memory_id: str):
 async def clear_all_memories():
     from sqlalchemy import delete, select
 
-    from models.database import async_session
+    from models.database import session_scope
     from models.orm import UserMemory
     from vectordb.qdrant import QdrantVectorDB
 
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(select(UserMemory.id))
         all_ids = [r[0] for r in result.fetchall()]
         if all_ids:

@@ -95,8 +95,9 @@ class BackgroundTaskManager:
         try:
             from sqlalchemy import text as sa_text
 
-            from models.database import async_session
-            async with async_session() as session:
+            from models.database import new_session
+            session = new_session()
+            try:
                 conn = await session.connection()
                 await conn.execute(sa_text(
                     "INSERT INTO task_queue (id, name, status, metadata, "
@@ -111,6 +112,11 @@ class BackgroundTaskManager:
                     "max_att": max_attempts,
                 })
                 await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
         except Exception as e:
             logger.warning("failed to persist task %s: %s", name, e)
 
@@ -121,8 +127,9 @@ class BackgroundTaskManager:
         try:
             from sqlalchemy import text as sa_text
 
-            from models.database import async_session
-            async with async_session() as session:
+            from models.database import new_session
+            session = new_session()
+            try:
                 conn = await session.connection()
                 if status == "running":
                     await conn.execute(sa_text(
@@ -141,6 +148,11 @@ class BackgroundTaskManager:
                         "completed_at=datetime('now') WHERE id=:id"
                     ), {"st": status, "err": error, "id": name})
                 await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
         except Exception:
             pass  # Best-effort persistence
 
@@ -148,9 +160,9 @@ class BackgroundTaskManager:
         try:
             from sqlalchemy import text as sa_text
 
-            from models.database import async_session
-
-            async with async_session() as session:
+            from models.database import new_session
+            session = new_session()
+            try:
                 conn = await session.connection()
                 await conn.execute(
                     sa_text(
@@ -160,6 +172,11 @@ class BackgroundTaskManager:
                     {"id": name},
                 )
                 await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
         except Exception:
             pass  # Best-effort persistence
 
@@ -175,14 +192,20 @@ class BackgroundTaskManager:
         try:
             from sqlalchemy import text as sa_text
 
-            from models.database import async_session
-            async with async_session() as session:
+            from models.database import new_session
+            session = new_session()
+            try:
                 conn = await session.connection()
                 row = (await conn.execute(sa_text(
                     "SELECT COUNT(*) FROM task_queue WHERE idempotency_key=:key "
                     "AND status IN ('pending', 'running', 'done')"
                 ), {"key": idempotency_key})).fetchone()
                 return row is not None and row[0] > 0
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
         except Exception:
             return False
 
@@ -191,8 +214,9 @@ class BackgroundTaskManager:
         try:
             from sqlalchemy import text as sa_text
 
-            from models.database import async_session
-            async with async_session() as session:
+            from models.database import new_session
+            session = new_session()
+            try:
                 conn = await session.connection()
                 result = await conn.execute(sa_text(
                     "UPDATE task_queue SET status='running', worker_id=:wid, "
@@ -202,6 +226,11 @@ class BackgroundTaskManager:
                 ), {"id": task_id, "wid": worker_id})
                 await session.commit()
                 return result.rowcount > 0
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
         except Exception:
             return False
 
@@ -210,8 +239,9 @@ class BackgroundTaskManager:
         try:
             from sqlalchemy import text as sa_text
 
-            from models.database import async_session
-            async with async_session() as session:
+            from models.database import new_session
+            session = new_session()
+            try:
                 conn = await session.connection()
                 result = await conn.execute(sa_text(
                     "UPDATE task_queue SET status=:dl WHERE id=:id "
@@ -219,6 +249,11 @@ class BackgroundTaskManager:
                 ), {"id": task_id, "dl": DEAD_LETTER_STATUS})
                 await session.commit()
                 return result.rowcount > 0
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
         except Exception:
             return False
 
@@ -304,8 +339,9 @@ class BackgroundTaskManager:
         try:
             from sqlalchemy import text as sa_text
 
-            from models.database import async_session
-            async with async_session() as session:
+            from models.database import new_session
+            session = new_session()
+            try:
                 conn = await session.connection()
                 # Re-enqueue retry_wait tasks whose next_run_at has passed
                 retry_wait_result = await conn.execute(sa_text(
@@ -339,6 +375,11 @@ class BackgroundTaskManager:
                         dead_count, retry_count, retry_wait_count,
                     )
                 return total
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
         except Exception as e:
             logger.warning("task recovery failed: %s", e)
             return 0

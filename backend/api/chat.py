@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from contextlib import suppress
@@ -11,8 +12,9 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.loop import run_agent_loop
+from config import settings
 from llm.base import ChatMessage, ToolCall
-from models.database import async_session, get_db
+from models.database import session_scope, get_db
 from models.orm import Conversation, Message
 
 router = APIRouter(tags=["chat"])
@@ -60,6 +62,7 @@ async def _save_messages(
     sources: list[dict] | None,
     *,
     preamble_content: str = "",
+    verification: dict | None = None,
 ):
     """Persist assistant reply and tool messages after streaming completes.
 
@@ -68,7 +71,7 @@ async def _save_messages(
     chain — without this, tool messages lack a preceding assistant, and the LLM
     API rejects the request on the next turn.
     """
-    async with async_session() as db:
+    async with session_scope() as db:
         # If tools were called, always save the preamble as a tool-calling assistant
         # message first, even if the LLM output no text before the tool call.
         if tool_messages:
@@ -102,13 +105,14 @@ async def _save_messages(
             role="assistant",
             content=assistant_content,
             sources=json.dumps(sources, ensure_ascii=False) if sources else None,
+            verification=json.dumps(verification, ensure_ascii=False) if verification else None,
         )
         db.add(assistant_msg)
 
         await db.commit()
 
     # Touch conversation updated_at
-    async with async_session() as db2:
+    async with session_scope() as db2:
         from datetime import datetime
         await db2.execute(
             update(Conversation).where(Conversation.id == conv_id).values(
@@ -118,16 +122,66 @@ async def _save_messages(
         await db2.commit()
 
 
-async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: str):
-    """SSE event stream that also collects messages for persistence."""
+async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: str,
+                       request: Request | None = None):
+    """SSE event stream that also collects messages for persistence.
+
+    Monitors client disconnect via request.is_disconnected() and signals
+    cancellation to the agent loop.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+
     assistant_content = ""
     preamble_saved = ""  # content before first tool call (tool-calling preamble)
     tool_messages: list[dict] = []
     sources = None
     tool_phase = False
+    skip_verification = False
+    cancelled = asyncio.Event()
 
-    async for event in run_agent_loop(user_message, history):
+    async for event in run_agent_loop(user_message, history, cancelled=cancelled):
         event_type = event["event"]
+        if event_type == "done":
+            verification_data = None
+            if (
+                assistant_content
+                and sources
+                and settings.grounding_verification_enabled
+                and settings.grounding_enforcement != "off"
+                and not skip_verification
+            ):
+                try:
+                    from agent.verifier import verify_answer
+
+                    verification = verify_answer(
+                        assistant_content,
+                        sources,
+                        min_coverage=settings.grounding_min_coverage,
+                    )
+                    verification_data = verification.to_dict(include_claims=True)
+                    if (
+                        settings.grounding_enforcement == "strict"
+                        and verification.status != "verified"
+                    ):
+                        warning = "\n\n> ⚠️ 部分内容未获得检索来源的充分支持，请结合下方来源核对。"
+                        assistant_content += warning
+                        yield f"event: answer_chunk\ndata: {json.dumps({'delta': warning}, ensure_ascii=False)}\n\n"
+                    yield f"event: verification\ndata: {json.dumps(verification_data, ensure_ascii=False)}\n\n"
+                except Exception:
+                    _log.warning("answer verification failed", exc_info=True)
+
+            await _save_messages(
+                conv_id,
+                assistant_content,
+                tool_messages,
+                sources,
+                preamble_content=preamble_saved,
+                verification=verification_data,
+            )
+            yield "event: done\ndata: {}\n\n"
+            continue
+
         data = json.dumps(event["data"], ensure_ascii=False)
         yield f"event: {event_type}\ndata: {data}\n\n"
 
@@ -136,6 +190,14 @@ async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: 
             assistant_content += event["data"].get("delta", "")
         elif event_type == "sources":
             sources = event["data"]
+        elif event_type == "timing":
+            repair_reasons = event["data"].get("repair_reasons", [])
+            skip_verification = bool({
+                "empty_after_stream_verification",
+                "generation_truncated",
+                "reasoning_without_final",
+                "empty_final_answer",
+            } & set(repair_reasons))
         elif event_type == "tool_call":
             if not tool_phase:
                 tool_phase = True
@@ -147,20 +209,30 @@ async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: 
                 "args": event["data"].get("args", {}),
                 "content": "",  # filled by tool_result
             })
-        elif event_type == "tool_result":
+        elif event_type == "tool_result" and tool_messages:
             # Update the last tool message with result content and full data
-            if tool_messages:
-                d = event["data"]
-                if d.get("success"):
-                    tool_messages[-1]["content"] = f"Success: {d.get('result_count', 0)} results"
-                else:
-                    tool_messages[-1]["content"] = f"Error: {d.get('error', 'unknown')}"
-                tool_messages[-1]["result_data"] = d.get("full_data")
-        elif event_type == "done":
-            await _save_messages(
-                conv_id, assistant_content, tool_messages, sources,
-                preamble_content=preamble_saved,
-            )
+            d = event["data"]
+            if d.get("success"):
+                tool_messages[-1]["content"] = f"Success: {d.get('result_count', 0)} results"
+            else:
+                tool_messages[-1]["content"] = f"Error: {d.get('error', 'unknown')}"
+            tool_messages[-1]["result_data"] = d.get("full_data")
+
+        # Check for client disconnect after each event
+        if request is not None:
+            try:
+                if await request.is_disconnected():
+                    _log.info("sse client disconnected conv_id=%s", conv_id)
+                    cancelled.set()
+                    # Save whatever we have so far
+                    if assistant_content:
+                        await _save_messages(
+                            conv_id, assistant_content, tool_messages, sources,
+                            preamble_content=preamble_saved,
+                        )
+                    return
+            except Exception:
+                pass  # Don't break the stream if disconnect check fails
 
 
 @router.post("/api/chat")
@@ -179,7 +251,11 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
         from worker.tasks import get_task_manager
 
         from agent.session_extract import extract_session_memories
-        get_task_manager().create(extract_session_memories(conv_id), "extract_memories", metadata={"conv_id": conv_id})
+        get_task_manager().create(
+            lambda: extract_session_memories(conv_id),
+            "extract_memories",
+            metadata={"conv_id": conv_id},
+        )
     else:
         # 新会话：对上一段会话做记忆提取
         from worker.tasks import get_task_manager
@@ -190,7 +266,11 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
         )
         prev_id = prev.scalar_one_or_none()
         if prev_id:
-            get_task_manager().create(extract_session_memories(prev_id), "extract_memories", metadata={"conv_id": prev_id})
+            get_task_manager().create(
+                lambda: extract_session_memories(prev_id),
+                "extract_memories",
+                metadata={"conv_id": prev_id},
+            )
 
         conv = Conversation(id=str(uuid.uuid4()), title=req.message[:50])
         db.add(conv)
@@ -262,7 +342,7 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
     await db.commit()
 
     return StreamingResponse(
-        sse_generator(req.message, history, conv_id),
+        sse_generator(req.message, history, conv_id, request),
         media_type="text/event-stream",
         headers={
             "X-Conversation-Id": conv_id,

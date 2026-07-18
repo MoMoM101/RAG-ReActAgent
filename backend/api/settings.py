@@ -17,6 +17,12 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 _V2_SUFFIX = "_v2"
 
 
+def _derive_doc_key(doc_id: str, filename: str) -> str:
+    """Derive the stable retrieval document key without importing the RAG pipeline."""
+    base = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return re.sub(r"[^a-zA-Z0-9-]", "-", base).strip("-").lower() or doc_id[:8]
+
+
 async def _cleanup_bm25_v2() -> None:
     """清除 BM25 双缓冲重建的 _v2 残留表。"""
     from sqlalchemy import text as sa_text
@@ -28,14 +34,54 @@ async def _cleanup_bm25_v2() -> None:
 
 
 async def _switch_bm25_tables() -> None:
-    """BM25 原子切换：删旧表，_v2 重命名为正式表。"""
+    """Atomically replace live BM25 tables with a validated v2 buffer."""
     from sqlalchemy import text as sa_text
 
     from models.database import engine
     async with engine.begin() as conn:
-        for t in ("bm25_docs", "bm25_index", "bm25_stats"):
-            await conn.execute(sa_text(f"DROP TABLE IF EXISTS {t}"))
-            await conn.execute(sa_text(f"ALTER TABLE {t}_v2 RENAME TO {t}"))
+        table_names = ("bm25_docs", "bm25_index", "bm25_stats")
+        result = await conn.execute(
+            sa_text(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name IN "
+                "('bm25_docs_v2', 'bm25_index_v2', 'bm25_stats_v2')"
+            )
+        )
+        staged = {row[0] for row in result.fetchall()}
+        missing = [f"{name}_v2" for name in table_names if f"{name}_v2" not in staged]
+        if missing:
+            raise RuntimeError(f"BM25 staged tables missing: {', '.join(missing)}")
+
+        live_result = await conn.execute(
+            sa_text(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name IN "
+                "('bm25_docs', 'bm25_index', 'bm25_stats')"
+            )
+        )
+        live = {row[0] for row in live_result.fetchall()}
+
+        # SQLite DDL is transactional here. Keep live tables as _old until all
+        # staged tables have been promoted, then remove the backup set.
+        for index_name in (
+            "idx_bm25_docs_did", "idx_bm25_index_term",
+            "idx_bm25_docs_v2_did", "idx_bm25_index_v2_term",
+        ):
+            await conn.execute(sa_text(f"DROP INDEX IF EXISTS {index_name}"))
+        for name in table_names:
+            await conn.execute(sa_text(f"DROP TABLE IF EXISTS {name}_old"))
+            if name in live:
+                await conn.execute(sa_text(f"ALTER TABLE {name} RENAME TO {name}_old"))
+        for name in table_names:
+            await conn.execute(sa_text(f"ALTER TABLE {name}_v2 RENAME TO {name}"))
+        for name in table_names:
+            await conn.execute(sa_text(f"DROP TABLE IF EXISTS {name}_old"))
+        await conn.execute(
+            sa_text("CREATE INDEX idx_bm25_docs_did ON bm25_docs(document_id)")
+        )
+        await conn.execute(
+            sa_text("CREATE INDEX idx_bm25_index_term ON bm25_index(term)")
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +322,7 @@ async def _detect_dimension_mismatch() -> dict:
     from openai import AsyncOpenAI
     from sqlalchemy import func, select
 
-    from models.database import async_session
+    from models.database import session_scope
     from models.orm import Document
     from vectordb.qdrant import QdrantVectorDB
 
@@ -304,7 +350,7 @@ async def _detect_dimension_mismatch() -> dict:
 
     doc_count = 0
     if chunks_dim is not None:
-        async with async_session() as session:
+        async with session_scope() as session:
             result = await session.execute(select(func.count(Document.id)))
             doc_count = result.scalar() or 0
 
@@ -441,11 +487,11 @@ async def _get_sample_text() -> str | None:
     """获取最长的一段文本作为 pre-flight 样本。优先 raw_text，降级 FTS5。"""
     from sqlalchemy import select
 
-    from models.database import async_session
+    from models.database import session_scope
     from models.orm import Document
 
     # 1. 尝试从 Document.raw_text 获取
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Document.raw_text)
             .where(Document.raw_text.isnot(None))
@@ -559,7 +605,7 @@ async def rebuild_collections():
 
         from embedding.factory import create_embedding, reset_embedding
         from memory.profile import _index_profile, _load
-        from models.database import async_session
+        from models.database import session_scope
         from models.orm import DocStatus, Document
         from rag.progress import progress
         from rag.splitter import split_text
@@ -593,13 +639,17 @@ async def rebuild_collections():
             logger.info("rebuild preflight done chunk_size=%d", actual_chunk_size)
 
             # ── 2. 逐文档重新处理 ──
-            async with async_session() as session:
+            async with session_scope() as session:
                 result = await session.execute(
                     select(Document).order_by(Document.created_at.asc())
                 )
                 docs = result.scalars().all()
 
             fts_v2 = BM25Search(table_suffix=_V2_SUFFIX)
+            # A rebuild with zero documents still needs a complete staged table
+            # set so the switch is deterministic. More importantly, never enter
+            # the switch phase with an implicitly missing buffer.
+            await fts_v2._ensure_tables()
 
             total_docs = len(docs)
             total_chunks = 0
@@ -657,10 +707,18 @@ async def rebuild_collections():
 
                     all_points.extend(points)
 
+                    # 构建 document_key
+                    _doc_key = _derive_doc_key(doc.id, doc.filename)
+
+                    # Qdrant payload 补全 document_key/section_key
+                    for pt in points:
+                        pt["payload"]["document_key"] = _doc_key
+                        pt["payload"]["section_key"] = ""
+
                     # FTS5 _v2 写入
                     fts_entries = [
                         (str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{doc.id}:{c.chunk_index}")),
-                         doc.id, c.text)
+                         doc.id, _doc_key, c.section_key, c.chunk_index, c.text)
                         for c in chunks
                     ]
                     await fts_v2.insert_batch(fts_entries)
@@ -672,6 +730,11 @@ async def rebuild_collections():
                     logger.error("rebuild doc failed doc_id=%s filename=%s error=%s",
                                  doc.id, doc.filename, str(e)[:200])
                     doc_chunk_counts[doc.id] = 0
+
+            if total_docs > 0 and total_chunks == 0:
+                raise RuntimeError(
+                    f"所有 {total_docs} 份文档均重建失败，保留现有索引"
+                )
 
             # ── 3. 确定新维度 ──
             new_dim = await _get_actual_embedding_dim()
@@ -737,7 +800,7 @@ async def rebuild_collections():
             await _switch_bm25_tables()
 
             # ── 5. 更新 Document 表 ──
-            async with async_session() as session:
+            async with session_scope() as session:
                 for d in docs:
                     cc = doc_chunk_counts.get(d.id, 0)
                     if cc > 0:
@@ -791,7 +854,7 @@ async def rebuild_collections():
 
     _rebuild_lock = True
     from worker.tasks import get_task_manager
-    get_task_manager().create(_do_rebuild(), "rebuild_collections")
+    get_task_manager().create(_do_rebuild, "rebuild_collections")
     return {"status": "started"}
 
 
@@ -809,13 +872,13 @@ async def clear_all_data():
     from sqlalchemy import delete, func, select
 
     from config import settings
-    from models.database import async_session, engine
+    from models.database import session_scope, engine
     from models.orm import Conversation, Document, Message, UserMemory, UserProfile
 
     new_dim = await _get_actual_embedding_dim()
 
     # 统计待删除数量
-    async with async_session() as session:
+    async with session_scope() as session:
         doc_count = (await session.execute(select(func.count(Document.id)))).scalar() or 0
         mem_count = (await session.execute(select(func.count(UserMemory.id)))).scalar() or 0
         conv_count = (await session.execute(select(func.count(Conversation.id)))).scalar() or 0
@@ -825,7 +888,7 @@ async def clear_all_data():
     await _reset_qdrant_collections(new_dim)
 
     # 清空 SQLite 表
-    async with async_session() as session:
+    async with session_scope() as session:
         await session.execute(delete(Message))
         await session.execute(delete(Conversation))
         await session.execute(delete(UserMemory))
@@ -840,6 +903,8 @@ async def clear_all_data():
             await conn.execute(sa_text(f"DELETE FROM {t}"))
 
     # 清空上传文件
+    # TODO(D3): use get_storage() to enumerate and delete all stored objects
+    # once documents consistently use storage_key instead of flat filenames.
     upload_dir = settings.upload_dir
     if os.path.isdir(upload_dir):
         for f in os.listdir(upload_dir):

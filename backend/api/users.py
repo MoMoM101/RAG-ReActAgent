@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from audit import audit_from_request
 from auth.jwt import hash_password
-from models.database import async_session
+from models.database import session_scope
 from models.orm import User
 from security import get_current_user, require_role
 
@@ -30,7 +30,7 @@ async def list_users(
     _auth: None = Depends(get_current_user),
     _enforce: None = Depends(require_role("system_admin")),
 ):
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(select(User).order_by(User.created_at))
         users = result.scalars().all()
         return [
@@ -57,7 +57,7 @@ async def create_user(
         raise HTTPException(400, f"Invalid role: {req.role}")
 
     import uuid
-    async with async_session() as session:
+    async with session_scope() as session:
         existing = (await session.execute(
             select(User).where(User.username == req.username)
         )).scalar_one_or_none()
@@ -90,7 +90,7 @@ async def update_user(
     _auth: None = Depends(get_current_user),
     _enforce: None = Depends(require_role("system_admin")),
 ):
-    async with async_session() as session:
+    async with session_scope() as session:
         user = (await session.execute(
             select(User).where(User.id == user_id)
         )).scalar_one_or_none()
@@ -130,7 +130,7 @@ async def delete_user(
     if user_id == current.user_id:
         raise HTTPException(400, "Cannot delete yourself")
 
-    async with async_session() as session:
+    async with session_scope() as session:
         user = (await session.execute(
             select(User).where(User.id == user_id)
         )).scalar_one_or_none()

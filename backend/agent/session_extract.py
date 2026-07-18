@@ -11,10 +11,10 @@ async def extract_session_memories(conversation_id: str):
 
         from sqlalchemy import func, select, update
 
-        from models.database import async_session
+        from models.database import session_scope
         from models.orm import Conversation, Message
 
-        async with async_session() as session:
+        async with session_scope() as session:
             # 获取 last_extracted_at
             conv_result = await session.execute(
                 select(Conversation.last_extracted_at)
@@ -55,7 +55,7 @@ async def extract_session_memories(conversation_id: str):
             return
 
         # 先更新时间戳，commit 后再写入画像（画像写入失败不影响提取进度）
-        async with async_session() as session:
+        async with session_scope() as session:
             await session.execute(
                 update(Conversation)
                 .where(Conversation.id == conversation_id)

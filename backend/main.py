@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from config import settings
-from models.database import init_db
+from models.database import check_revision_gate, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 
-from models.database import async_session
+from models.database import session_scope
 from models.orm import DocStatus, Document
 
 
@@ -29,7 +29,7 @@ async def _cleanup_stuck_documents():
     """Mark documents stuck in intermediate states > 30 min as failed."""
     cutoff = datetime.now(UTC) - timedelta(minutes=30)
     stuck_statuses = (DocStatus.parsing, DocStatus.chunking, DocStatus.embedding, DocStatus.indexing)
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Document.id, Document.filename)
             .where(Document.status.in_(stuck_statuses))
@@ -90,11 +90,11 @@ def _bootstrap_admin_token() -> None:
 async def _bootstrap_user() -> None:
     """Create a default system_admin user if no users exist."""
     from sqlalchemy import select
-    from models.database import async_session
+    from models.database import session_scope
     from models.orm import User
     from auth.jwt import hash_password
 
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(select(User).limit(1))
         if result.scalar_one_or_none():
             return
@@ -122,6 +122,10 @@ async def lifespan(app: FastAPI):
     # Bootstrap admin token on first run
     _bootstrap_admin_token()
 
+    # Verify database schema revision matches code before any DB access
+    await check_revision_gate()
+    await init_db()
+
     # Bootstrap default admin user if no users exist
     await _bootstrap_user()
 
@@ -133,7 +137,6 @@ async def lifespan(app: FastAPI):
     # Audit Qdrant collections for orphan restore temp collections
     active_collection = settings.qdrant_active_collection or settings.qdrant_collection
     await _cleanup_orphan_qdrant_collections(active_collection)
-    await init_db()
     # 恢复 active collection 指针（rebuild 持久化的）
     _ptr = Path(settings.qdrant_path) / "active_collections.json"
     if _ptr.exists():

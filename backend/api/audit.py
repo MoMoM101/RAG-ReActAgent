@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import text as sa_text
 
-from models.database import async_session
+from models.database import session_scope
 from security import get_current_user, require_role
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
@@ -18,7 +18,7 @@ async def list_audit_logs(
     _auth: None = Depends(get_current_user),
     _enforce: None = Depends(require_role("system_admin")),
 ):
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         if action:
             rows = (await conn.execute(sa_text(

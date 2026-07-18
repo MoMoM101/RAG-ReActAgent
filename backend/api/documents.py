@@ -12,10 +12,14 @@ from limiter import limiter
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+# TODO(D3): migrate upload streaming to get_storage().create_staging() +
+# append() + commit() pattern once all documents have storage_key populated.
+# The delete endpoints below should also use get_storage().delete(storage_key)
+# when available instead of filename-based directory scanning.
 from storage.files import create_upload_temp, delete_file
 
 from config import DOCUMENT_UPLOAD_HARD_LIMIT_MB, settings
-from models.database import async_session, get_db
+from models.database import session_scope, get_db
 from models.orm import DocStatus, Document
 from rag.answer_cache import bump_collection_version
 from rag.pipeline import _process_document, ingest_document_from_path
@@ -289,6 +293,8 @@ async def clear_all_documents(db: AsyncSession = Depends(get_db)):
         if os.path.isdir(upload_dir):
             stem = doc.filename.rsplit(".", 1)[0] if "." in doc.filename else doc.filename
             if stem:
+                # TODO(D3): use get_storage().delete(doc.storage_key) once all
+                # documents have storage_key populated via migration 0002 backfill.
                 for f in os.listdir(upload_dir):
                     if f == doc.filename or (f.startswith(stem + "_") and f.endswith(doc.file_type)):
                         delete_file(os.path.join(upload_dir, f))
@@ -324,6 +330,8 @@ async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
 
     # Try to delete file
     upload_dir = settings.upload_dir
+    # TODO(D3): use get_storage().delete(doc.storage_key) once all documents
+    # have storage_key populated via migration 0002 backfill.
     if os.path.isdir(upload_dir):
         stem = doc.filename.rsplit(".", 1)[0] if "." in doc.filename else doc.filename
         if stem:
@@ -349,7 +357,7 @@ async def get_document_chunks(doc_id: str, db: AsyncSession = Depends(get_db)):
     if not re.fullmatch(r"[a-zA-Z0-9\-_]+", doc_id):
         raise HTTPException(400, "Invalid document ID")
 
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         result = await conn.exec_driver_sql(
             "SELECT chunk_id, text FROM bm25_docs WHERE document_id = ? ORDER BY chunk_id",
@@ -424,7 +432,7 @@ async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
             await _process_document(doc_id, file_path, file_type)
         except Exception as exc:
             error = str(exc)[:500]
-            async with async_session() as session:
+            async with session_scope() as session:
                 await session.execute(
                     update(Document)
                     .where(Document.id == doc_id)
@@ -448,7 +456,7 @@ async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
 
 async def _load_document_progress(doc_id: str) -> dict:
     """Load durable progress so SSE can recover from missed in-process events."""
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Document).where(Document.id == doc_id)
         )

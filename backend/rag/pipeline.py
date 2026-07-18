@@ -6,11 +6,15 @@ import time
 import uuid
 
 from sqlalchemy import select
+# TODO(D3): migrate save_upload / finalize_upload / find_upload / delete_file
+# to use get_storage() once the full ingestion pipeline can pass storage_key
+# through from document creation to file I/O. The existing functions remain
+# available as backward-compatible wrappers.
 from storage.files import delete_file, finalize_upload, find_upload, save_upload
 
 from config import settings
 from embedding.factory import create_embedding
-from models.database import async_session
+from models.database import session_scope
 from models.orm import DocStatus, Document
 from rag.loaders import load_document
 from rag.splitter import split_text
@@ -56,7 +60,7 @@ def _hash_chunk_ids(chunk_ids: set[str]) -> str:
 async def _create_generation(gen_id: str, doc_id: str) -> None:
     """Create a generation record in PREPARING state."""
     from sqlalchemy import text as sa_text
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         await conn.execute(sa_text(
             "INSERT INTO index_generations (id, doc_id, status, created_at) "
@@ -68,7 +72,7 @@ async def _create_generation(gen_id: str, doc_id: str) -> None:
 async def _update_generation_status(gen_id: str, status: str) -> None:
     """Update generation status during pipeline stages."""
     from sqlalchemy import text as sa_text
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         await conn.execute(sa_text(
             "UPDATE index_generations SET status=:st WHERE id=:id"
@@ -94,7 +98,7 @@ async def _commit_generation(gen_id: str, qdrant_count: int, bm25_count: int,
                              chunk_ids_hash: str) -> None:
     """Mark generation as COMMITTED with verified counts and hash."""
     from sqlalchemy import text as sa_text
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         await conn.execute(sa_text(
             "UPDATE index_generations SET status='committed', vector_chunk_count=:vc, "
@@ -108,7 +112,7 @@ async def _fail_generation(gen_id: str, qdrant_count: int, bm25_count: int,
                            error_stage: str = "", error_message: str = "") -> None:
     """Mark generation as FAILED with error context."""
     from sqlalchemy import text as sa_text
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         await conn.execute(sa_text(
             "UPDATE index_generations SET status='failed', vector_chunk_count=:vc, "
@@ -121,7 +125,7 @@ async def _fail_generation(gen_id: str, qdrant_count: int, bm25_count: int,
 async def _switch_active_generation(doc_id: str, gen_id: str) -> None:
     """Set the active_generation_id on the document within a transaction."""
     from sqlalchemy import text as sa_text
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         await conn.execute(sa_text(
             "UPDATE documents SET active_generation_id=:gid WHERE id=:did"
@@ -138,7 +142,7 @@ async def cleanup_staging_generations() -> int:
     from textdb.bm25_search import BM25Search
     from vectordb.factory import create_vectordb
 
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         rows = (await conn.execute(sa_text(
             "SELECT g.id, g.doc_id, d.active_generation_id "
@@ -215,7 +219,7 @@ async def ingest_document(
     file_size = len(file_content)
 
     # 1. Check for duplicates
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Document).where(Document.file_hash == file_hash)
         )
@@ -226,7 +230,7 @@ async def ingest_document(
     file_path = save_upload(file_content, filename)
 
     # 3. Create document record
-    async with async_session() as session:
+    async with session_scope() as session:
         doc = Document(
             id=doc_id,
             filename=filename,
@@ -254,7 +258,7 @@ async def ingest_document_from_path(
     """Register and ingest a file that has already been streamed to disk."""
     from sqlalchemy.exc import IntegrityError
 
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Document).where(Document.file_hash == file_hash)
         )
@@ -269,7 +273,7 @@ async def ingest_document_from_path(
         raise
     doc_id = str(uuid.uuid4())
     try:
-        async with async_session() as session:
+        async with session_scope() as session:
             session.add(Document(
                 id=doc_id,
                 filename=filename,
@@ -307,7 +311,7 @@ async def _run_document_ingestion(
                 logger.info("ingestion started doc_id=%s filename=%s", doc_id, filename)
                 # ── Idempotency guard: skip if already committed ──
                 from models.orm import IndexGeneration, GenerationStatus
-                async with async_session() as session:
+                async with session_scope() as session:
                     doc = (await session.execute(
                         select(Document).where(Document.id == doc_id)
                     )).scalar_one()
@@ -343,7 +347,7 @@ async def _run_document_ingestion(
                         error_type = _classify_error(e)
                         is_last = (attempt == settings.ingestion_max_retries - 1)
                         if error_type == "permanent" or is_last:
-                            async with async_session() as session:
+                            async with session_scope() as session:
                                 doc = (await session.execute(
                                     select(Document).where(Document.id == doc_id)
                                 )).scalar_one()
@@ -380,7 +384,7 @@ async def _run_document_ingestion(
     try:
         await _process_document(doc_id, file_path, file_type)
     except Exception as e:
-        async with async_session() as session:
+        async with session_scope() as session:
             result = await session.execute(select(Document).where(Document.id == doc_id))
             doc = result.scalar_one()
             doc.status = DocStatus.failed
@@ -400,7 +404,7 @@ async def recover_incomplete_documents() -> int:
         DocStatus.embedding,
         DocStatus.indexing,
     )
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Document).where(Document.status.in_(incomplete))
         )
@@ -426,7 +430,7 @@ async def recover_incomplete_documents() -> int:
             )
             scheduled += 1
         except Exception as exc:
-            async with async_session() as session:
+            async with session_scope() as session:
                 result = await session.execute(
                     select(Document).where(Document.id == doc_id)
                 )
@@ -440,7 +444,7 @@ async def recover_incomplete_documents() -> int:
 
 async def _process_document(doc_id: str, file_path: str, file_type: str):
     from rag.progress import progress
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(select(Document).where(Document.id == doc_id))
         doc = result.scalar_one()
 

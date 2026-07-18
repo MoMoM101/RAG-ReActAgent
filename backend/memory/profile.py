@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 
-from models.database import async_session
+from models.database import session_scope
 from models.orm import UserProfile
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ def _empty() -> dict:
 
 
 async def _load() -> dict:
-    async with async_session() as s:
+    async with session_scope() as s:
         r = await s.execute(
             select(UserProfile).order_by(UserProfile.version.desc()).limit(1)
         )
@@ -53,7 +53,7 @@ async def _load() -> dict:
 
 
 async def _save(data: dict):
-    async with async_session() as s:
+    async with session_scope() as s:
         r = await s.execute(
             select(UserProfile).order_by(UserProfile.version.desc()).limit(1)
         )

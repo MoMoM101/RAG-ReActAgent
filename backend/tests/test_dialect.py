@@ -20,23 +20,23 @@ def test_get_adapter_unknown_raises():
 
 @pytest.mark.asyncio
 async def test_sqlite_health_check_wal():
-    from models.database import async_session, init_db
+    from models.database import session_scope, init_db
     adapter = SqliteAdapter()
     await init_db()
-    async with async_session() as session:
+    async with session_scope() as session:
         # Should not raise if WAL is active
         await adapter.health_check(session)
 
 
 @pytest.mark.asyncio
 async def test_sqlite_rebuild_fts_creates_table():
-    from models.database import async_session
+    from models.database import session_scope
     from sqlalchemy import text
     adapter = SqliteAdapter()
-    async with async_session() as session:
+    async with session_scope() as session:
         await adapter.rebuild_fts(session)
     # Verify table exists after rebuild (FTS5 virtual tables appear in sqlite_master)
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='bm25_docs'")
         )

@@ -56,4 +56,13 @@ async def run_migrations_online():
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online())
+    # Handle both CLI (no running loop) and programmatic (inside event loop) usage
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(run_migrations_online())
+    else:
+        # Inside a running event loop — run in a thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(lambda: asyncio.run(run_migrations_online())).result()

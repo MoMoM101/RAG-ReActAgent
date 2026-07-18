@@ -7,6 +7,7 @@ Replaces SQLiteFTS5 with a proper BM25 implementation that:
 - Uses standard BM25 scoring (k1=1.5, b=0.75)
 """
 
+import difflib
 import logging
 import math
 import re
@@ -16,7 +17,7 @@ from typing import Any
 import jieba
 from sqlalchemy import text as sa_text
 
-from models.database import async_session
+from models.database import session_scope
 
 from .base import BaseTextDB, TextSearchResult
 
@@ -32,6 +33,16 @@ _TOKEN_BOUNDARY = re.compile(r"^[\s\W]+|[\s\W]+$")
 _CODE_FRAGMENT = re.compile(r"^[A-Za-z0-9]*[0-9][A-Za-z0-9]*$")  # contains digit
 _SHORT_ALPHA = re.compile(r"^[A-Za-z]{1,5}$")  # short alpha, could be code prefix
 _SEPARATOR = re.compile(r"^[_\-\.]$")  # connector chars
+_FUZZY_LATIN = re.compile(r"^[a-z]{5,}$")
+_FUZZY_CUTOFF = 0.88
+
+
+def _closest_fuzzy_term(token: str, candidates: list[str]) -> str | None:
+    """Return one conservative correction for a missing long Latin token."""
+    if not _FUZZY_LATIN.fullmatch(token):
+        return None
+    matches = difflib.get_close_matches(token, candidates, n=1, cutoff=_FUZZY_CUTOFF)
+    return matches[0] if matches else None
 
 
 def tokenize(text: str) -> list[str]:
@@ -121,7 +132,7 @@ class BM25Search(BaseTextDB):
 
     async def _batch_exec(self, statements: list[str]) -> None:
         """Execute raw DDL statements (no user data, safe for exec_driver_sql)."""
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             for sql in statements:
                 await conn.exec_driver_sql(sql)
@@ -131,7 +142,7 @@ class BM25Search(BaseTextDB):
         """Execute parameterized DML statements in a single transaction."""
         if not stmts:
             return
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             for sql, params in stmts:
                 await conn.execute(sa_text(sql), params)
@@ -139,21 +150,21 @@ class BM25Search(BaseTextDB):
 
     async def _query(self, sql: str) -> list[Any]:
         """Execute a SELECT query (no user params, for internal use)."""
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             result = await conn.exec_driver_sql(sql)
             return list(result.fetchall())
 
     async def _query_param(self, sql: str, params: dict) -> list[Any]:
         """Execute a parameterized SELECT query."""
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             result = await conn.execute(sa_text(sql), params)
             return list(result.fetchall())
 
     async def _exec_param(self, sql: str, params: dict) -> None:
         """Execute a parameterized DML statement (INSERT/UPDATE/DELETE)."""
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             await conn.execute(sa_text(sql), params)
             await session.commit()
@@ -335,7 +346,7 @@ class BM25Search(BaseTextDB):
         self, query: str, top_k: int = 10, document_id: str = ""
     ) -> list[TextSearchResult]:
         await self._ensure_tables()
-        query_tokens = tokenize(query)
+        query_tokens = list(dict.fromkeys(tokenize(query)))
         if not query_tokens:
             return []
 
@@ -345,6 +356,34 @@ class BM25Search(BaseTextDB):
 
         if N == 0 or avgdl == 0:
             return []
+
+        # Expand only missing long Latin tokens. This catches conservative
+        # one-character spelling mistakes such as cabonara -> carbonara while
+        # avoiding fuzzy expansion for Chinese and code-like identifiers.
+        placeholders = ", ".join(f":t{i}" for i in range(len(query_tokens)))
+        token_params = {f"t{i}": token for i, token in enumerate(query_tokens)}
+        df_rows = await self._query_param(
+            f"SELECT term, df FROM {self._stats} WHERE term IN ({placeholders})",
+            token_params,
+        )
+        df_map: dict[str, int] = {row[0]: row[1] for row in df_rows}
+        for token in list(query_tokens):
+            if token in df_map or not _FUZZY_LATIN.fullmatch(token):
+                continue
+            rows = await self._query_param(
+                f"SELECT term, df FROM {self._stats} "
+                "WHERE length(term) BETWEEN :min_len AND :max_len",
+                {"min_len": len(token) - 1, "max_len": len(token) + 1},
+            )
+            candidate_df = {
+                str(term): int(df)
+                for term, df in rows
+                if _FUZZY_LATIN.fullmatch(str(term))
+            }
+            correction = _closest_fuzzy_term(token, list(candidate_df))
+            if correction and correction not in query_tokens:
+                query_tokens.append(correction)
+                df_map[correction] = candidate_df[correction]
 
         # Collect candidate chunks from index for each query token
         candidates: dict[str, dict[str, Any]] = {}
@@ -378,18 +417,6 @@ class BM25Search(BaseTextDB):
 
         if not candidates:
             return []
-
-        # Compute IDF for each query token (batch query with parameterized IN)
-        if query_tokens:
-            placeholders = ", ".join(f":t{i}" for i in range(len(query_tokens)))
-            idf_params = {f"t{i}": t for i, t in enumerate(query_tokens)}
-            idf_rows = await self._query_param(
-                f"SELECT term, df FROM {self._stats} WHERE term IN ({placeholders})",
-                idf_params,
-            )
-            df_map: dict[str, int] = {row[0]: row[1] for row in idf_rows}
-        else:
-            df_map = {}
 
         # Compute BM25 scores
         scored: list[tuple[float, str, str, str, str, str]] = []

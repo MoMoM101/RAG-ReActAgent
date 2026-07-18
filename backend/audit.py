@@ -4,7 +4,7 @@ import logging
 
 from sqlalchemy import text as sa_text
 
-from models.database import async_session
+from models.database import session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ async def record_audit(
 ) -> None:
     """Write an audit record. Best-effort — never raises."""
     try:
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             await conn.execute(sa_text(
                 "INSERT INTO audit_logs "

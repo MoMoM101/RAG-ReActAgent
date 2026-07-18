@@ -14,7 +14,7 @@ from auth.jwt import (
     decode_token,
     verify_password,
 )
-from models.database import async_session
+from models.database import session_scope
 from models.orm import User
 from security import UserContext, get_current_user
 
@@ -32,7 +32,7 @@ class RefreshRequest(BaseModel):
 
 @router.post("/login")
 async def login(req: LoginRequest):
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(User).where(User.username == req.username)
         )
@@ -74,7 +74,7 @@ async def refresh(req: RefreshRequest):
     if payload.get("type") != "refresh":
         raise HTTPException(401, "Not a refresh token")
 
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(User).where(User.id == payload["sub"])
         )

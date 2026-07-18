@@ -16,6 +16,7 @@ if "DATABASE_URL" not in os.environ:
     os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_root / 'test.db'}"
     os.environ["QDRANT_PATH"] = str(_root / "qdrant")
     os.environ["UPLOAD_DIR"] = str(_root / "uploads")
+    os.environ["AUTO_MIGRATE"] = "1"
     _root.mkdir(parents=True, exist_ok=True)
     (_root / "qdrant").mkdir(exist_ok=True)
     (_root / "uploads").mkdir(exist_ok=True)
@@ -27,7 +28,7 @@ from sqlalchemy import text as sa_text
 # Ensure ORM models are registered with Base.metadata BEFORE init_db()
 import models.orm  # noqa: F401
 from llm.base import BaseLLM, LLMResponse
-from models.database import engine, init_db
+from models.database import check_revision_gate, engine, init_db
 
 
 def pytest_configure(config):
@@ -36,6 +37,7 @@ def pytest_configure(config):
     os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{root / 'test.db'}"
     os.environ["QDRANT_PATH"] = str(root / "qdrant")
     os.environ["UPLOAD_DIR"] = str(root / "uploads")
+    os.environ["AUTO_MIGRATE"] = "1"
     (root / "qdrant").mkdir(parents=True, exist_ok=True)
     (root / "uploads").mkdir(parents=True, exist_ok=True)
     # Store for cleanup
@@ -56,7 +58,7 @@ class FakeLLM(BaseLLM):
         self.queues = response_queues
         self.call_index = 0
 
-    async def chat_stream(self, messages=None, tools=None):
+    async def chat_stream(self, messages=None, tools=None, max_tokens=None):
         if self.call_index >= len(self.queues):
             yield LLMResponse(content="[FakeLLM exhausted]")
             return
@@ -132,6 +134,7 @@ async def setup_db():
     reset_llm()
     reset_client_for_test()
 
+    await check_revision_gate()
     await init_db()
     # Clean FTS data before each test
     async with engine.begin() as conn:

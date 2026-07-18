@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from config import settings
 from embedding.factory import create_embedding
-from models.database import async_session
+from models.database import session_scope
 from models.orm import Document
 from textdb.base import TextSearchResult
 from textdb.bm25_search import BM25Search
@@ -45,6 +45,7 @@ class RetrievalResult:
     document_key: str = ""
     section_key: str = ""
     fallback_reason: str = ""  # non-empty when degradation occurred
+    rerank_ms: float = 0.0
 
 
 def _rrf_fusion(
@@ -65,27 +66,30 @@ def _rrf_fusion(
     # chunk_id -> (score, doc_id, text, source, document_key, section_key)
     scores: dict[str, tuple[float, str, str, str, str, str]] = {}
 
-    # Semantic scores
-    for rank, r in enumerate(vector_results):
-        rrf_score = semantic_weight / (rrf_k + rank + 1)
-        if r.chunk_id in scores:
-            existing = scores[r.chunk_id]
-            scores[r.chunk_id] = (existing[0] + rrf_score, r.document_id, r.text, "hybrid",
-                                  r.document_key or existing[4], r.section_key or existing[5])
-        else:
-            scores[r.chunk_id] = (rrf_score, r.document_id, r.text, "semantic",
-                                  r.document_key, r.section_key)
+    # Semantic scores. A zero weight disables the source; retaining zero-score
+    # candidates makes ablation modes leak results from the disabled backend.
+    if semantic_weight > 0:
+        for rank, r in enumerate(vector_results):
+            rrf_score = semantic_weight / (rrf_k + rank + 1)
+            if r.chunk_id in scores:
+                existing = scores[r.chunk_id]
+                scores[r.chunk_id] = (existing[0] + rrf_score, r.document_id, r.text, "hybrid",
+                                      r.document_key or existing[4], r.section_key or existing[5])
+            else:
+                scores[r.chunk_id] = (rrf_score, r.document_id, r.text, "semantic",
+                                      r.document_key, r.section_key)
 
     # Keyword scores
-    for rank, tr in enumerate(text_results):
-        rrf_score = keyword_weight / (rrf_k + rank + 1)
-        if tr.chunk_id in scores:
-            existing = scores[tr.chunk_id]
-            scores[tr.chunk_id] = (existing[0] + rrf_score, tr.document_id, tr.text, "hybrid",
-                                   tr.document_key or existing[4], tr.section_key or existing[5])
-        else:
-            scores[tr.chunk_id] = (rrf_score, tr.document_id, tr.text, "keyword",
-                                   tr.document_key, tr.section_key)
+    if keyword_weight > 0:
+        for rank, tr in enumerate(text_results):
+            rrf_score = keyword_weight / (rrf_k + rank + 1)
+            if tr.chunk_id in scores:
+                existing = scores[tr.chunk_id]
+                scores[tr.chunk_id] = (existing[0] + rrf_score, tr.document_id, tr.text, "hybrid",
+                                       tr.document_key or existing[4], tr.section_key or existing[5])
+            else:
+                scores[tr.chunk_id] = (rrf_score, tr.document_id, tr.text, "keyword",
+                                       tr.document_key, tr.section_key)
 
     # Sort by fused score descending
     sorted_items = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)
@@ -120,7 +124,7 @@ async def _dedup_results(results: list[RetrievalResult]) -> list[RetrievalResult
 
     # Load document created_at for comparison
     doc_ids = list({r.document_id for r in results})
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Document.id, Document.created_at).where(Document.id.in_(doc_ids))
         )
@@ -240,6 +244,8 @@ async def _rerank_results(
     if reranker is None or len(results) <= 1:
         return results
 
+    _t_rerank = time.time()
+
     # Score chunk quality, push low-quality chunks to end
     scored = [(r, _chunk_quality_score(r.text)) for r in results]
 
@@ -267,6 +273,10 @@ async def _rerank_results(
     reranked = [candidates[i] for i, _ in ranked[:top_k]]
     if len(results) > settings.rerank_top_n:
         reranked.extend(scored_results[settings.rerank_top_n:])
+
+    _rerank_elapsed = (time.time() - _t_rerank) * 1000
+    for r in reranked:
+        r.rerank_ms = _rerank_elapsed
     return reranked
 
 
@@ -348,9 +358,9 @@ async def _filter_committed_generation(
 
     from sqlalchemy import text as sa_text
 
-    from models.database import async_session
+    from models.database import session_scope
 
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         placeholders = ",".join(f":d{i}" for i in range(len(doc_ids)))
         params = {f"d{i}": did for i, did in enumerate(doc_ids)}
