@@ -467,8 +467,11 @@ def export_prometheus() -> str:
         db_path = db_url
 
     state = _collect_system_state(db_path)
-    for status, count in state["queue_depth"].items():
-        lines.append(f'rag_ingestion_queue_depth{{status="{status}"}} {count}')
+    if state["queue_depth"]:
+        for status, count in state["queue_depth"].items():
+            lines.append(f'rag_ingestion_queue_depth{{status="{status}"}} {count}')
+    else:
+        lines.append('rag_ingestion_queue_depth{status="pending"} 0')
     lines.append(f'rag_oldest_task_age_seconds {state["oldest_task_age_seconds"]:.1f}')
 
     return "\n".join(lines) + "\n"

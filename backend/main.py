@@ -377,6 +377,11 @@ from api.audit import router as audit_router
 
 app.include_router(audit_router)
 
+# ── Metrics (no auth required — Prometheus scrape endpoint) ──
+from api.metrics import router as metrics_router
+
+app.include_router(metrics_router)
+
 if __name__ == "__main__":
     import uvicorn
 
