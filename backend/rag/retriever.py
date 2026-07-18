@@ -544,6 +544,8 @@ async def hybrid_search(query: str, top_k: int | None = None, document_id: str =
                 timeout=settings.rag_timeout_rerank,
             )
         except TimeoutError:
+            # wait_for cannot cancel the underlying predict thread; it keeps running
+            # in the pool until finished (result discarded)
             logger.warning(
                 "rerank timed out after %.1fs, using RRF order",
                 settings.rag_timeout_rerank,

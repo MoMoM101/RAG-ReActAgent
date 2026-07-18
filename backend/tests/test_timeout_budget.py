@@ -11,6 +11,7 @@ class TestTimeoutConfig:
     def test_timeout_defaults_positive(self):
         assert settings.rag_timeout_intent > 0
         assert settings.rag_timeout_retrieval > 0
+        assert settings.rag_timeout_rerank > 0
         assert settings.rag_timeout_generation > 0
         assert settings.rag_timeout_verification > 0
         assert settings.rag_timeout_repair > 0
@@ -21,6 +22,10 @@ class TestTimeoutConfig:
     def test_retrieval_timeout_exceeds_intent(self):
         """Retrieval should have more budget than intent classification."""
         assert settings.rag_timeout_retrieval >= settings.rag_timeout_intent
+
+    def test_rerank_fits_within_retrieval_budget(self):
+        """Rerank budget must fit inside retrieval budget (nesting invariant)."""
+        assert settings.rag_timeout_retrieval >= settings.rag_timeout_rerank
 
     def test_generation_timeout_is_largest(self):
         """Generation should have the most budget."""

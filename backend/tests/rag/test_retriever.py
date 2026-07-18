@@ -245,4 +245,4 @@ async def test_hybrid_search_rerank_within_budget_no_fallback(monkeypatch):
     results = await hybrid_search("query", top_k=3, use_rerank=True)
 
     assert len(results) == 1
-    assert "rerank" not in results[0].fallback_reason
+    assert results[0].fallback_reason == ""
