@@ -165,11 +165,17 @@ class SearchDocsTool(BaseTool):
                     )
                     filenames = {row[0]: row[1] for row in db_result.all()}
 
+            degraded = any(
+                "rerank_timeout" in r.fallback_reason or "rerank_fallback" in r.fallback_reason
+                for r in results
+            )
+            reranked_flag = bool(results) and is_reranker_ready() and not degraded
+
             return ToolResult(
                 success=True,
                 data={
                     "count": len(results),
-                    "reranked": is_reranker_ready(),
+                    "reranked": reranked_flag,
                     "results": [
                         {
                             "citation_id": f"S{index}",

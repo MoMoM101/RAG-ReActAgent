@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import delete
 
 from agent.tools import CalculatorTool
-from models.database import async_session
+from models.database import session_scope
 from models.orm import DocStatus, Document
 
 
@@ -17,14 +17,14 @@ class TestListDocumentsTool:
     @pytest.mark.asyncio
     async def test_lists_documents(self, tool):
         # Clean up any stale test data
-        async with async_session() as session:
+        async with session_scope() as session:
             await session.execute(
                 delete(Document).where(Document.id.like("test-doc-%"))
             )
             await session.commit()
 
         # Seed test data
-        async with async_session() as session:
+        async with session_scope() as session:
             for i in range(3):
                 doc = Document(
                     id=f"test-doc-{i}",
@@ -45,7 +45,7 @@ class TestListDocumentsTool:
         assert all("id" in d and "filename" in d and "status" in d for d in docs)
 
         # Clean up seeded data
-        async with async_session() as session:
+        async with session_scope() as session:
             await session.execute(
                 delete(Document).where(Document.id.like("test-doc-%"))
             )
@@ -59,13 +59,10 @@ class TestListDocumentsTool:
         mock_result.scalars.return_value.all.return_value = []
         mock_session.execute.return_value = mock_result
 
-        with patch('agent.tools.async_session') as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
-            mock_factory.return_value.__aexit__ = AsyncMock(
-                return_value=None
-            )
+        with patch('agent.tools.session_scope') as mock_scope:
+            mock_cm = AsyncMock()
+            mock_cm.__aenter__.return_value = mock_session
+            mock_scope.return_value = mock_cm
             result = await tool.execute()
 
         assert result.success is True
@@ -138,7 +135,7 @@ class TestGetDocumentInfoTool:
     @pytest.mark.asyncio
     async def test_returns_document_info(self, tool):
         # Seed a document
-        async with async_session() as session:
+        async with session_scope() as session:
             doc = Document(
                 id="info-doc-1",
                 filename="report.pdf",
@@ -162,7 +159,7 @@ class TestGetDocumentInfoTool:
         assert data["chunk_count"] == 15
 
         # Clean up
-        async with async_session() as session:
+        async with session_scope() as session:
             await session.execute(
                 delete(Document).where(Document.id == "info-doc-1")
             )
@@ -368,3 +365,107 @@ class TestIsRetryableException:
         except RetryableError as e:
             assert isinstance(e.__cause__, asyncio.TimeoutError)
             assert "test_tool" in str(e)
+
+
+@pytest.mark.asyncio
+async def test_unknown_tool_returns_structured_error():
+    """Unknown tool name should return structured error, not KeyError."""
+    from agent.tools import registry
+    result = await registry.execute("nonexistent_tool", arg1="val")
+    assert result.success is False
+    assert "nonexistent_tool" in result.error
+    assert "未知工具" in result.error
+
+
+@pytest.mark.asyncio
+async def test_tool_param_validation_rejects_invalid():
+    """Calculator should reject missing required parameter."""
+    from agent.tools import registry
+    # Calculator requires 'expression' but we pass none
+    result = await registry.execute("calculator")
+    assert result.success is False
+    assert "参数校验失败" in result.error
+
+
+@pytest.mark.asyncio
+async def test_tool_param_validation_allows_valid():
+    """Calculator should accept valid parameters."""
+    from agent.tools import registry
+    result = await registry.execute("calculator", expression="2+2")
+    assert result.success is True
+    assert result.data["result"] == 4
+
+
+def test_tool_param_validation_degrades_safely_without_jsonschema(monkeypatch):
+    """A missing optional validator must not crash an active SSE tool call."""
+    import builtins
+
+    from agent.tools import _validate_tool_params, registry
+
+    real_import = builtins.__import__
+
+    def import_without_jsonschema(name, *args, **kwargs):
+        if name == "jsonschema":
+            raise ImportError("simulated missing jsonschema")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_jsonschema)
+    assert _validate_tool_params(registry._tools["calculator"], {}) == ""
+
+
+class TestSearchDocsRerankedFlag:
+    @pytest.mark.asyncio
+    async def test_reranked_false_when_results_degraded(self, monkeypatch):
+        """结果带 rerank 降级标记时,reranked 必须为 False,即使 reranker 全局 ready。"""
+        from agent.tools import SearchDocsTool
+        from rag.retriever import RetrievalResult
+
+        fake_results = [
+            RetrievalResult(
+                chunk_id="c1", document_id="d1", text="t1", score=0.9,
+                source="hybrid", fallback_reason="rerank_timeout",
+            ),
+            RetrievalResult(
+                chunk_id="c2", document_id="d1", text="t2", score=0.8,
+                source="hybrid", fallback_reason="rerank_timeout",
+            ),
+        ]
+
+        async def fake_search(query, top_k=0, document_id="", use_rerank=False):
+            return fake_results
+
+        import rag.retriever
+        monkeypatch.setattr(rag.retriever, "hybrid_search", fake_search)
+        import reranker.factory
+        monkeypatch.setattr(reranker.factory, "is_reranker_ready", lambda: True)
+
+        result = await SearchDocsTool().execute("测试查询")
+
+        assert result.success is True
+        assert result.data["count"] == 2
+        assert result.data["reranked"] is False
+
+    @pytest.mark.asyncio
+    async def test_reranked_true_when_no_degradation(self, monkeypatch):
+        """结果无降级标记且 reranker ready 时,reranked 为 True。"""
+        from agent.tools import SearchDocsTool
+        from rag.retriever import RetrievalResult
+
+        fake_results = [
+            RetrievalResult(
+                chunk_id="c1", document_id="d1", text="t1", score=0.9,
+                source="hybrid",
+            ),
+        ]
+
+        async def fake_search(query, top_k=0, document_id="", use_rerank=False):
+            return fake_results
+
+        import rag.retriever
+        monkeypatch.setattr(rag.retriever, "hybrid_search", fake_search)
+        import reranker.factory
+        monkeypatch.setattr(reranker.factory, "is_reranker_ready", lambda: True)
+
+        result = await SearchDocsTool().execute("测试查询")
+
+        assert result.data["reranked"] is True
