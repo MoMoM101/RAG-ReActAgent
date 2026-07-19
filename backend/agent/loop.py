@@ -91,23 +91,63 @@ async def run_agent_loop(
     # 1.5. 记忆前置拦截 — 正则提取 + 批量 LLM 确认
     from agent.intercept import confirm_candidates_batch, extract_memory_candidates
     from memory.profile import handle_intercept
-    candidates = extract_memory_candidates(user_message)
-    # LLM 分类器提取的 save_to_profile
+    regex_candidates = extract_memory_candidates(user_message)
+    saved = []
+
+    # Identity candidates from regex are precise enough to save directly.
+    # Non-identity regex candidates (preference/decision/fact) go through
+    # LLM confirmation to filter noise ("我喜欢Python" vs "我喜欢这首歌").
+    identity_direct: list[tuple[str, str]] = []
+    needs_confirmation: list[tuple[str, str]] = []
+    for content, mem_type in regex_candidates:
+        if mem_type == "identity":
+            identity_direct.append((content, mem_type))
+        else:
+            needs_confirmation.append((content, mem_type))
+
+    # save_to_profile candidates come from the LLM classifier — already
+    # reviewed, save directly.
     for item in (hint.save_to_profile or []):
         c = item.get("content", "")
         t = item.get("type", "fact")
-        if c and (c, t) not in candidates:
-            candidates.append((c, t))
-    saved = []
-    if candidates:
-        confirmed = await confirm_candidates_batch(candidates)
-        for candidate, mem_type in confirmed:
+        if c and (c, t) not in identity_direct and (c, t) not in needs_confirmation:
+            identity_direct.append((c, t))
+
+    logger.info(
+        "memory intercept: regex=%d (identity=%d need_confirm=%d) "
+        "classifier_save=%d user_msg=%.60s",
+        len(regex_candidates), len(identity_direct), len(needs_confirmation),
+        len(hint.save_to_profile or []), user_message,
+    )
+
+    # Save identity + classifier candidates immediately
+    for candidate, mem_type in identity_direct:
+        try:
             await handle_intercept(candidate, mem_type)
             saved.append(candidate)
+        except Exception:
+            logger.error(
+                "memory intercept save failed candidate=%s type=%s",
+                candidate, mem_type, exc_info=True,
+            )
+
+    # LLM confirmation only for regex non-identity (preference/decision/fact)
+    if needs_confirmation:
+        try:
+            confirmed = await confirm_candidates_batch(needs_confirmation)
+            for candidate, mem_type in confirmed:
+                await handle_intercept(candidate, mem_type)
+                saved.append(candidate)
+        except Exception:
+            logger.error("memory intercept confirm failed", exc_info=True)
+
     if saved:
         hint.hint_text = (
             f"[系统] 已记录: {'; '.join(saved)}\n" + hint.hint_text
         )
+        logger.info("memory intercept saved=%d items=%s", len(saved), saved)
+    else:
+        logger.info("memory intercept: nothing saved")
 
     # 1.6. 仅 personal_memory 意图时预加载记忆到系统提示
     if hint.intent == "personal_memory" and any(
