@@ -62,6 +62,20 @@ def _rule_match(query: str, has_history: bool) -> IntentHint | None:
             hint_text="用户想查看知识库中的文档列表，建议使用 list_documents",
         )
 
+    # Personal information — broad regex catches self-introductions the
+    # regex intercept may miss (e.g. "本人是", "我的岗位是", "目前在从事")
+    identity_patterns = [
+        r"我(?:\S)?(?:职责|职业|工作|身份|岗位|职务|职位)\S*是",
+        r"我(?:\S)?是(?:\S)?(?:一名|一个|一位)",
+        r"本人(?:\S)?是",
+        r"我的(?:工作|职业|岗位|职责|身份|职务|职位)",
+    ]
+    if any(re.search(p, query) for p in identity_patterns):
+        return IntentHint(
+            intent="personal_memory", confidence=0.85, suggested_tools=["recall_memory"],
+            hint_text="用户在分享个人身份信息（职业/工作相关）。请确认已理解并适当回应，系统会自动保存这些信息。",
+        )
+
     return None  # 规则未命中，走 LLM
 
 
@@ -92,12 +106,12 @@ INTENT_TOOL = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "content": {"type": "string", "description": "要保存的信息"},
+                            "content": {"type": "string", "description": "要保存的信息，如'用户是AI开发工程师'"},
                             "type": {"type": "string", "enum": ["identity", "preference", "decision", "fact"]},
                         },
                         "required": ["content", "type"],
                     },
-                    "description": "当 intent=personal_memory 时，提取用户透露的个人信息供系统自动保存",
+                    "description": "用户消息中值得保存的个人信息。无论 intent 是什么，只要检测到身份/偏好/决定/事实就提取。若无则填 []",
                 },
             },
             "required": ["intent", "suggested_tools", "hint_text"],
@@ -113,7 +127,7 @@ async def _llm_classify(query: str, has_history: bool) -> IntentHint:
     system_prompt = """你是意图分类器。根据用户消息判断意图并推荐工具。
 
 意图类型:
-- personal_memory: 用户透露个人信息（"我是/我叫/我喜欢"）或询问记忆（"我是谁/我之前说过什么"）
+- personal_memory: 用户透露个人信息（"我是/我叫/我职责/我职业/我工作/我身份/我喜欢/我习惯/我决定"）或询问记忆（"我是谁/我之前说过什么/还记得吗"）
   推荐: recall_memory
 - knowledge_retrieval: 用户询问文档/知识问题（"什么是/如何/怎么/有哪些"）
   推荐: search_docs
@@ -125,10 +139,12 @@ async def _llm_classify(query: str, has_history: bool) -> IntentHint:
   推荐: []
 
 规则:
-- 看到个人信息标记（我叫/我是/我喜欢/我决定/我项目）→ personal_memory
+- 用户在以任何方式介绍自己（名字、职业、身份、角色、工作、职责、偏好、习惯、决定）→ personal_memory
 - "我是谁""我叫什么""还记得吗" → personal_memory
 - 技术/知识类问题 → knowledge_retrieval
-- 带"网上""搜索""最新""新闻" → web_search"""
+- 带"网上""搜索""最新""新闻" → web_search
+
+重要: 即使用户的主要意图是 knowledge_retrieval 或 general_chat，只要消息中包含个人身份/偏好/决定信息，就额外在 save_to_profile 字段中提取出来。系统会自动保存这些信息供未来对话使用。"""
 
     messages = [
         ChatMessage(role="system", content=system_prompt),
