@@ -30,8 +30,8 @@ async def extract_session_memories(conversation_id: str):
                 stmt = stmt.where(Message.created_at > last_ts)
             new_count = (await session.execute(stmt)).scalar() or 0
 
-            if new_count < 5:
-                return  # 不足 5 条，跳过
+            if new_count < 3:
+                return  # 不足 3 条，跳过
 
             # 获取新消息用于提取
             msg_stmt = select(Message).where(

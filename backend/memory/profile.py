@@ -247,20 +247,33 @@ async def _identity_similar(value: str, data: dict) -> bool:
 async def handle_intercept(content: str, mem_type: str) -> dict:
     if mem_type == "identity":
         data = await _load()
-        if "用户叫" in content:
-            value = content.replace("用户叫", "").strip()
-            if not await _identity_similar(value, data):
+        # Try name patterns first
+        if "用户叫" in content or "的名字" in content or "姓名" in content:
+            value = content
+            for prefix in ("用户叫", "用户的名字是", "用户的名字叫", "用户的姓名是", "姓名是"):
+                if prefix in value:
+                    value = value.replace(prefix, "").strip()
+                    break
+            if value and not await _identity_similar(value, data):
                 return await upsert_field("name", value)
             return data
-        elif "用户是" in content:
+        # Then role/identity patterns
+        if "用户是" in content:
             value = content.replace("用户是", "").strip()
-            if not await _identity_similar(value, data):
+            if value and not await _identity_similar(value, data):
                 return await upsert_field("role", value)
             return data
-        else:
-            if not await _identity_similar(content, data):
-                return await upsert_field("role", content)
-            return data
+        for prefix in ("用户的职业是", "用户的身份是", "用户的职位是", "用户的角色是",
+                       "用户的职责是", "用户工作是"):
+            if prefix in content:
+                value = content.replace(prefix, "").strip()
+                if value and not await _identity_similar(value, data):
+                    return await upsert_field("role", value)
+                return data
+        # Fallback: treat as role only if it looks like a statement about the user
+        if not await _identity_similar(content, data):
+            return await upsert_field("role", content)
+        return data
     elif mem_type == "preference":
         return await append_list("preferences", content)
     elif mem_type == "decision":
@@ -281,11 +294,17 @@ async def handle_session_extract(extracted: list[dict]) -> dict:
         if not content:
             continue
         if mem_type == "identity":
-            if "叫" in content:
-                value = content.split("叫", 1)[-1].strip()
+            # Name patterns: explicit name markers or "名字是" phrasing
+            if "叫" in content or "名字" in content or "姓名" in content:
+                value = content
+                for sep in ("叫", "名字是", "名字叫", "姓名是"):
+                    if sep in value:
+                        value = value.split(sep, 1)[-1].strip()
+                        break
                 if value and not await _identity_similar(value, data):
                     data["name"] = value
                     new_count += 1
+            # Role patterns: "职业/身份/职责/工作是" or generic "是"
             elif "是" in content:
                 value = content.split("是", 1)[-1].strip()
                 if value and not await _identity_similar(value, data):

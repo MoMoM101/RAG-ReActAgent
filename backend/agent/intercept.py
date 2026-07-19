@@ -17,6 +17,7 @@ def extract_memory_candidates(query: str) -> list[tuple[str, str]]:
     for pattern, fmt, mem_type in [
         (r"我叫\s*(.+?)(?:[，,。.！!；;\s]|$)", "用户叫{}", "identity"),
         (r"我是\s*(.+?)(?:[，,。.！!；;\s]|$)", "用户是{}", "identity"),
+        (r"我(?:职责|职业|工作|身份|岗位|的职务|的职位)\s*是\s*(.+?)(?:[，,。.！!；;\s]|$)", "用户是{}", "identity"),
         (r"我(?:喜欢|爱)\s*(.+?)(?:[，,。.！!；;\s]|$)", "用户喜欢{}", "preference"),
         (r"我习惯\s*(.+?)(?:[，,。.！!；;\s]|$)", "用户习惯{}", "preference"),
         (r"我决定\s*(.+?)(?:[，,。.！!；;\s]|$)", "用户决定{}", "decision"),
