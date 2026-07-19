@@ -21,6 +21,39 @@ from main import app
 TEST_TOKEN = "evaluation-admin-token"
 ADMIN_HEADERS = {"X-Admin-Token": TEST_TOKEN}
 
+_TEMPLATE_HEAD_DB: Path | None = None
+_TEMPLATE_0001_DB: Path | None = None
+
+
+def _create_template_db(target_revision: str) -> Path:
+    """Create a template SQLite database at a specific Alembic revision.
+
+    Uses cfg.set_main_option so alembic/env.py targets the template file
+    instead of the test database.
+    """
+    from alembic.config import Config as AlcCfg
+    from alembic import command as alc_cmd
+
+    tmp = Path(tempfile.mkdtemp(prefix=f"test_template_{target_revision}_"))
+    db_path = tmp / "template.db"
+
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    cfg = AlcCfg(str(backend_dir / "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite+aiosqlite:///{db_path.as_posix()}")
+
+    alc_cmd.upgrade(cfg, target_revision)
+    return db_path
+
+
+@pytest.fixture(scope="module")
+def template_head_db():
+    """Module-level fixture: create a head-revision template database."""
+    global _TEMPLATE_HEAD_DB
+    _TEMPLATE_HEAD_DB = _create_template_db("head")
+    yield _TEMPLATE_HEAD_DB
+    shutil.rmtree(_TEMPLATE_HEAD_DB.parent, ignore_errors=True)
+    _TEMPLATE_HEAD_DB = None
+
 
 @pytest.fixture(autouse=True)
 def _enable_admin_token(monkeypatch):
@@ -36,45 +69,74 @@ def _build_test_backup_tar(
     include_manifest: bool = True,
     corrupt_db: bool = False,
     manifest_override: dict | None = None,
+    schema: str = "head",
+    revision_override: str | None = None,
 ) -> bytes:
-    """Build an in-memory tar.gz simulating a backup archive."""
+    """Build an in-memory tar.gz simulating a backup archive.
+
+    Args:
+        schema: 'head', '0001', or 'legacy' (hand-crafted without alembic_version).
+        revision_override: If set, write this value into manifest's
+            db_schema_revision regardless of actual DB revision.
+    """
     import hashlib
 
     tmp = Path(tempfile.mkdtemp(prefix="test_backup_build_"))
     try:
         db_path = tmp / "rag_agent.db"
+
+        if schema == "head":
+            if _TEMPLATE_HEAD_DB is None:
+                raise RuntimeError(
+                    "template_head_db fixture not initialized -- "
+                    "add 'template_head_db' to test function parameters"
+                )
+            shutil.copy2(_TEMPLATE_HEAD_DB, db_path)
+        elif schema == "0001":
+            global _TEMPLATE_0001_DB
+            if _TEMPLATE_0001_DB is None:
+                _TEMPLATE_0001_DB = _create_template_db("0001")
+            shutil.copy2(_TEMPLATE_0001_DB, db_path)
+        elif schema == "legacy":
+            conn = sqlite3.connect(str(db_path))
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS documents (
+                    id TEXT PRIMARY KEY, filename TEXT NOT NULL,
+                    file_hash TEXT NOT NULL UNIQUE, file_size INTEGER NOT NULL DEFAULT 0,
+                    file_type TEXT NOT NULL DEFAULT '.txt',
+                    status TEXT NOT NULL DEFAULT 'ready',
+                    chunk_count INTEGER DEFAULT 0,
+                    embedding_model TEXT, embedding_dim INTEGER,
+                    error_message TEXT,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    raw_text TEXT, chunk_size INTEGER
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id TEXT PRIMARY KEY, title TEXT DEFAULT '',
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    last_extracted_at TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS messages (
+                    id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL, content TEXT,
+                    tool_call_id TEXT, tool_name TEXT,
+                    tool_args TEXT, tool_result_json TEXT, sources TEXT,
+                    created_at TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            conn.commit()
+            conn.close()
+        else:
+            raise ValueError(f"Unknown schema: {schema}")
+
+        # Insert test data rows
         conn = sqlite3.connect(str(db_path))
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS documents (
-                id TEXT PRIMARY KEY, filename TEXT NOT NULL,
-                file_hash TEXT NOT NULL UNIQUE, file_size INTEGER NOT NULL DEFAULT 0,
-                file_type TEXT NOT NULL DEFAULT '.txt',
-                status TEXT NOT NULL DEFAULT 'ready',
-                chunk_count INTEGER DEFAULT 0,
-                embedding_model TEXT, embedding_dim INTEGER,
-                error_message TEXT,
-                created_at TEXT DEFAULT (datetime('now')),
-                updated_at TEXT DEFAULT (datetime('now')),
-                raw_text TEXT, chunk_size INTEGER
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS conversations (
-                id TEXT PRIMARY KEY, title TEXT DEFAULT '',
-                created_at TEXT DEFAULT (datetime('now')),
-                updated_at TEXT DEFAULT (datetime('now')),
-                last_extracted_at TEXT
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
-                role TEXT NOT NULL, content TEXT,
-                tool_call_id TEXT, tool_name TEXT,
-                tool_args TEXT, tool_result_json TEXT, sources TEXT,
-                created_at TEXT DEFAULT (datetime('now'))
-            )
-        """)
         for row in (db_rows or []):
             conn.execute(
                 "INSERT OR REPLACE INTO documents "
@@ -116,12 +178,19 @@ def _build_test_backup_tar(
                 fp.parent.mkdir(parents=True, exist_ok=True)
                 fp.write_bytes(content)
 
+        # Determine db_schema_revision for manifest
+        if schema == "legacy":
+            actual_revision = None
+        else:
+            actual_revision = _read_alembic_revision_from_db(db_path)
+
         # Build manifest
         if include_manifest:
             manifest = manifest_override or {
-                "format_version": 1,
+                "format_version": 2,
                 "created_at": "2026-07-11T00:00:00Z",
                 "collection_name": "rag_chunks",
+                "db_schema_revision": actual_revision,
                 "files": {
                     "rag_agent.db": {
                         "sha256": hashlib.sha256(db_path.read_bytes()).hexdigest(),
@@ -129,6 +198,8 @@ def _build_test_backup_tar(
                     }
                 },
             }
+            if revision_override is not None:
+                manifest["db_schema_revision"] = revision_override
             if upload_files and manifest_override is None:
                 for rel_path in upload_files:
                     fp = uploads_dir / rel_path
@@ -150,6 +221,18 @@ def _build_test_backup_tar(
         return buf.getvalue()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _read_alembic_revision_from_db(db_path: Path) -> str | None:
+    """Read alembic_version from a SQLite database. Returns None if absent."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+        return row[0] if row else None
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
 
 
 # ── Normal restore ─────────────────────────────────────────────────────
@@ -646,3 +729,20 @@ class TestRestoreAuthRequired:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             r = await client.get("/api/backup")
             assert r.status_code == 401
+
+
+async def test_collection_pointer_creates_missing_qdrant_directory(
+    tmp_path, monkeypatch,
+):
+    """Remote Qdrant deployments do not pre-create the local qdrant path."""
+    from api.backup import _save_active_collection_pointer
+    from config import settings
+
+    pointer_dir = tmp_path / "missing" / "qdrant"
+    monkeypatch.setattr(settings, "qdrant_path", str(pointer_dir))
+
+    await _save_active_collection_pointer("rag_chunks_restore_test")
+
+    pointer = pointer_dir / "active_collections.json"
+    assert pointer.exists()
+    assert '"rag_chunks": "rag_chunks_restore_test"' in pointer.read_text()
