@@ -48,6 +48,7 @@ export function SettingsPage() {
   const [rebuilding, setRebuilding] = useState(false);
   const [rebuildMessage, setRebuildMessage] = useState("");
   const rebuildCleanupRef = useRef<(() => void) | null>(null);
+  const terminalReceivedRef = useRef(false);
 
   // Cleanup EventSource on unmount
   useEffect(() => {
@@ -227,6 +228,7 @@ export function SettingsPage() {
   const handleRebuild = async () => {
     setRebuilding(true);
     setRebuildMessage("正在启动...");
+    terminalReceivedRef.current = false;
     try {
       const result = await rebuildCollections();
       if (result.status === "rejected") {
@@ -254,6 +256,7 @@ export function SettingsPage() {
               setRebuildMessage("正在切换索引...");
               break;
             case "completed":
+              terminalReceivedRef.current = true;
               setRebuilding(false);
               setRebuildMessage("");
               if (event.failed_count && event.failed_count > 0) {
@@ -276,11 +279,13 @@ export function SettingsPage() {
               }).catch(() => {});
               break;
             case "failed":
+              terminalReceivedRef.current = true;
               setRebuilding(false);
               setRebuildMessage("");
               addToast({ type: "error", message: `重建失败: ${event.error || "未知错误"}` });
               break;
             case "timeout":
+              terminalReceivedRef.current = true;
               setRebuilding(false);
               setRebuildMessage("");
               addToast({ type: "error", message: "重建超时，请检查服务状态后重试" });
@@ -288,6 +293,11 @@ export function SettingsPage() {
           }
         },
         () => {
+          if (!terminalReceivedRef.current) {
+            setRebuilding(false);
+            setRebuildMessage("");
+            addToast({ type: "error", message: "重建连接中断，请检查服务状态后重试" });
+          }
           rebuildCleanupRef.current = null;
         },
       );

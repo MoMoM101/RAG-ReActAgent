@@ -932,8 +932,14 @@ async def rebuild_progress():
     from rag.progress import progress
 
     async def event_stream():
+        # Subscribe first so we don't miss events published between the
+        # cached-result check and the subscription call.  If the rebuild
+        # already finished, _last_rebuild_result acts as the backstop.
         q = await progress.subscribe("rebuild")
         try:
+            if _last_rebuild_result is not None:
+                yield f"data: {json.dumps(_last_rebuild_result, ensure_ascii=False)}\n\n"
+                return
             while True:
                 try:
                     event = await asyncio.wait_for(q.get(), timeout=30)
