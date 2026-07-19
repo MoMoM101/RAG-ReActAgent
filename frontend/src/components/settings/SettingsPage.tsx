@@ -317,9 +317,29 @@ export function SettingsPage() {
           }
         },
         () => {
+          // EventSource onerror fires for every connection close, even
+          // clean ones.  Poll rebuild-status to see if the rebuild
+          // actually completed before showing an error.
           if (!terminalReceivedRef.current) {
-            finishRebuilding();
-            addToast({ type: "error", message: "重建连接中断，请检查服务状态后重试" });
+            getRebuildStatus().then((r) => {
+              if (r.status === "completed") {
+                finishRebuilding();
+                addToast({
+                  type: "success",
+                  message: `重建完成，${r.chunk_count || 0} 个切片 (chunk_size=${r.actual_chunk_size})`,
+                });
+                checkDimension().then((dim) => { setDimMismatch(dim); }).catch(() => {});
+              } else if (r.status === "failed") {
+                finishRebuilding();
+                addToast({ type: "error", message: `重建失败: ${r.error || "未知错误"}` });
+              } else {
+                finishRebuilding();
+                addToast({ type: "error", message: "重建连接中断，请检查服务状态后重试" });
+              }
+            }).catch(() => {
+              finishRebuilding();
+              addToast({ type: "error", message: "重建连接中断，请检查服务状态后重试" });
+            });
           }
           rebuildCleanupRef.current = null;
         },

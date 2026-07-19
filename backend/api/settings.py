@@ -951,9 +951,19 @@ async def rebuild_progress():
     from rag.progress import progress
 
     async def event_stream():
+        # Send an immediate comment so the browser knows the SSE connection
+        # is alive.  Some browsers/proxies close EventSource connections
+        # that produce no data within the first few seconds.
+        yield ":ok\n\n"
+
         # Subscribe first to avoid the race where rebuild completes between
         # the _rebuild_lock check and the subscription call.
-        q = await progress.subscribe("rebuild")
+        try:
+            q = await progress.subscribe("rebuild")
+        except Exception:
+            logger.error("SSE rebuild-progress subscribe failed", exc_info=True)
+            yield f"data: {{\"status\": \"failed\", \"error\": \"内部错误: 订阅失败\"}}\n\n"
+            return
         try:
             # Only send cached result when rebuild is truly done.  If a new
             # rebuild is in-flight (_rebuild_lock=True), wait for live events
