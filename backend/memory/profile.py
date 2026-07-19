@@ -72,9 +72,14 @@ async def _save(data: dict):
 # ── 语义去重 ──────────────────────────
 
 async def _is_similar(text: str, candidates: list[str]) -> bool:
-    """用 embedding 余弦相似度判断是否重复。"""
+    """用 embedding 余弦相似度判断是否重复。含字符串查重兜底。"""
     if not candidates:
         return False
+
+    # Fast path: exact match avoids embedding API cost
+    if text in candidates:
+        return True
+
     from embedding.factory import create_embedding
     emb = create_embedding()
     try:
@@ -87,7 +92,20 @@ async def _is_similar(text: str, candidates: list[str]) -> bool:
             if sim >= 0.85:
                 return True
     except Exception:
-        return False
+        # Embedding API failed — fall back to string heuristics so we
+        # don't silently store duplicates when the API is unreachable.
+        for c in candidates:
+            if not c:
+                continue
+            # Substring containment (safe for API-failure fallback)
+            if text in c or c in text:
+                return True
+            # Character-level Jaccard similarity
+            text_chars = set(text)
+            cand_chars = set(c)
+            overlap = len(text_chars & cand_chars) / max(len(text_chars | cand_chars), 1)
+            if overlap >= 0.7:
+                return True
     return False
 
 
