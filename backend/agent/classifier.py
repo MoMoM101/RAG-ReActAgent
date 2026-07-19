@@ -114,7 +114,7 @@ INTENT_TOOL = {
                     "description": "用户消息中值得保存的个人信息。无论 intent 是什么，只要检测到身份/偏好/决定/事实就提取。若无则填 []",
                 },
             },
-            "required": ["intent", "suggested_tools", "hint_text"],
+            "required": ["intent", "suggested_tools", "hint_text", "save_to_profile"],
         },
     },
 }
