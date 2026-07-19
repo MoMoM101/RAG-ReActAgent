@@ -135,6 +135,88 @@ def _get_head_revision() -> str:
     return heads[0] if heads else "unknown"
 
 
+def _get_head_info() -> tuple[str, "ScriptDirectory"]:
+    """Return (head_revision, ScriptDirectory) for revision classification.
+
+    ScriptDirectory is returned alongside head to avoid constructing it twice
+    (once for verification, once for migration).
+    """
+    from alembic.config import Config as AlcCfg
+    from alembic.script import ScriptDirectory
+    backend_dir = Path(__file__).resolve().parent.parent
+    cfg = AlcCfg(str(backend_dir / "alembic.ini"))
+    script_dir = ScriptDirectory.from_config(cfg)
+    heads = script_dir.get_heads()
+    return (heads[0] if heads else "unknown", script_dir)
+
+
+def _classify_staged_revision(
+    staged_revision: str | None,
+    head: str,
+    script_dir: "ScriptDirectory",
+) -> str:
+    """Classify staged revision relative to current head.
+
+    Returns one of: 'legacy', 'current', 'old', 'unknown', 'future'.
+    - legacy: no alembic_version table/row in staged DB
+    - current: staged revision == head
+    - old: staged revision is an ancestor of head (needs migration)
+    - unknown: revision string not found in local migration history
+    - future: revision exists in history but is not reachable from head (descendant or parallel branch)
+    """
+    if staged_revision is None:
+        return "legacy"
+    if staged_revision == head:
+        return "current"
+
+    # Check if the revision exists in the local migration history at all
+    try:
+        script_dir.get_revision(staged_revision)
+    except Exception:
+        return "unknown"
+
+    # Check if staged_revision is an ancestor of head by walking from head down
+    try:
+        list(script_dir.iterate_revisions(head, staged_revision))
+        return "old"
+    except Exception:
+        return "future"
+
+
+async def _migrate_staged_db(db_path: Path, head_revision: str) -> None:
+    """Run alembic upgrade head on a staged SQLite database file.
+
+    Temporarily overrides settings.database_url so alembic/env.py targets
+    the staged file instead of the live database. Verifies the revision
+    reached head after migration.
+
+    Raises RuntimeError on migration failure or post-migration revision mismatch.
+    """
+    from alembic.config import Config as AlcCfg
+    from alembic import command as alc_cmd
+
+    backend_dir = Path(__file__).resolve().parent.parent
+    cfg = AlcCfg(str(backend_dir / "alembic.ini"))
+
+    original_url = settings.database_url
+    settings.database_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
+    try:
+        import asyncio as _aio
+        await _aio.to_thread(alc_cmd.upgrade, cfg, "head")
+    except Exception as e:
+        raise RuntimeError(f"staged migration failed: {e}") from e
+    finally:
+        settings.database_url = original_url
+
+    # Verify migration reached head
+    new_revision = _get_alembic_revision(db_path)
+    if new_revision != head_revision:
+        raise RuntimeError(
+            f"staged migration verification failed: expected revision {head_revision}, "
+            f"got {new_revision}"
+        )
+
+
 def _validate_restore_revision(
     manifest_revision: str | None,
     current_head_revision: str,
