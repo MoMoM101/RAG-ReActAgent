@@ -862,7 +862,7 @@ class TestRevisionGate:
             assert "不一致" in detail
 
     async def test_future_revision_rejected(self):
-        """Backup with a revision not in the local migration history -> 400."""
+        """Backup with manifest declaring a revision not matching the staged DB -> 400."""
         tar_bytes = _build_test_backup_tar(
             db_rows=[{
                 "id": "doc-future-001", "filename": "future.txt",
@@ -882,6 +882,8 @@ class TestRevisionGate:
                 headers=ADMIN_HEADERS,
             )
             assert r.status_code == 400
+            detail = r.json()["detail"]
+            assert "不一致" in detail or "9999" in detail
 
     async def test_no_manifest_head_db_succeeds(self):
         """Backup without manifest but DB at head revision -> restore succeeds."""
