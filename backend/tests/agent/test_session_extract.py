@@ -81,23 +81,23 @@ class TestExtractWithLLM:
 
 class TestExtractSessionMemories:
     @pytest.mark.asyncio
-    async def test_skips_when_less_than_5_new_messages(self):
-        """Less than 5 new messages → returns early, no LLM call."""
+    async def test_skips_when_less_than_3_new_messages(self):
+        """Less than 3 new messages → returns early, no LLM call."""
         mock_session = MagicMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock()
 
         # First query: get last_extracted_at → None
-        # Second query: count new messages → 3
+        # Second query: count new messages → 2
         conv_result = MagicMock()
         conv_result.scalar_one_or_none.return_value = None
         count_result = MagicMock()
-        count_result.scalar.return_value = 3
+        count_result.scalar.return_value = 2
 
         mock_session.execute = AsyncMock(side_effect=[conv_result, count_result])
 
-        with patch("models.database.async_session") as mock_factory:
-            mock_factory.return_value = mock_session
+        with patch("models.database.session_scope") as mock_scope:
+            mock_scope.return_value = mock_session
             with patch("agent.session_extract._extract_with_llm") as mock_extract:
                 from agent.session_extract import extract_session_memories
                 await extract_session_memories("conv-123")
@@ -120,8 +120,8 @@ class TestExtractSessionMemories:
 
         mock_session.execute = AsyncMock(side_effect=[conv_result, count_result, msg_result])
 
-        with patch("models.database.async_session") as mock_factory:
-            mock_factory.return_value = mock_session
+        with patch("models.database.session_scope") as mock_scope:
+            mock_scope.return_value = mock_session
             with patch("agent.session_extract._extract_with_llm") as mock_extract:
                 from agent.session_extract import extract_session_memories
                 await extract_session_memories("conv-456")
@@ -130,7 +130,7 @@ class TestExtractSessionMemories:
 
     @pytest.mark.asyncio
     async def test_extract_updates_last_extracted_at_on_success(self):
-        """>=5 new messages + LLM returns valid → last_extracted_at updated + profile written."""
+        """>=3 new messages + LLM returns valid → last_extracted_at updated + profile written."""
         # Single shared session mock — handles both read and write phases
         shared_session = MagicMock()
         shared_session.__aenter__ = AsyncMock(return_value=shared_session)
@@ -155,8 +155,8 @@ class TestExtractSessionMemories:
             write_result,                            # write phase: update
         ])
 
-        with patch("models.database.async_session") as mock_factory:
-            mock_factory.return_value = shared_session
+        with patch("models.database.session_scope") as mock_scope:
+            mock_scope.return_value = shared_session
             with patch("agent.session_extract._extract_with_llm") as mock_extract:
                 mock_extract.return_value = [
                     {"content": "user is a Python developer", "memory_type": "identity"},
@@ -172,7 +172,7 @@ class TestExtractSessionMemories:
 
     @pytest.mark.asyncio
     async def test_empty_extract_result_skips_update(self):
-        """>=5 new messages + LLM returns [] → returns early, no update."""
+        """>=3 new messages + LLM returns [] → returns early, no update."""
         read_session = MagicMock()
         read_session.__aenter__ = AsyncMock(return_value=read_session)
         read_session.__aexit__ = AsyncMock()
@@ -189,9 +189,9 @@ class TestExtractSessionMemories:
 
         read_session.execute = AsyncMock(side_effect=[conv_result, count_result, msg_result])
 
-        with patch("models.database.async_session") as mock_factory:
-            mock_factory.side_effect = [read_session]
-            mock_factory.return_value = read_session
+        with patch("models.database.session_scope") as mock_scope:
+            mock_scope.side_effect = [read_session]
+            mock_scope.return_value = read_session
             with patch("agent.session_extract._extract_with_llm") as mock_extract:
                 mock_extract.return_value = []
                 with patch("memory.profile.handle_session_extract") as mock_handle:
