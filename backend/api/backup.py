@@ -124,17 +124,6 @@ def _get_alembic_revision(db_path: Path) -> str:
         conn.close()
 
 
-def _get_head_revision() -> str:
-    """Return the current Alembic head revision."""
-    from alembic.config import Config as AlcCfg
-    from alembic.script import ScriptDirectory
-    backend_dir = Path(__file__).resolve().parent.parent
-    cfg = AlcCfg(str(backend_dir / "alembic.ini"))
-    script_dir = ScriptDirectory.from_config(cfg)
-    heads = script_dir.get_heads()
-    return heads[0] if heads else "unknown"
-
-
 def _get_head_info() -> tuple[str, "ScriptDirectory"]:
     """Return (head_revision, ScriptDirectory) for revision classification.
 
@@ -186,9 +175,10 @@ def _classify_staged_revision(
 async def _migrate_staged_db(db_path: Path, head_revision: str) -> None:
     """Run alembic upgrade head on a staged SQLite database file.
 
-    Temporarily overrides settings.database_url so alembic/env.py targets
-    the staged file instead of the live database. Verifies the revision
-    reached head after migration.
+    Sets sqlalchemy.url on the Alembic config so env.py targets the staged
+    file instead of the live database (env.py reads this option first, then
+    falls back to settings.database_url). Verifies the revision reached head
+    after migration.
 
     Raises RuntimeError on migration failure or post-migration revision mismatch.
     """
@@ -197,16 +187,13 @@ async def _migrate_staged_db(db_path: Path, head_revision: str) -> None:
 
     backend_dir = Path(__file__).resolve().parent.parent
     cfg = AlcCfg(str(backend_dir / "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite+aiosqlite:///{db_path.as_posix()}")
 
-    original_url = settings.database_url
-    settings.database_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
     try:
         import asyncio as _aio
         await _aio.to_thread(alc_cmd.upgrade, cfg, "head")
     except Exception as e:
         raise RuntimeError(f"staged migration failed: {e}") from e
-    finally:
-        settings.database_url = original_url
 
     # Verify migration reached head
     new_revision = _get_alembic_revision(db_path)
@@ -215,40 +202,6 @@ async def _migrate_staged_db(db_path: Path, head_revision: str) -> None:
             f"staged migration verification failed: expected revision {head_revision}, "
             f"got {new_revision}"
         )
-
-
-def _validate_restore_revision(
-    manifest_revision: str | None,
-    current_head_revision: str,
-) -> None:
-    """Validate that a backup can be restored against the current application.
-
-    Raises ValueError if the backup revision is newer than the current head.
-    Older / same / legacy (None) revisions are accepted.
-    """
-    if manifest_revision is None:
-        return  # Legacy backup — caller performs fingerprint check
-
-    if manifest_revision == current_head_revision:
-        return  # Same version
-
-    # Sort revisions by their numeric prefix for comparison
-    def _sort_key(rev: str) -> int:
-        try:
-            return int(rev.split("_")[0])
-        except (ValueError, IndexError):
-            return 0
-
-    manifest_key = _sort_key(manifest_revision)
-    current_key = _sort_key(current_head_revision)
-
-    if manifest_key > current_key:
-        raise ValueError(
-            f"Backup revision '{manifest_revision}' is newer than "
-            f"current revision '{current_head_revision}'. "
-            "Use a newer application version to restore this backup."
-        )
-    # manifest_key <= current_key → accepted
 
 
 def _move_or_copy(src: Path, dst: Path) -> None:

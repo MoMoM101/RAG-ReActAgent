@@ -19,6 +19,14 @@ target_metadata = Base.metadata
 
 
 def _get_url():
+    # Allow callers to override the URL via the Alembic config (e.g. for
+    # staging migrations that target a different SQLite file).
+    from alembic import context as _alc_context
+    cfg = getattr(_alc_context, "config", None)
+    if cfg is not None:
+        override = cfg.get_main_option("sqlalchemy.url")
+        if override:
+            return override
     url = _settings_module.database_url
     if not url:
         raise RuntimeError("DATABASE_URL is not set")

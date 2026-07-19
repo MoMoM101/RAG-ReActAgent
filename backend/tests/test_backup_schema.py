@@ -1,4 +1,3 @@
-# backend/tests/test_backup_schema.py
 """Tests for backup manifest with Alembic schema revision."""
 
 import json
@@ -37,24 +36,43 @@ class TestBuildManifest:
         assert len(manifest["database_sha256"]) == 64  # SHA-256 hex
 
 
-class TestValidateRestoreRevision:
-    def test_same_revision_accepted(self):
-        from api.backup import _validate_restore_revision
-        _validate_restore_revision("0002", "0002")  # Should not raise
+class TestClassifyStagedRevision:
+    """Tests for _classify_staged_revision — the four-branch revision classifier."""
 
-    def test_older_revision_accepted(self):
-        from api.backup import _validate_restore_revision
-        _validate_restore_revision("0001", "0002")  # Should not raise
+    @pytest.fixture(scope="class")
+    def _head_and_script(self):
+        from api.backup import _get_head_info
+        return _get_head_info()
 
-    def test_newer_revision_rejected(self):
-        from api.backup import _validate_restore_revision
-        with pytest.raises(ValueError, match="newer"):
-            _validate_restore_revision("0003", "0002")
+    def test_current_revision(self, _head_and_script):
+        head, script_dir = _head_and_script
+        from api.backup import _classify_staged_revision
+        assert _classify_staged_revision(head, head, script_dir) == "current"
 
-    def test_legacy_no_revision_accepted(self):
-        from api.backup import _validate_restore_revision
-        _validate_restore_revision(None, "0002")  # Should not raise
+    def test_legacy_none_staged(self, _head_and_script):
+        head, script_dir = _head_and_script
+        from api.backup import _classify_staged_revision
+        assert _classify_staged_revision(None, head, script_dir) == "legacy"
 
-    def test_legacy_revision_string_accepted(self):
-        from api.backup import _validate_restore_revision
-        _validate_restore_revision("legacy", "0002")  # non-numeric, should accept
+    def test_old_revision_is_ancestor(self, _head_and_script):
+        head, script_dir = _head_and_script
+        from api.backup import _classify_staged_revision
+        assert _classify_staged_revision("0001", head, script_dir) == "old"
+
+    def test_unknown_revision_rejected(self, _head_and_script):
+        head, script_dir = _head_and_script
+        from api.backup import _classify_staged_revision
+        assert _classify_staged_revision("9999_nonexistent", head, script_dir) == "unknown"
+
+    def test_get_alembic_revision_reads_db(self, sample_db_with_revision):
+        from api.backup import _get_alembic_revision
+        assert _get_alembic_revision(sample_db_with_revision) == "0002"
+
+    def test_get_alembic_revision_no_table(self, tmp_path):
+        from api.backup import _get_alembic_revision
+        db = tmp_path / "empty.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("CREATE TABLE t(x)")
+        conn.commit()
+        conn.close()
+        assert _get_alembic_revision(db) == "legacy"
