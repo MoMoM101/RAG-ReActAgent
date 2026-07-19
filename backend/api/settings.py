@@ -879,10 +879,25 @@ async def rebuild_collections():
 
 @router.get("/rebuild-status")
 async def rebuild_status():
-    """查询最近一次 rebuild 的结果。"""
-    if _last_rebuild_result is None:
-        return {"status": "idle", "message": "尚未执行过重建"}
-    return _last_rebuild_result
+    """查询最近一次 rebuild 的结果或当前重建的进度。
+
+    优先返回最终结果（completed/failed），其次是实时进度事件，
+    最后返回 idle 状态。
+    """
+    from rag.progress import progress
+
+    # A rebuild is running: return the latest live progress event so
+    # polling-based UIs can show document-level detail.
+    if _rebuild_lock:
+        latest = progress._latest.get("rebuild")
+        if latest is not None:
+            return latest
+        return {"status": "rebuilding", "message": "重建进行中..."}
+
+    if _last_rebuild_result is not None:
+        return _last_rebuild_result
+
+    return {"status": "idle", "message": "尚未执行过重建"}
 
 
 @router.post("/clear-all-data")

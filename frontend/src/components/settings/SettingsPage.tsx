@@ -273,7 +273,18 @@ export function SettingsPage() {
         if (r.status === "completed" || r.status === "failed") {
           handleRebuildResult(r);
         } else if (!terminalReceivedRef.current) {
-          setRebuildMessage("重建进行中...");
+          // Show detailed progress from the latest live event
+          if (r.status === "rebuilding" && r.filename) {
+            setRebuildMessage(
+              `(${r.current || "?"}/${r.total || "?"}) ${r.filename}`
+            );
+          } else if (r.status === "switching") {
+            setRebuildMessage("正在切换索引...");
+          } else if (r.message) {
+            setRebuildMessage(r.message);
+          } else {
+            setRebuildMessage("重建进行中...");
+          }
         }
       }).catch(() => {
         // retry on next interval
