@@ -55,6 +55,16 @@ def template_head_db():
     _TEMPLATE_HEAD_DB = None
 
 
+@pytest.fixture(scope="module")
+def _cleanup_template_0001_db():
+    """Clean up the lazily-created _TEMPLATE_0001_DB at module teardown."""
+    yield
+    global _TEMPLATE_0001_DB
+    if _TEMPLATE_0001_DB is not None:
+        shutil.rmtree(_TEMPLATE_0001_DB.parent, ignore_errors=True)
+        _TEMPLATE_0001_DB = None
+
+
 @pytest.fixture(autouse=True)
 def _enable_admin_token(monkeypatch):
     """Enable admin token auth for all restore integration tests."""
