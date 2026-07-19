@@ -598,7 +598,7 @@ async def rebuild_collections():
         return {"status": "rejected", "reason": "重建正在进行中，请等待完成后再试"}
 
     async def _do_rebuild():
-        global _rebuild_lock
+        global _rebuild_lock, _last_rebuild_result
         import uuid as _uuid
 
         from sqlalchemy import select
@@ -616,6 +616,7 @@ async def rebuild_collections():
 
         try:
             # ── 0. 清理上次失败的残留 ──
+            _last_rebuild_result = None  # reset stale cache so SSE waits for live events
             progress.publish(rebuild_id, {"status": "preflight", "message": "正在准备工作..."})
 
             # 重置 embedding 单例，确保使用最新模型配置
@@ -822,7 +823,6 @@ async def rebuild_collections():
             settings.chunk_size = actual_chunk_size
             failed_docs = sum(1 for d in docs if doc_chunk_counts.get(d.id, 0) == 0)
 
-            global _last_rebuild_result
             if total_chunks == 0 and total_docs > 0:
                 _last_rebuild_result = {
                     "status": "failed",
@@ -932,12 +932,14 @@ async def rebuild_progress():
     from rag.progress import progress
 
     async def event_stream():
-        # Subscribe first so we don't miss events published between the
-        # cached-result check and the subscription call.  If the rebuild
-        # already finished, _last_rebuild_result acts as the backstop.
+        # Subscribe first to avoid the race where rebuild completes between
+        # the _rebuild_lock check and the subscription call.
         q = await progress.subscribe("rebuild")
         try:
-            if _last_rebuild_result is not None:
+            # Only send cached result when rebuild is truly done.  If a new
+            # rebuild is in-flight (_rebuild_lock=True), wait for live events
+            # even if a stale _last_rebuild_result from a prior run is present.
+            if _last_rebuild_result is not None and not _rebuild_lock:
                 yield f"data: {json.dumps(_last_rebuild_result, ensure_ascii=False)}\n\n"
                 return
             while True:
