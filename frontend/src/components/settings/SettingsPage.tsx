@@ -50,11 +50,15 @@ export function SettingsPage() {
   const rebuildCleanupRef = useRef<(() => void) | null>(null);
   const terminalReceivedRef = useRef(false);
   const rebuildingRef = useRef(false);  // sync guard against double-click
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Cleanup EventSource on unmount
+  // Cleanup EventSource and polling on unmount
   useEffect(() => {
     return () => {
       rebuildCleanupRef.current?.();
+      if (pollIntervalRef.current !== null) {
+        clearInterval(pollIntervalRef.current);
+      }
     };
   }, []);
   const [theme, setTheme] = useState<"system" | "dark" | "light">(() => {
@@ -230,6 +234,51 @@ export function SettingsPage() {
     rebuildingRef.current = false;
     setRebuilding(false);
     setRebuildMessage(message || "");
+    if (pollIntervalRef.current !== null) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  };
+
+  const handleRebuildResult = (r: RebuildProgressEvent) => {
+    if (r.status === "completed") {
+      finishRebuilding();
+      if (r.failed_count && r.failed_count > 0) {
+        addToast({
+          type: "info",
+          message: `重建完成，${r.chunk_count || 0} 个切片，${r.failed_count} 份文档失败 (chunk_size=${r.actual_chunk_size})`,
+        });
+      } else {
+        addToast({
+          type: "success",
+          message: `重建完成，${r.chunk_count || 0} 个切片 (chunk_size=${r.actual_chunk_size})`,
+        });
+      }
+      checkDimension().then((dim) => {
+        if (dim.mismatch) {
+          addToast({ type: "error", message: "校验失败: 向量维度仍不一致，请重新重建" });
+        }
+        setDimMismatch(dim);
+      }).catch(() => {});
+    } else if (r.status === "failed") {
+      finishRebuilding();
+      addToast({ type: "error", message: `重建失败: ${r.error || "未知错误"}` });
+    }
+  };
+
+  const startPolling = () => {
+    if (pollIntervalRef.current !== null) return;
+    pollIntervalRef.current = setInterval(() => {
+      getRebuildStatus().then((r) => {
+        if (r.status === "completed" || r.status === "failed") {
+          handleRebuildResult(r);
+        } else if (!terminalReceivedRef.current) {
+          setRebuildMessage("重建进行中...");
+        }
+      }).catch(() => {
+        // retry on next interval
+      });
+    }, 2000);
   };
 
   const handleRebuild = async () => {
@@ -264,82 +313,29 @@ export function SettingsPage() {
               setRebuildMessage("正在切换索引...");
               break;
             case "completed":
-              terminalReceivedRef.current = true;
-              finishRebuilding();
-              if (event.failed_count && event.failed_count > 0) {
-                addToast({
-                  type: "info",
-                  message: `重建完成，${event.chunk_count} 个切片，${event.failed_count} 份文档失败 (chunk_size=${event.actual_chunk_size})`,
-                });
-              } else {
-                addToast({
-                  type: "success",
-                  message: `重建完成，${event.chunk_count} 个切片 (chunk_size=${event.actual_chunk_size})`,
-                });
-              }
-              // 自动校验: 验证维度一致性
-              checkDimension().then((dim) => {
-                if (dim.mismatch) {
-                  addToast({ type: "error", message: "校验失败: 向量维度仍不一致，请重新重建" });
-                }
-                setDimMismatch(dim);
-              }).catch(() => {});
-              break;
             case "failed":
               terminalReceivedRef.current = true;
-              finishRebuilding();
-              addToast({ type: "error", message: `重建失败: ${event.error || "未知错误"}` });
+              handleRebuildResult(event);
               break;
             case "timeout":
               terminalReceivedRef.current = true;
-              // Rebuild may have completed but the SSE queue dropped the
-              // terminal event.  Poll rebuild-status to double-check.
+              // SSE queue didn't deliver the terminal event.
+              // Check once, then fall through to polling if still running.
               getRebuildStatus().then((r) => {
-                if (r.status === "completed") {
-                  finishRebuilding();
-                  addToast({
-                    type: "success",
-                    message: `重建完成，${r.chunk_count || 0} 个切片 (chunk_size=${r.actual_chunk_size})`,
-                  });
-                  checkDimension().then((dim) => { setDimMismatch(dim); }).catch(() => {});
-                } else if (r.status === "failed") {
-                  finishRebuilding();
-                  addToast({ type: "error", message: `重建失败: ${r.error || "未知错误"}` });
+                if (r.status === "completed" || r.status === "failed") {
+                  handleRebuildResult(r);
                 } else {
-                  finishRebuilding();
-                  addToast({ type: "error", message: "重建超时，请检查服务状态后重试" });
+                  startPolling();
                 }
-              }).catch(() => {
-                finishRebuilding();
-                addToast({ type: "error", message: "重建超时，请检查服务状态后重试" });
-              });
+              }).catch(() => { startPolling(); });
               break;
           }
         },
         () => {
-          // EventSource onerror fires for every connection close, even
-          // clean ones.  Poll rebuild-status to see if the rebuild
-          // actually completed before showing an error.
           if (!terminalReceivedRef.current) {
-            getRebuildStatus().then((r) => {
-              if (r.status === "completed") {
-                finishRebuilding();
-                addToast({
-                  type: "success",
-                  message: `重建完成，${r.chunk_count || 0} 个切片 (chunk_size=${r.actual_chunk_size})`,
-                });
-                checkDimension().then((dim) => { setDimMismatch(dim); }).catch(() => {});
-              } else if (r.status === "failed") {
-                finishRebuilding();
-                addToast({ type: "error", message: `重建失败: ${r.error || "未知错误"}` });
-              } else {
-                finishRebuilding();
-                addToast({ type: "error", message: "重建连接中断，请检查服务状态后重试" });
-              }
-            }).catch(() => {
-              finishRebuilding();
-              addToast({ type: "error", message: "重建连接中断，请检查服务状态后重试" });
-            });
+            // SSE connection lost without a terminal event — fall back
+            // to polling until the rebuild finishes.
+            startPolling();
           }
           rebuildCleanupRef.current = null;
         },
