@@ -914,9 +914,6 @@ async def restore_backup(file: UploadFile):
                 raise HTTPException(400, "备份文件 manifest.json 格式无效") from e
             _verify_manifest(restore_dir, manifest)
             _validate_manifest_compatibility(manifest)
-            manifest_revision = manifest.get("db_schema_revision")
-            current_revision = _get_head_revision()
-            _validate_restore_revision(manifest_revision, current_revision)
 
         db_file = restore_dir / "rag_agent.db"
         uploads_dir = restore_dir / "uploads"
@@ -936,6 +933,57 @@ async def restore_backup(file: UploadFile):
             raise HTTPException(400, f"备份数据库完整性检查失败: {e}") from e
         finally:
             conn.close()
+
+        # ── Version gate: staged DB as authority ──
+        staged_revision_raw = _get_alembic_revision(db_file)
+        staged_revision = None if staged_revision_raw in ("legacy", "unknown") else staged_revision_raw
+        head_revision, script_dir = _get_head_info()
+
+        # Cross-validate manifest db_schema_revision against staged DB
+        if manifest is not None:
+            manifest_revision = manifest.get("db_schema_revision")
+            if manifest_revision is not None:
+                if staged_revision is None:
+                    raise HTTPException(
+                        400,
+                        f"备份 manifest 声明版本 {manifest_revision}，"
+                        f"但备份数据库未包含 Alembic 版本信息。"
+                        "该备份可能损坏或来自旧版本应用，请通过离线流程采纳。",
+                    )
+                if manifest_revision != staged_revision:
+                    raise HTTPException(
+                        400,
+                        f"备份 manifest 版本 ({manifest_revision}) 与数据库实际版本 "
+                        f"({staged_revision}) 不一致，备份文件可能损坏。",
+                    )
+
+        # Classify and act on staged revision
+        classification = _classify_staged_revision(staged_revision, head_revision, script_dir)
+
+        if classification == "legacy":
+            raise HTTPException(
+                400,
+                "备份数据库不包含版本信息（legacy 格式）。"
+                "legacy 备份不支持直接恢复。请通过离线采纳流程："
+                "1) 提取备份中的数据库文件，2) 核对表结构指纹，"
+                "3) 使用 alembic stamp 标记版本后重新打包。",
+            )
+        elif classification in ("unknown", "future"):
+            detail = (
+                f"备份数据库版本 '{staged_revision}' 不被当前应用识别。"
+                "请升级应用到包含此版本的新版本。"
+            )
+            raise HTTPException(400, detail)
+        elif classification == "old":
+            logger.info(
+                "staged DB revision %s < head %s, running staged migration",
+                staged_revision, head_revision,
+            )
+            try:
+                await _migrate_staged_db(db_file, head_revision)
+            except RuntimeError as e:
+                raise HTTPException(400, f"备份数据库迁移失败: {e}") from e
+            logger.info("staged migration complete, revision now at %s", head_revision)
 
         # Read restore documents from backup DB (preserving original IDs)
         conn = sqlite3.connect(str(db_file))
