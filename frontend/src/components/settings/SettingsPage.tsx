@@ -49,6 +49,7 @@ export function SettingsPage() {
   const [rebuildMessage, setRebuildMessage] = useState("");
   const rebuildCleanupRef = useRef<(() => void) | null>(null);
   const terminalReceivedRef = useRef(false);
+  const rebuildingRef = useRef(false);  // sync guard against double-click
 
   // Cleanup EventSource on unmount
   useEffect(() => {
@@ -225,15 +226,22 @@ export function SettingsPage() {
   };
 
   /* ── Dimension rebuild / clear handlers ─────────── */
+  const finishRebuilding = (message?: string) => {
+    rebuildingRef.current = false;
+    setRebuilding(false);
+    setRebuildMessage(message || "");
+  };
+
   const handleRebuild = async () => {
+    if (rebuildingRef.current) return;  // prevent double-click
+    rebuildingRef.current = true;
     setRebuilding(true);
     setRebuildMessage("正在启动...");
     terminalReceivedRef.current = false;
     try {
       const result = await rebuildCollections();
       if (result.status === "rejected") {
-        setRebuilding(false);
-        setRebuildMessage("");
+        finishRebuilding();
         addToast({ type: "error", message: result.reason || "重建已被拒绝" });
         return;
       }
@@ -257,8 +265,7 @@ export function SettingsPage() {
               break;
             case "completed":
               terminalReceivedRef.current = true;
-              setRebuilding(false);
-              setRebuildMessage("");
+              finishRebuilding();
               if (event.failed_count && event.failed_count > 0) {
                 addToast({
                   type: "info",
@@ -280,22 +287,19 @@ export function SettingsPage() {
               break;
             case "failed":
               terminalReceivedRef.current = true;
-              setRebuilding(false);
-              setRebuildMessage("");
+              finishRebuilding();
               addToast({ type: "error", message: `重建失败: ${event.error || "未知错误"}` });
               break;
             case "timeout":
               terminalReceivedRef.current = true;
-              setRebuilding(false);
-              setRebuildMessage("");
+              finishRebuilding();
               addToast({ type: "error", message: "重建超时，请检查服务状态后重试" });
               break;
           }
         },
         () => {
           if (!terminalReceivedRef.current) {
-            setRebuilding(false);
-            setRebuildMessage("");
+            finishRebuilding();
             addToast({ type: "error", message: "重建连接中断，请检查服务状态后重试" });
           }
           rebuildCleanupRef.current = null;
@@ -303,8 +307,7 @@ export function SettingsPage() {
       );
       rebuildCleanupRef.current = cleanup;
     } catch {
-      setRebuilding(false);
-      setRebuildMessage("");
+      finishRebuilding();
       addToast({ type: "error", message: "重建启动失败" });
     }
   };

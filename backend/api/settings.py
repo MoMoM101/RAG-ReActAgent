@@ -236,6 +236,21 @@ async def update_settings(body: SettingsResponse):
     # 检测 embedding 维度变更：用新配置连接 API 获取实际维度，与现有 collection 比对
     dim_info = await _detect_dimension_mismatch()
 
+    # When there are no documents, a dimension mismatch on rag_chunks is
+    # harmless — just recreate the empty collection at the new dimension
+    # instead of bothering the user with the modal.
+    if dim_info.get("mismatch") and dim_info.get("ok"):
+        doc_count = dim_info.get("document_count", 0)
+        if doc_count == 0:
+            try:
+                new_dim = dim_info["current_model_dim"]
+                await _reset_qdrant_collections(new_dim)
+                # Re-check: should now report no mismatch
+                dim_info = await _detect_dimension_mismatch()
+                logger.info("auto-reset empty collections to dim=%d", new_dim)
+            except Exception as e:
+                logger.warning("auto-reset empty collections failed: %s", e)
+
     return {"status": "saved", "dimension": dim_info}
 
 
