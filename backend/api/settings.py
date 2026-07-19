@@ -869,7 +869,11 @@ async def rebuild_collections():
 
     _rebuild_lock = True
     from worker.tasks import get_task_manager
-    get_task_manager().create(_do_rebuild, "rebuild_collections")
+    try:
+        get_task_manager().create(_do_rebuild, "rebuild_collections")
+    except Exception:
+        _rebuild_lock = False
+        raise
     return {"status": "started"}
 
 
@@ -959,7 +963,7 @@ async def rebuild_progress():
                 return
             while True:
                 try:
-                    event = await asyncio.wait_for(q.get(), timeout=30)
+                    event = await asyncio.wait_for(q.get(), timeout=300)
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     if event.get("status") in ("completed", "failed"):
                         break
