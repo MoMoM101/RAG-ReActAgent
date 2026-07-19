@@ -150,8 +150,9 @@ def _build_test_backup_tar(
         for row in (db_rows or []):
             conn.execute(
                 "INSERT OR REPLACE INTO documents "
-                "(id, filename, file_type, file_hash, file_size, raw_text, chunk_count, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(id, filename, file_type, file_hash, file_size, raw_text, chunk_count, status, "
+                "created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
                 (row["id"], row["filename"], row.get("file_type", ".txt"),
                  row.get("file_hash", ""), row.get("file_size", 0),
                  row.get("raw_text", ""), row.get("chunk_count", 0),
@@ -159,12 +160,14 @@ def _build_test_backup_tar(
             )
             if row.get("conversation_id"):
                 conn.execute(
-                    "INSERT OR REPLACE INTO conversations (id, title) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO conversations (id, title, created_at, updated_at) "
+                    "VALUES (?, ?, datetime('now'), datetime('now'))",
                     (row["conversation_id"], row.get("title", "Test Conv")),
                 )
                 conn.execute(
-                    "INSERT OR REPLACE INTO messages (id, conversation_id, role, content) "
-                    "VALUES (?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO messages "
+                    "(id, conversation_id, role, content, created_at) "
+                    "VALUES (?, ?, ?, ?, datetime('now'))",
                     (row.get("msg_id", f"msg-{row['id']}"),
                      row["conversation_id"], "user",
                      row.get("msg_content", "hello")),
@@ -248,7 +251,7 @@ def _read_alembic_revision_from_db(db_path: Path) -> str | None:
 # ── Normal restore ─────────────────────────────────────────────────────
 
 
-@pytest.mark.usefixtures("mock_embedding")
+@pytest.mark.usefixtures("mock_embedding", "template_head_db")
 class TestNormalRestore:
     """End-to-end restore: backup -> restore -> verify consistency."""
 
@@ -334,6 +337,7 @@ class TestNormalRestore:
 # ── Fault injection ────────────────────────────────────────────────────
 
 
+@pytest.mark.usefixtures("template_head_db")
 class TestFaultInjection:
     """Fault injection at switch points to verify rollback correctness."""
 
@@ -626,16 +630,17 @@ class TestCrossConsistency:
 # ── Manifest compatibility ─────────────────────────────────────────────
 
 
+@pytest.mark.usefixtures("template_head_db")
 class TestManifestCompatibility:
     """Manifest structure and version checks."""
 
-    def test_manifest_contains_required_fields(self):
+    def test_manifest_contains_required_fields(self, template_head_db):
         from api.backup import _build_manifest
 
         tmp = Path(tempfile.mkdtemp(prefix="test_manifest_"))
         try:
             db_path = tmp / "test.db"
-            db_path.write_bytes(b"test db content")
+            shutil.copy2(template_head_db, db_path)
             uploads_dir = tmp / "uploads"
             uploads_dir.mkdir()
             (uploads_dir / "doc1.txt").write_text("content 1")
@@ -650,13 +655,13 @@ class TestManifestCompatibility:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    def test_manifest_includes_all_upload_files(self):
+    def test_manifest_includes_all_upload_files(self, template_head_db):
         from api.backup import _build_manifest
 
         tmp = Path(tempfile.mkdtemp(prefix="test_manifest_"))
         try:
             db_path = tmp / "test.db"
-            db_path.write_bytes(b"test db")
+            shutil.copy2(template_head_db, db_path)
             uploads_dir = tmp / "uploads"
             uploads_dir.mkdir()
             (uploads_dir / "a.txt").write_text("AAA")
@@ -682,7 +687,7 @@ class TestManifestCompatibility:
                 "chunk_count": 1,
             }],
             upload_files={"nomanifest.txt": b"No manifest test."},
-            include_manifest=False,
+            include_manifest=False, schema="head",
         )
 
         transport = ASGITransport(app=app)
@@ -739,6 +744,194 @@ class TestRestoreAuthRequired:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             r = await client.get("/api/backup")
             assert r.status_code == 401
+
+
+# ── Revision gate ───────────────────────────────────────────────────────
+
+
+@pytest.mark.usefixtures("mock_embedding", "template_head_db", "_cleanup_template_0001_db")
+class TestRevisionGate:
+    """Restore version gate: legacy rejection, old-version migration, mismatch detection."""
+
+    async def test_restore_head_backup_succeeds(self):
+        """Backup at head revision restores normally."""
+        tar_bytes = _build_test_backup_tar(
+            db_rows=[{
+                "id": "doc-head-001", "filename": "head_test.txt",
+                "file_type": ".txt", "file_hash": "head_hash",
+                "raw_text": "Head revision backup.", "chunk_count": 1,
+            }],
+            upload_files={"head_test.txt": b"Head revision backup."},
+            schema="head",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/backup/restore",
+                files={"file": ("head_backup.tar.gz", tar_bytes, "application/gzip")},
+                headers=ADMIN_HEADERS,
+            )
+            assert r.status_code == 200
+            data = r.json()
+            assert data["status"] == "ok"
+
+    async def test_old_revision_backup_migrates_and_succeeds(self):
+        """Backup at revision 0001 should be migrated to head and restore successfully."""
+        tar_bytes = _build_test_backup_tar(
+            db_rows=[{
+                "id": "doc-old-001", "filename": "old_rev.txt",
+                "file_type": ".txt", "file_hash": "old_hash_001",
+                "raw_text": "Old revision test.", "chunk_count": 1,
+            }],
+            upload_files={"old_rev.txt": b"Old revision test."},
+            schema="0001",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/backup/restore",
+                files={"file": ("old_rev.tar.gz", tar_bytes, "application/gzip")},
+                headers=ADMIN_HEADERS,
+            )
+            assert r.status_code == 200
+            data = r.json()
+            assert data["status"] == "ok"
+
+            # Verify the restored DB is accessible
+            r = await client.get("/api/documents", headers=ADMIN_HEADERS)
+            assert r.status_code == 200
+            docs = r.json()
+            assert any(d["filename"] == "old_rev.txt" for d in docs)
+
+    async def test_legacy_backup_rejected(self):
+        """Backup without alembic_version table must be rejected with 400."""
+        tar_bytes = _build_test_backup_tar(
+            db_rows=[{
+                "id": "doc-legacy-001", "filename": "legacy.txt",
+                "file_type": ".txt", "file_hash": "legacy_hash",
+                "raw_text": "Legacy backup content.", "chunk_count": 1,
+            }],
+            upload_files={"legacy.txt": b"Legacy backup content."},
+            schema="legacy",
+            include_manifest=False,
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Snapshot current state before attempt
+            r = await client.get("/api/documents", headers=ADMIN_HEADERS)
+            pre_docs = len(r.json())
+
+            r = await client.post(
+                "/api/backup/restore",
+                files={"file": ("legacy.tar.gz", tar_bytes, "application/gzip")},
+                headers=ADMIN_HEADERS,
+            )
+            assert r.status_code == 400
+            detail = r.json()["detail"]
+            assert "legacy" in detail.lower() or "版本" in detail
+
+            # Current database must NOT be replaced
+            r = await client.get("/api/documents", headers=ADMIN_HEADERS)
+            assert len(r.json()) == pre_docs
+
+    async def test_manifest_db_mismatch_rejected(self):
+        """Manifest db_schema_revision that doesn't match staged DB -> 400."""
+        tar_bytes = _build_test_backup_tar(
+            db_rows=[{
+                "id": "doc-mismatch-001", "filename": "mismatch.txt",
+                "file_type": ".txt", "file_hash": "mismatch_hash",
+                "raw_text": "Mismatch test.", "chunk_count": 1,
+            }],
+            upload_files={"mismatch.txt": b"Mismatch test."},
+            schema="head",
+            revision_override="9999_fake_revision",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/backup/restore",
+                files={"file": ("mismatch.tar.gz", tar_bytes, "application/gzip")},
+                headers=ADMIN_HEADERS,
+            )
+            assert r.status_code == 400
+            detail = r.json()["detail"]
+            assert "不一致" in detail
+
+    async def test_future_revision_rejected(self):
+        """Backup with a revision not in the local migration history -> 400."""
+        tar_bytes = _build_test_backup_tar(
+            db_rows=[{
+                "id": "doc-future-001", "filename": "future.txt",
+                "file_type": ".txt", "file_hash": "fut_hash",
+                "raw_text": "Future revision test.", "chunk_count": 1,
+            }],
+            upload_files={"future.txt": b"Future revision test."},
+            schema="head",
+            revision_override="9999_future",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/backup/restore",
+                files={"file": ("future.tar.gz", tar_bytes, "application/gzip")},
+                headers=ADMIN_HEADERS,
+            )
+            assert r.status_code == 400
+
+    async def test_no_manifest_head_db_succeeds(self):
+        """Backup without manifest but DB at head revision -> restore succeeds."""
+        tar_bytes = _build_test_backup_tar(
+            db_rows=[{
+                "id": "doc-nomanifest-head-001", "filename": "nomanifest_head.txt",
+                "file_type": ".txt", "file_hash": "nmh_hash",
+                "raw_text": "No manifest, head DB.", "chunk_count": 1,
+            }],
+            upload_files={"nomanifest_head.txt": b"No manifest, head DB."},
+            schema="head",
+            include_manifest=False,
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/backup/restore",
+                files={"file": ("nomanifest_head.tar.gz", tar_bytes, "application/gzip")},
+                headers=ADMIN_HEADERS,
+            )
+            assert r.status_code == 200
+            data = r.json()
+            assert data["status"] == "ok"
+
+    async def test_staging_db_not_replaced_on_rejection(self):
+        """When legacy backup is rejected, staged DB must not replace live DB."""
+        tar_bytes = _build_test_backup_tar(
+            db_rows=[{"id": "doc-legacy-002", "filename": "legacy2.txt"}],
+            schema="legacy",
+            include_manifest=False,
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Record current state
+            r = await client.get("/api/documents", headers=ADMIN_HEADERS)
+            pre_docs = r.json()
+
+            r = await client.post(
+                "/api/backup/restore",
+                files={"file": ("legacy2.tar.gz", tar_bytes, "application/gzip")},
+                headers=ADMIN_HEADERS,
+            )
+            assert r.status_code == 400
+
+            # State must be unchanged
+            r = await client.get("/api/documents", headers=ADMIN_HEADERS)
+            post_docs = r.json()
+            assert [d["id"] for d in pre_docs] == [d["id"] for d in post_docs]
 
 
 async def test_collection_pointer_creates_missing_qdrant_directory(
