@@ -868,6 +868,11 @@ async def rebuild_collections():
             _rebuild_lock = False
 
     _rebuild_lock = True
+    # Publish an initial event immediately so /rebuild-status returns
+    # useful progress data before the background task has started.
+    from rag.progress import progress as _rebuild_progress
+    _rebuild_progress.publish("rebuild", {"status": "preflight", "message": "正在启动重建..."})
+
     from worker.tasks import get_task_manager
     try:
         get_task_manager().create(_do_rebuild, "rebuild_collections")
