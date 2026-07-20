@@ -89,20 +89,14 @@ def build_answer_cache_key(
     from rag.answer_cache import AnswerCache, get_answer_cache
 
     context_hash = AnswerCache.context_hash(conversation_history)
-    profile_hash = (
-        hashlib.sha256(profile_text.encode("utf-8")).hexdigest()[:12]
-        if profile_text
-        else ""
-    )
-    scoped_context = ":".join(
-        part for part in (context_hash, profile_hash) if part
-    )
+    profile_hash = hashlib.sha256(profile_text.encode("utf-8")).hexdigest()[:12] if profile_text else ""
+    scoped_context = ":".join(part for part in (context_hash, profile_hash) if part)
     return AnswerCache.compute_key(
         normalized_query=user_message,
         retrieval_hash=AnswerCache.retrieval_hash(sources),
         collection_version=get_answer_cache().collection_version,
         model_name=settings.llm_model,
-        prompt_version="v4",
+        prompt_version="v5-comparison-complete",
         context_hash=scoped_context,
         grounding_policy_version=AnswerCache.grounding_policy_version(),
     )
