@@ -93,7 +93,7 @@ export function Sidebar() {
           <ChatIcon /> 对话
         </Link>
         <Link to="/documents" className={location.pathname === "/documents" ? "active" : ""}>
-          <DocIcon /> 文档库
+          <DocIcon /> 知识库
         </Link>
         <Link to="/settings" className={location.pathname === "/settings" ? "active" : ""}>
           <SettingsIcon /> 设置

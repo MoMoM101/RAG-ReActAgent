@@ -1,6 +1,5 @@
 """Prometheus /metrics endpoint."""
 from fastapi import APIRouter, Response
-
 from metrics import export_prometheus
 
 router = APIRouter(tags=["metrics"])

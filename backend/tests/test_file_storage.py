@@ -1,7 +1,7 @@
 import os
 import tempfile
+
 import pytest
-from storage.base import StagedObject, StoredObject
 from storage.files import LocalFileStorage
 
 

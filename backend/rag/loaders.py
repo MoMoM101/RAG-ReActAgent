@@ -1,9 +1,49 @@
+import csv
 import logging
+from collections.abc import Iterable, Sequence
+from itertools import islice
 from pathlib import Path
-
-import pandas as pd
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_MAX_TABULAR_DATA_ROWS = 10_000
+
+
+def _markdown_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    return (
+        str(value)
+        .replace("\r\n", "<br>")
+        .replace("\r", "<br>")
+        .replace("\n", "<br>")
+        .replace("|", r"\|")
+    )
+
+
+def _rows_to_markdown(rows: Iterable[Sequence[Any]]) -> str:
+    """Render a bounded row iterator as a deterministic Markdown table."""
+    iterator = iter(rows)
+    try:
+        header = list(next(iterator))
+    except StopIteration:
+        return ""
+
+    data_rows = [list(row) for row in islice(iterator, _MAX_TABULAR_DATA_ROWS)]
+    column_count = max([len(header), *(len(row) for row in data_rows)])
+    if column_count == 0:
+        return ""
+
+    header.extend("" for _ in range(column_count - len(header)))
+    lines = [
+        "| " + " | ".join(_markdown_cell(value) for value in header) + " |",
+        "| " + " | ".join("---" for _ in range(column_count)) + " |",
+    ]
+    for row in data_rows:
+        row.extend("" for _ in range(column_count - len(row)))
+        lines.append("| " + " | ".join(_markdown_cell(value) for value in row) + " |")
+    return "\n".join(lines)
 
 
 def load_pdf(file_path: str) -> str:
@@ -86,13 +126,18 @@ def load_md(file_path: str) -> str:
 
 
 def load_csv(file_path: str) -> str:
-    df = pd.read_csv(file_path, nrows=10000)
-    return df.to_markdown(index=False)
+    with open(file_path, encoding="utf-8-sig", newline="") as file:
+        return _rows_to_markdown(csv.reader(file))
 
 
 def load_xlsx(file_path: str) -> str:
-    df = pd.read_excel(file_path, engine="openpyxl", nrows=10000)
-    return df.to_markdown(index=False)
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(file_path, read_only=True, data_only=True)
+    try:
+        return _rows_to_markdown(workbook.active.iter_rows(values_only=True))
+    finally:
+        workbook.close()
 
 
 def load_image(file_path: str) -> str:

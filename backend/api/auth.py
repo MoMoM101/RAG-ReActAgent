@@ -1,11 +1,6 @@
 """Auth endpoints: login, refresh, me."""
 
-import uuid
 from datetime import UTC, datetime
-
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
-from sqlalchemy import select
 
 from audit import record_audit
 from auth.jwt import (
@@ -14,9 +9,13 @@ from auth.jwt import (
     decode_token,
     verify_password,
 )
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from security import UserContext, get_current_user, jwt_auth
+from sqlalchemy import select
+
 from models.database import session_scope
 from models.orm import User
-from security import UserContext, get_current_user, jwt_auth
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -69,8 +68,8 @@ async def login(req: LoginRequest):
 async def refresh(req: RefreshRequest):
     try:
         payload = decode_token(req.refresh_token)
-    except Exception:
-        raise HTTPException(401, "Invalid or expired refresh token")
+    except Exception as exc:
+        raise HTTPException(401, "Invalid or expired refresh token") from exc
     if payload.get("type") != "refresh":
         raise HTTPException(401, "Not a refresh token")
 

@@ -96,6 +96,7 @@ async def get_messages(conv_id: str, db: AsyncSession = Depends(get_db)):
             "tool_call_id": m.tool_call_id,
             "tool_args": m.tool_args,
             "sources": m.sources,
+            "verification": m.verification,
             "created_at": m.created_at.isoformat(),
         }
         for m in msgs

@@ -6,7 +6,7 @@ import uuid
 import pytest
 from sqlalchemy import text as sa_text
 
-from models.database import async_session
+from models.database import session_scope
 from models.orm import Document
 
 
@@ -19,7 +19,7 @@ def _hash_chunk_ids(chunk_ids: set[str]) -> str:
 @pytest.fixture(autouse=True)
 async def _cleanup():
     yield
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         await conn.execute(sa_text("DELETE FROM index_generations"))
         await conn.execute(sa_text("DELETE FROM documents"))
@@ -36,14 +36,14 @@ class TestGenerationStates:
         gen_id = str(uuid.uuid4())
         doc_id = str(uuid.uuid4())
 
-        async with async_session() as session:
+        async with session_scope() as session:
             doc = Document(id=doc_id, filename="test.txt", file_hash="abc", file_size=100, file_type=".txt")
             session.add(doc)
             await session.commit()
 
         await _create_generation(gen_id, doc_id)
 
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             row = (await conn.execute(
                 sa_text("SELECT status FROM index_generations WHERE id=:id"), {"id": gen_id}
@@ -60,7 +60,7 @@ class TestGenerationStates:
         chunk_ids = {str(uuid.uuid4()) for _ in range(5)}
         expected_hash = _hash_chunk_ids(chunk_ids)
 
-        async with async_session() as session:
+        async with session_scope() as session:
             doc = Document(id=doc_id, filename="test.txt", file_hash="def", file_size=200, file_type=".txt")
             session.add(doc)
             await session.commit()
@@ -69,7 +69,7 @@ class TestGenerationStates:
         await _create_generation(gen_id, doc_id)
         await _commit_generation(gen_id, 5, 5, expected_hash)
 
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             row = (await conn.execute(
                 sa_text("SELECT status, vector_chunk_count, bm25_count, chunk_ids_hash FROM index_generations WHERE id=:id"),
@@ -87,7 +87,7 @@ class TestGenerationStates:
         gen_id = str(uuid.uuid4())
         doc_id = str(uuid.uuid4())
 
-        async with async_session() as session:
+        async with session_scope() as session:
             doc = Document(id=doc_id, filename="test.txt", file_hash="ghi", file_size=300, file_type=".txt")
             session.add(doc)
             await session.commit()
@@ -96,7 +96,7 @@ class TestGenerationStates:
         await _create_generation(gen_id, doc_id)
         await _fail_generation(gen_id, 3, 0, error_stage="writing_bm25", error_message="BM25 insert timeout")
 
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             row = (await conn.execute(
                 sa_text(
@@ -147,7 +147,7 @@ class TestCleanupStaging:
         gen_id = str(uuid.uuid4())
         doc_id = str(uuid.uuid4())
 
-        async with async_session() as session:
+        async with session_scope() as session:
             doc = Document(id=doc_id, filename="t.txt", file_hash="jkl", file_size=10, file_type=".txt")
             session.add(doc)
             await session.commit()
@@ -162,9 +162,60 @@ class TestCleanupStaging:
         cleaned = await cleanup_staging_generations()
         assert cleaned >= 1
 
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             row = (await conn.execute(
                 sa_text("SELECT status FROM index_generations WHERE id=:id"), {"id": gen_id}
             )).fetchone()
         assert row[0] == "failed"
+
+    async def test_cleanup_does_not_delete_newer_active_generation(self, monkeypatch):
+        """A stale attempt must not delete indexes owned by a newer commit."""
+        from unittest.mock import AsyncMock
+
+        from rag.pipeline import cleanup_staging_generations
+        from textdb.bm25_search import BM25Search
+
+        doc_id = str(uuid.uuid4())
+        active_gen_id = str(uuid.uuid4())
+        stale_gen_id = str(uuid.uuid4())
+        async with session_scope() as session:
+            doc = Document(
+                id=doc_id,
+                filename="active.txt",
+                file_hash=str(uuid.uuid4()),
+                file_size=10,
+                file_type=".txt",
+                active_generation_id=active_gen_id,
+            )
+            session.add(doc)
+            await session.commit()
+            conn = await session.connection()
+            await conn.execute(sa_text(
+                "INSERT INTO index_generations (id, doc_id, status, created_at) "
+                "VALUES (:active, :did, 'committed', datetime('now')), "
+                "(:stale, :did, 'preparing', datetime('now'))"
+            ), {"active": active_gen_id, "stale": stale_gen_id, "did": doc_id})
+            await session.commit()
+
+        vector_delete = AsyncMock()
+        bm25_delete = AsyncMock()
+        fake_vdb = type("FakeVDB", (), {"delete_by_document": vector_delete})()
+
+        async def fake_create_vectordb():
+            return fake_vdb
+
+        monkeypatch.setattr("vectordb.factory.create_vectordb", fake_create_vectordb)
+        monkeypatch.setattr(BM25Search, "delete_by_document", bm25_delete)
+
+        await cleanup_staging_generations()
+
+        vector_delete.assert_not_awaited()
+        bm25_delete.assert_not_awaited()
+        async with session_scope() as session:
+            conn = await session.connection()
+            status = (await conn.execute(
+                sa_text("SELECT status FROM index_generations WHERE id=:id"),
+                {"id": stale_gen_id},
+            )).scalar_one()
+        assert status == "failed"

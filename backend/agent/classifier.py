@@ -106,12 +106,21 @@ INTENT_TOOL = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "content": {"type": "string", "description": "要保存的信息，如'用户是AI开发工程师'"},
-                            "type": {"type": "string", "enum": ["identity", "preference", "decision", "fact"]},
+                            "content": {
+                                "type": "string",
+                                "description": "要保存的信息值，不含前缀。如名字'馍馍'、角色'AI开发工程师'",
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": ["identity_name", "identity_role", "preference", "decision", "fact"],
+                            },
                         },
                         "required": ["content", "type"],
                     },
-                    "description": "用户消息中值得保存的个人信息。无论 intent 是什么，只要检测到身份/偏好/决定/事实就提取。若无则填 []",
+                    "description": (
+                        "用户消息中值得保存的个人信息。identity_name=姓名/昵称, "
+                        "identity_role=职业/身份/角色。无论 intent 是什么，只要检测到就提取。若无则填 []"
+                    ),
                 },
             },
             "required": ["intent", "suggested_tools", "hint_text", "save_to_profile"],
@@ -127,7 +136,8 @@ async def _llm_classify(query: str, has_history: bool) -> IntentHint:
     system_prompt = """你是意图分类器。根据用户消息判断意图并推荐工具。
 
 意图类型:
-- personal_memory: 用户透露个人信息（"我是/我叫/我职责/我职业/我工作/我身份/我喜欢/我习惯/我决定"）或询问记忆（"我是谁/我之前说过什么/还记得吗"）
+- personal_memory: 用户透露个人信息（"我是/我叫/我职责/我职业/我工作/我身份/我喜欢/我习惯/我决定"）
+  或询问记忆（"我是谁/我之前说过什么/还记得吗"）
   推荐: recall_memory
 - knowledge_retrieval: 用户询问文档/知识问题（"什么是/如何/怎么/有哪些"）
   推荐: search_docs
@@ -144,7 +154,16 @@ async def _llm_classify(query: str, has_history: bool) -> IntentHint:
 - 技术/知识类问题 → knowledge_retrieval
 - 带"网上""搜索""最新""新闻" → web_search
 
-重要: 即使用户的主要意图是 knowledge_retrieval 或 general_chat，只要消息中包含个人身份/偏好/决定信息，就额外在 save_to_profile 字段中提取出来。系统会自动保存这些信息供未来对话使用。"""
+重要: 即使用户的主要意图是 knowledge_retrieval 或 general_chat，
+只要消息中包含个人身份/偏好/决定信息，就额外在 save_to_profile 字段中提取出来。
+系统会自动保存这些信息供未来对话使用。
+
+穷举提取规则 — 必须严格遵守:
+1. 逐句检查用户消息，确保每个独立身份信息都被提取，不要遗漏
+2. "我是X，Y工程师" 包含两层信息 —— 名字/昵称X 和 职业Y工程师，必须分别作为 identity_name 和 identity_role 提取
+3. 提取完成后自检: 这条消息一共有几个个人信息? 每条都提取了吗?
+4. 不要因为已经提取了一个就跳过另一个 —— 有 N 个就要返回 N 条
+5. content 字段只填提取到的值本身（如"馍馍"、"AI开发工程师"），不要加"用户叫"/"用户是"等前缀"""
 
     messages = [
         ChatMessage(role="system", content=system_prompt),
@@ -191,9 +210,17 @@ def classify_intent(query: str, history: list[ChatMessage] | None = None) -> Int
 
 
 async def llm_classify(query: str, history: list[ChatMessage] | None = None) -> IntentHint:
-    """异步 LLM 分类（当 classify_intent 返回 _llm_needed 时调用）。"""
+    """异步 LLM 分类（当 classify_intent 返回 _llm_needed 时调用）。
+
+    即使规则命中 personal_memory，如果未提取到 save_to_profile，
+    仍运行一次 LLM 以穷举提取所有身份信息。
+    """
     has_history = history is not None and len(history) > 0
     hint = classify_intent(query, history)
     if hint.intent != "_llm_needed":
+        if hint.intent == "personal_memory" and not hint.save_to_profile:
+            llm_hint = await _llm_classify(query, has_history)
+            if llm_hint.save_to_profile:
+                hint.save_to_profile = llm_hint.save_to_profile
         return hint
     return await _llm_classify(query, has_history)

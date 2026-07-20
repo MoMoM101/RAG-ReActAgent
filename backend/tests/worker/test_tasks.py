@@ -1,4 +1,5 @@
 """Tests for BackgroundTaskManager."""
+
 import asyncio
 from unittest.mock import AsyncMock
 
@@ -51,19 +52,21 @@ async def test_create_and_fail():
 async def test_get_status_shows_running():
     tm = BackgroundTaskManager()
     event = asyncio.Event()
+    started = asyncio.Event()
 
     async def _slow():
+        started.set()
         await event.wait()
 
-    tm.create(_slow, "test_slow")
-    await asyncio.sleep(0.05)
+    task = tm.create(_slow, "test_slow")
+    await asyncio.wait_for(started.wait(), timeout=1)
 
     status = tm.get_status()
     assert any(n.startswith("test_slow") for n in status["running"])
     assert any(h["name"].startswith("test_slow") for h in status["history"]) is False
 
     event.set()
-    await asyncio.sleep(0.05)
+    await asyncio.wait_for(task, timeout=1)
 
     status2 = tm.get_status()
     assert not any(n.startswith("test_slow") for n in status2["running"])

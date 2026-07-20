@@ -1,0 +1,216 @@
+{
+  "dashboard": {
+    "title": "RAG V4 — Grounded Answer Quality & Latency",
+    "uid": "rag-v4-grounded",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Faithfulness",
+        "type": "gauge",
+        "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "rag_phase_timing_ms{phase=\"rag_total\",quantile=\"0.95\"}",
+            "legendFormat": "P95 Faithfulness"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.70, "color": "yellow"},
+                {"value": 0.95, "color": "green"}
+              ]
+            },
+            "unit": "percentunit"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Citation Precision",
+        "type": "gauge",
+        "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.90, "color": "yellow"},
+                {"value": 0.95, "color": "green"}
+              ]
+            },
+            "unit": "percentunit"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Citation Recall",
+        "type": "gauge",
+        "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.90, "color": "yellow"},
+                {"value": 0.95, "color": "green"}
+              ]
+            },
+            "unit": "percentunit"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Abstention Accuracy",
+        "type": "gauge",
+        "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.95, "color": "yellow"},
+                {"value": 0.98, "color": "green"}
+              ]
+            },
+            "unit": "percentunit"
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Phased Latency (P50 / P95 / P99 ms)",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+        "targets": [
+          {"expr": "rag_phase_timing_ms{phase=\"rag_llm_ttft\",quantile=\"0.5\"}", "legendFormat": "TTFT P50"},
+          {"expr": "rag_phase_timing_ms{phase=\"rag_llm_ttft\",quantile=\"0.95\"}", "legendFormat": "TTFT P95"},
+          {"expr": "rag_phase_timing_ms{phase=\"rag_total\",quantile=\"0.5\"}", "legendFormat": "Total P50"},
+          {"expr": "rag_phase_timing_ms{phase=\"rag_total\",quantile=\"0.95\"}", "legendFormat": "Total P95"},
+          {"expr": "rag_phase_timing_ms{phase=\"rag_total\",quantile=\"0.99\"}", "legendFormat": "Total P99"}
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Phase Breakdown (P95 ms)",
+        "type": "bargauge",
+        "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+        "targets": [
+          {"expr": "rag_phase_timing_ms{phase=~\"rag_intent|rag_retrieval|rag_rerank|rag_draft_generation|rag_verification|rag_llm_repair\",quantile=\"0.95\"}"}
+        ]
+      },
+      {
+        "id": 20,
+        "title": "Repair Trigger Rate",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 12, "w": 4, "h": 3},
+        "targets": [
+          {"expr": "rate(rag_grounding_repair_trigger_total[5m])"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 0.10, "color": "yellow"},
+                {"value": 0.15, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 21,
+        "title": "Repair Accept Rate",
+        "type": "stat",
+        "gridPos": {"x": 4, "y": 12, "w": 4, "h": 3},
+        "targets": [
+          {"expr": "rate(rag_grounding_repair_accept_total[5m]) / rate(rag_grounding_repair_trigger_total[5m])"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.20, "color": "yellow"},
+                {"value": 0.40, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 22,
+        "title": "Repair Triggers by Reason",
+        "type": "piechart",
+        "gridPos": {"x": 8, "y": 12, "w": 8, "h": 6},
+        "targets": [
+          {"expr": "rag_grounding_repair_trigger_total", "legendFormat": "{{reason}}"}
+        ]
+      },
+      {
+        "id": 23,
+        "title": "Deterministic Repair by Type",
+        "type": "piechart",
+        "gridPos": {"x": 16, "y": 12, "w": 8, "h": 6},
+        "targets": [
+          {"expr": "rag_deterministic_repair_total", "legendFormat": "{{type}}"}
+        ]
+      },
+      {
+        "id": 30,
+        "title": "Answer Cache",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 15, "w": 8, "h": 6},
+        "targets": [
+          {"expr": "rag_answer_cache_total", "legendFormat": "{{result}}"}
+        ]
+      },
+      {
+        "id": 31,
+        "title": "Stream Unit Status",
+        "type": "timeseries",
+        "gridPos": {"x": 8, "y": 15, "w": 8, "h": 6},
+        "targets": [
+          {"expr": "rag_stream_unit_total", "legendFormat": "{{result}}"}
+        ]
+      },
+      {
+        "id": 32,
+        "title": "Full Refusal Handling",
+        "type": "timeseries",
+        "gridPos": {"x": 16, "y": 15, "w": 8, "h": 6},
+        "targets": [
+          {"expr": "rag_full_refusal_total", "legendFormat": "{{result}}"}
+        ]
+      },
+      {
+        "id": 40,
+        "title": "HTTP Latency (P50/P95/P99)",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 21, "w": 12, "h": 6},
+        "targets": [
+          {"expr": "http_latency_ms{quantile=\"0.5\"}", "legendFormat": "P50"},
+          {"expr": "http_latency_ms{quantile=\"0.95\"}", "legendFormat": "P95"},
+          {"expr": "http_latency_ms{quantile=\"0.99\"}", "legendFormat": "P99"}
+        ]
+      },
+      {
+        "id": 41,
+        "title": "Error Rate",
+        "type": "timeseries",
+        "gridPos": {"x": 12, "y": 21, "w": 12, "h": 6},
+        "targets": [
+          {"expr": "rate(http_errors_total[5m])", "legendFormat": "{{status}}"},
+          {"expr": "rate(agent_timeouts_total[5m])", "legendFormat": "Agent Timeouts"}
+        ]
+      }
+    ],
+    "refresh": "30s",
+    "time": {"from": "now-1h", "to": "now"}
+  }
+}

@@ -17,6 +17,7 @@ class LLMResponse:
     reasoning_content: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     is_final: bool = True
+    finish_reason: str | None = None
 
 
 @dataclass
@@ -34,6 +35,7 @@ class BaseLLM(ABC):
         self,
         messages: list[ChatMessage],
         tools: list[dict[str, Any]] | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncGenerator[LLMResponse, None]:
         """Async generator yielding LLMResponse chunks for streaming"""
         raise NotImplementedError

@@ -25,6 +25,10 @@ qdrant_required = pytest.mark.skipif(
 
 async def _ensure_collection_dim(db) -> int | None:
     """Check collection dimension matches embedding API. Returns dim or None if mismatch."""
+    api_key = settings.embedding_api_key or settings.llm_api_key
+    if not api_key or api_key == "your-api-key-here":
+        pytest.skip("Embedding API key not configured")
+
     from embedding.factory import create_embedding
     emb = create_embedding()
     try:
@@ -144,13 +148,13 @@ async def test_dedup_different_docs_similar_text():
     """Similar text from different docs: newer doc's chunk wins."""
     from datetime import datetime, timedelta
 
-    from models.database import async_session
+    from models.database import session_scope
     from models.orm import Document
 
     doc1_id = "test-dedup-doc-1"
     doc2_id = "test-dedup-doc-2"
 
-    async with async_session() as session:
+    async with session_scope() as session:
         session.add(Document(id=doc1_id, filename="a.txt", file_hash="h1",
                              file_size=100, file_type=".txt", status="ready",
                              created_at=datetime.now(UTC) - timedelta(days=1)))
@@ -170,7 +174,7 @@ async def test_dedup_different_docs_similar_text():
         assert len(kept) == 1
         assert kept[0].document_id == doc2_id
     finally:
-        async with async_session() as session:
+        async with session_scope() as session:
             from sqlalchemy import delete
             await session.execute(delete(Document).where(Document.id.in_([doc1_id, doc2_id])))
             await session.commit()
@@ -181,13 +185,13 @@ async def test_dedup_different_text_kept():
     """Different content from different docs: both kept."""
     from datetime import datetime
 
-    from models.database import async_session
+    from models.database import session_scope
     from models.orm import Document
 
     doc1_id = "test-dedup-doc-3"
     doc2_id = "test-dedup-doc-4"
 
-    async with async_session() as session:
+    async with session_scope() as session:
         session.add(Document(id=doc1_id, filename="a.txt", file_hash="h3",
                              file_size=100, file_type=".txt", status="ready",
                              created_at=datetime.now(UTC)))
@@ -205,7 +209,7 @@ async def test_dedup_different_text_kept():
         kept = await _dedup_results([r1, r2])
         assert len(kept) == 2
     finally:
-        async with async_session() as session:
+        async with session_scope() as session:
             from sqlalchemy import delete
             await session.execute(delete(Document).where(Document.id.in_([doc1_id, doc2_id])))
             await session.commit()

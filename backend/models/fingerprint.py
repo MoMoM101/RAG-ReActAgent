@@ -6,7 +6,6 @@ database matches the expected baseline before stamping it.
 """
 import hashlib
 import json
-from typing import Optional
 
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -72,7 +71,9 @@ async def diff_fingerprint(conn: AsyncConnection, expected_fingerprint: str) -> 
     Returns an empty list when the database matches.  Otherwise each entry
     describes one difference (missing table, extra column, wrong index, etc.).
     """
-    issues: list[str] = []
+    actual = await compute_fingerprint(conn)
+    if actual == expected_fingerprint:
+        return []
 
     def _diff(sync_conn) -> list[str]:
         insp = inspect(sync_conn)
@@ -82,4 +83,7 @@ async def diff_fingerprint(conn: AsyncConnection, expected_fingerprint: str) -> 
         return problems
 
     issues = await conn.run_sync(_diff)
-    return issues
+    return [
+        f"Fingerprint mismatch: expected {expected_fingerprint}, actual {actual}",
+        *issues,
+    ]

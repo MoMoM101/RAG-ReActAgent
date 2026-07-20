@@ -1,19 +1,20 @@
 """Alembic async environment for SQLite (aiosqlite)."""
 import asyncio
+
+# Import all models so Base.metadata is complete
+import sys
 from pathlib import Path
 
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
-# Import all models so Base.metadata is complete
-import sys
 _backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_backend_dir))
 
 from config import settings as _settings_module
-from models.database import Base
 from models import orm  # noqa: F401 — ensure all ORM models are registered
+from models.database import Base
 
 target_metadata = Base.metadata
 

@@ -89,6 +89,34 @@ describe("MessageBubble", () => {
     expect(screen.getByTitle("source text")).toBeInTheDocument();
   });
 
+  it("hides misleading warning when content is supported but citation markers are missing", () => {
+    const msg = makeMsg({
+      role: "assistant",
+      content: "supported answer",
+      verification: {
+        status: "partial", claim_count: 1, supported_claims: 1,
+        faithfulness: 1, citation_precision: 0, citation_recall: 0,
+        sources_used: 1, unsupported_claims: [], display_status: "hidden",
+      },
+    });
+    render(<MessageBubble message={msg} />);
+    expect(screen.queryByText(/来源支持不完整|缺少来源支持/)).not.toBeInTheDocument();
+  });
+
+  it("shows warning only when factual claims are unsupported", () => {
+    const msg = makeMsg({
+      role: "assistant",
+      content: "unsupported answer",
+      verification: {
+        status: "partial", claim_count: 2, supported_claims: 1,
+        faithfulness: 0.5, citation_precision: 0.5, citation_recall: 1,
+        sources_used: 1, unsupported_claims: ["unsupported claim"], display_status: "warning",
+      },
+    });
+    render(<MessageBubble message={msg} />);
+    expect(screen.getByText(/部分事实缺少来源支持/)).toBeInTheDocument();
+  });
+
   it("renders code block with language label", () => {
     const msg = makeMsg({
       role: "assistant",

@@ -104,13 +104,13 @@ def ndcg_at_k(
 
     # Build grade lookup (empty section_key = document-level match, any section_key)
     grade_map: dict[tuple[str, str], int] = {}
-    doc_grades: dict[str, int] = {}  # document-level fallback grades
+    doc_grades: dict[str, int] = {}  # explicit document-level fallback grades
     for q in qrels:
         if q.section_key:
             key = (q.document_key, q.section_key)
             if q.grade > grade_map.get(key, 0):
                 grade_map[key] = q.grade
-        if q.grade > doc_grades.get(q.document_key, 0):
+        elif q.grade > doc_grades.get(q.document_key, 0):
             doc_grades[q.document_key] = q.grade
 
     # DCG from retrieved
@@ -124,9 +124,10 @@ def ndcg_at_k(
             rel = doc_grades[item.document_key]  # document-level fallback
         dcg += rel / math.log2(i + 2)
 
-    # IDCG: use section-level grades if available, otherwise document-level
-    source_grades = grade_map if grade_map else doc_grades
-    ideal_grades = sorted(source_grades.values(), reverse=True)[:k]
+    # IDCG includes every explicitly judged section/document exactly once.
+    ideal_grades = sorted(
+        [*grade_map.values(), *doc_grades.values()], reverse=True
+    )[:k]
     idcg = sum(g / math.log2(i + 2) for i, g in enumerate(ideal_grades))
 
     if idcg == 0:

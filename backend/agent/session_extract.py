@@ -86,17 +86,21 @@ async def _extract_with_llm(conversation_text: str) -> list[dict]:
 - **不要提取 AI 助手回答中的知识/事实内容**（如技术定义、文档摘要等）
 - **不要提取知识库操作行为**（如"用户上传了某文档"、"用户在知识库中放置了某文件"等）
 - **只提取标注为 [user] 的消息中的信息，忽略 [assistant] 和 [tool] 消息**
+- **如果用户同时透露了名字和职业，必须分别提取为 identity_name 和 identity_role，不要合并**
+- **content 字段只填提取到的值本身（如"馍馍"），不要加"用户叫"/"用户是"等前缀**
 
 记忆类型 (memory_type):
-- identity: 用户身份信息（姓名、职业、角色）
+- identity_name: 用户姓名或昵称
+- identity_role: 用户的职业、身份、角色
 - preference: 用户偏好（喜欢什么、不喜欢什么）
 - decision: 用户做的决定（技术选型、方案选择）
 - fact: 与用户相关的事实（项目名、在做的事）
 
 输出格式:
 [
-  {"content": "用户是Python开发者", "memory_type": "identity"},
-  {"content": "用户决定用FastAPI做后端", "memory_type": "decision"}
+  {"content": "张三", "memory_type": "identity_name"},
+  {"content": "Python开发者", "memory_type": "identity_role"},
+  {"content": "决定用FastAPI做后端", "memory_type": "decision"}
 ]
 
 如果对话中没有用户个人信息，返回空数组 []。

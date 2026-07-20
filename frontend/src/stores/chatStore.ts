@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DisplayMessage, AgentStep } from "../types/chat";
+import type { DisplayMessage, AgentStep, GroundingVerification, SourceReference } from "../types/chat";
 import type { SSEState } from "../types";
 import { sendMessage } from "../api/chat";
 import { listConversations, createConversation, deleteConversation, deleteAllConversations, getMessages, renameConversation } from "../api/conversations";
@@ -23,6 +23,9 @@ interface ChatStore {
   stop: () => void;
   clearError: () => void;
 }
+
+const EMPTY_ANSWER_FALLBACK = "抱歉，本次未收到有效回答，请重试或换一种问法。";
+const INTERRUPTED_ANSWER_FALLBACK = "回答连接已中断，未收到有效正文，请重试。";
 
 export const useChatStore = create<ChatStore>((set, get) => ({
   messages: [],
@@ -65,7 +68,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       for (const m of (msgs as Array<{
         id: string; role: string; content: string | null;
         tool_name?: string; tool_call_id?: string; tool_args?: string;
-        sources?: string; created_at: string;
+        sources?: string; verification?: string; created_at: string;
       }>)) {
         if (m.role === "tool") {
           const content = m.content || "";
@@ -108,6 +111,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             content: m.content || "",
             steps: [],
             sources: m.sources ? JSON.parse(m.sources) : undefined,
+            verification: m.verification ? JSON.parse(m.verification) : undefined,
             isStreaming: false,
           });
         }
@@ -187,9 +191,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             last.content += (event.data as { delta: string }).delta || "";
           }
           if (event.event === "sources") {
-            last.sources = event.data as Array<{ document_id: string; text: string }>;
+            last.sources = event.data as SourceReference[];
+          }
+          if (event.event === "verification") {
+            last.verification = event.data as unknown as GroundingVerification;
           }
           if (event.event === "done" || event.event === "error") {
+            if (!last.content.trim()) {
+              last.content = event.event === "error"
+                ? INTERRUPTED_ANSWER_FALLBACK
+                : EMPTY_ANSWER_FALLBACK;
+            }
             last.isStreaming = false;
             last.duration = Date.now() - (last.startTime || Date.now());
           }
@@ -216,6 +228,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           const msgs = [...s.messages];
           const last = msgs[msgs.length - 1];
           if (last.role === "assistant") {
+            if (!last.content.trim()) {
+              last.content = INTERRUPTED_ANSWER_FALLBACK;
+            }
             last.isStreaming = false;
             last.duration = Date.now() - (last.startTime || Date.now());
             msgs[msgs.length - 1] = { ...last };
@@ -234,6 +249,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           const msgs = [...s.messages];
           const last = msgs[msgs.length - 1];
           if (last.role === "assistant") {
+            if (!last.content.trim()) {
+              last.content = EMPTY_ANSWER_FALLBACK;
+            }
             last.isStreaming = false;
             if (!last.duration) {
               last.duration = Date.now() - (last.startTime || Date.now());

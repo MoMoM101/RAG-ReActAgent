@@ -37,6 +37,9 @@ All settings are loaded from `backend/.env` via `pydantic-settings`. Copy `backe
 |----------|---------|-------------|
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/rag_agent.db` | SQLite path |
 | `UPLOAD_DIR` | `./data/uploads` | Uploaded files directory |
+| `DOCUMENT_MAX_UPLOAD_MB` | `200` | Maximum document upload size; valid range `1-512` MB |
+| `DOCUMENT_BATCH_MAX_FILES` | `50` | Maximum files accepted in one batch; valid range `2-200` |
+| `DOCUMENT_BATCH_MAX_TOTAL_MB` | `1024` | Maximum total size of one batch; valid range `1-10240` MB |
 
 ## Agent
 

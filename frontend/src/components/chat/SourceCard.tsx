@@ -1,7 +1,10 @@
 import { useState } from "react";
 
 interface Source {
+  citation_id?: string;
   document_id: string;
+  document_key?: string;
+  section_key?: string;
   filename?: string;
   text: string;
   score?: number;
@@ -22,7 +25,7 @@ export function SourceCard({ sources }: { sources: Source[] }) {
         >
           {activeIdx === i
             ? s.text.slice(0, 200) + (s.text.length > 200 ? "…" : "")
-            : `${s.rank ? `#${s.rank} ` : ""}${s.filename || s.document_id.slice(0, 8) + "…"}${s.score ? ` (${s.score.toFixed(3)})` : ""}`}
+            : `${s.citation_id ? `[${s.citation_id}] ` : s.rank ? `#${s.rank} ` : ""}${s.filename || s.document_id.slice(0, 8) + "…"}${s.section_key ? ` · ${s.section_key}` : ""}${s.score ? ` (${s.score.toFixed(3)})` : ""}`}
         </button>
       ))}
     </div>

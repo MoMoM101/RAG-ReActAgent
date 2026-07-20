@@ -1,3 +1,5 @@
+import asyncio
+import uuid
 from contextlib import suppress
 
 import pytest
@@ -116,3 +118,34 @@ async def test_client_marks_unhealthy_on_search_error():
     reset_client_for_test()
     new_client = _get_client()
     assert new_client is not None
+
+
+@pytest.mark.asyncio
+@qdrant_required
+async def test_concurrent_upserts_local_mode():
+    """Local-mode Qdrant persists to a single sqlite3 connection that is not
+    thread-safe.  Concurrent upserts from asyncio.to_thread pool threads must
+    be serialized by the adapter, otherwise sqlite raises SQLITE_MISUSE
+    ("bad parameter or other API misuse")."""
+    from vectordb.qdrant import QdrantVectorDB, reset_client_for_test
+
+    if settings.qdrant_host:
+        pytest.skip("server mode is concurrency-safe; this test targets local mode")
+
+    reset_client_for_test()
+    db = QdrantVectorDB(collection_name="test_concurrent_upserts")
+    dim = settings.embedding_dim
+    await db.ensure_collection(dim)
+
+    def _batch(n: int) -> list[dict]:
+        return [
+            {
+                "id": str(uuid.uuid4()),
+                "vector": [float(i % 7)] + [0.0] * (dim - 1),
+                "payload": {"document_id": f"doc_{n}", "text": f"chunk {i}"},
+            }
+            for i in range(50)
+        ]
+
+    for _round in range(5):
+        await asyncio.gather(*(db.upsert(_batch(n)) for n in range(4)))

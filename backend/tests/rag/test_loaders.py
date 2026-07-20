@@ -22,6 +22,34 @@ def test_load_csv(tmp_path):
     assert "Alice" in text
     assert "30" in text
 
+
+def test_load_csv_handles_bom_and_escapes_markdown_cells(tmp_path):
+    f = tmp_path / "escaped.csv"
+    f.write_text('\ufeffname,note\nAlice,"first|second\nline"', encoding="utf-8")
+
+    text = load_csv(str(f))
+
+    assert "name" in text
+    assert r"first\|second<br>line" in text
+
+
+def test_load_csv_empty_file(tmp_path):
+    f = tmp_path / "empty.csv"
+    f.write_text("", encoding="utf-8")
+
+    assert load_csv(str(f)) == ""
+
+
+def test_load_csv_caps_data_rows(tmp_path):
+    f = tmp_path / "large.csv"
+    rows = ["value", *(f"row-{index}" for index in range(10_001))]
+    f.write_text("\n".join(rows), encoding="utf-8")
+
+    text = load_csv(str(f))
+
+    assert "row-9999" in text
+    assert "row-10000" not in text
+
 def test_load_document_routing(tmp_path):
     f = tmp_path / "test.txt"
     f.write_text("test content", encoding="utf-8")

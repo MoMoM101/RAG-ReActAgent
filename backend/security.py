@@ -8,7 +8,6 @@ warning) so existing E2E and CI scripts continue to work during the transition.
 import logging
 import secrets as _secrets
 from dataclasses import dataclass
-from typing import Any
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -19,6 +18,11 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def generate_admin_token() -> str:
+    """Return a cryptographically secure token for first-run administration."""
+    return _secrets.token_urlsafe(32)
 
 
 @dataclass
@@ -55,12 +59,12 @@ async def jwt_auth(request: Request) -> None:
             return
         except HTTPException:
             raise
-        except Exception as e:
-            logger.warning("JWT verification failed: %s", e)
+        except Exception as exc:
+            logger.warning("JWT verification failed: %s", exc)
             raise HTTPException(
                 status_code=HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
-            )
+            ) from exc
 
     # Fall back to legacy X-Admin-Token
     if settings.legacy_admin_token_enabled and settings.admin_api_token:

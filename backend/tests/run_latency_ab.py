@@ -174,8 +174,16 @@ def generate_report(all_metrics: list[dict], output_dir: Path, date_str: str):
         for m in all_metrics:
             if m["profile"] == "control":
                 continue
-            ttft_delta = (m.get("ttft_p95", 0) - control.get("ttft_p95", 0)) / max(control.get("ttft_p95", 0.001), 0.001) * 100
-            total_delta = (m.get("rag_total_p95", 0) - control.get("rag_total_p95", 0)) / max(control.get("rag_total_p95", 0.001), 0.001) * 100
+            ttft_delta = (
+                (m.get("ttft_p95", 0) - control.get("ttft_p95", 0))
+                / max(control.get("ttft_p95", 0.001), 0.001)
+                * 100
+            )
+            total_delta = (
+                (m.get("rag_total_p95", 0) - control.get("rag_total_p95", 0))
+                / max(control.get("rag_total_p95", 0.001), 0.001)
+                * 100
+            )
             faith_delta = (m.get("avg_faithfulness", 0) - control.get("avg_faithfulness", 0)) * 100
             lines.append(
                 f"| {m['profile']} | {ttft_delta:+.1f}% | {total_delta:+.1f}% | {faith_delta:+.2f}pp |"

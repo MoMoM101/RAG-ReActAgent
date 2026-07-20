@@ -1,0 +1,271 @@
+{
+  "schema_version": "1.0",
+  "scoring_version": "claim-evidence-v4-conditional-definition",
+  "evaluation_scope": "production-like-controlled-online",
+  "timestamp": "2026-07-16T15:46:14.474936+00:00",
+  "provenance": {
+    "dataset_sha256": "fefac49bdeab1ece702bdbeb61a1034b16aa431754d5387ae38da968b3e6247c",
+    "verifier_sha256": "58f600f1695db09bba8c5a15f54214883520015a04991b01000b898ddcd48ba9",
+    "evaluator_sha256": "f180aa0e95343c2149d6dbc9204228bc5cd65085cd96002d2585579b5efc330b",
+    "optimized_prompt_sha256": "d7202622d47c00ff5c48777524a586ab80c77d2fe25c9c988f93c4fa3e4de255"
+  },
+  "dataset": {
+    "name": "rag-agent-eval-v2",
+    "version": "2.0"
+  },
+  "methodology": {
+    "control": "legacy source-only prompt without mandatory citations",
+    "optimized": "V4 selective false-refusal retry, deterministic claim-level citation repair, and one timeout-bounded LLM repair",
+    "retrieval": "same production splitter + BM25 top-5 sources for both groups",
+    "scoring": "deterministic claim-to-evidence verifier; answerability is labeled independently from retrieval relevance",
+    "latency": "timer starts after acquiring the local concurrency slot"
+  },
+  "aggregate": {
+    "control": {
+      "queries_completed": 1,
+      "answerable_queries": 1,
+      "unanswerable_queries": 0,
+      "partially_answerable_queries": 1,
+      "faithfulness": 1.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "abstention_accuracy": null,
+      "expected_fact_recall": 1.0,
+      "answer_completion_accuracy": 1.0,
+      "avg_latency_ms": 1839.6566000010353,
+      "latency_p50_ms": 1839.6566000010353,
+      "latency_p95_ms": 1839.6566000010353,
+      "latency_p99_ms": 1839.6566000010353,
+      "ttft_p50_ms": 784.320699996897,
+      "ttft_p95_ms": 784.320699996897,
+      "avg_draft_ms": 1388.7945000024047,
+      "avg_verification_ms": 0.0,
+      "avg_repair_ms": null,
+      "errors": 0,
+      "repair_triggered_count": 0,
+      "repair_trigger_rate": 0.0,
+      "repair_by_reason": {},
+      "diagnostic_by_reason": {},
+      "repair_accepted_count": 0,
+      "repair_accept_rate": 0.0,
+      "llm_repair_triggered_count": 0,
+      "llm_repair_rate": 0.0,
+      "llm_repair_accept_rate": 0.0
+    },
+    "optimized": {
+      "queries_completed": 1,
+      "answerable_queries": 1,
+      "unanswerable_queries": 0,
+      "partially_answerable_queries": 1,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "abstention_accuracy": null,
+      "expected_fact_recall": 1.0,
+      "answer_completion_accuracy": 1.0,
+      "avg_latency_ms": 1169.3908000015654,
+      "latency_p50_ms": 1169.3908000015654,
+      "latency_p95_ms": 1169.3908000015654,
+      "latency_p99_ms": 1169.3908000015654,
+      "ttft_p50_ms": 383.4878999987268,
+      "ttft_p95_ms": 383.4878999987268,
+      "avg_draft_ms": 1169.0402000022004,
+      "avg_verification_ms": 0.3282999969087541,
+      "avg_repair_ms": null,
+      "errors": 0,
+      "repair_triggered_count": 0,
+      "repair_trigger_rate": 0.0,
+      "repair_by_reason": {},
+      "diagnostic_by_reason": {},
+      "repair_accepted_count": 0,
+      "repair_accept_rate": 0.0,
+      "llm_repair_triggered_count": 0,
+      "llm_repair_rate": 0.0,
+      "llm_repair_accept_rate": 0.0
+    }
+  },
+  "quality_gate": {
+    "passed": false,
+    "violations": [
+      "abstention_accuracy=None below 0.98"
+    ],
+    "floors": {
+      "citation_precision": 0.95,
+      "citation_recall": 0.95,
+      "abstention_accuracy": 0.98,
+      "expected_fact_recall": 0.85,
+      "answer_completion_accuracy": 0.95,
+      "max_faithfulness_regression": 0.0,
+      "max_fact_recall_regression": 0.02
+    }
+  },
+  "performance_gate": {
+    "passed": true,
+    "violations": [],
+    "targets": {
+      "ttft_p50_ms": 1000.0,
+      "ttft_p95_ms": 2500.0,
+      "latency_p50_ms": 2000.0,
+      "latency_p95_ms": 5000.0,
+      "latency_p99_ms": 10000.0,
+      "llm_repair_rate": 0.1,
+      "llm_repair_accept_rate": 0.4
+    }
+  },
+  "records": [
+    {
+      "query_id": "multi-hop-003",
+      "query": "用 Django 的 ORM 和用 SQLAlchemy 在 FastAPI 中操作数据库的体验有什么不同",
+      "mode": "control",
+      "answerable": true,
+      "answer": "根据现有资料，无法比较 Django ORM 与 SQLAlchemy 在 FastAPI 中操作数据库的体验差异。资料仅提到 Django 内置 ORM，而 Flask 可以通过扩展使用 SQLAlchemy，未涉及 FastAPI 的相关使用对比。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 6.039657226022576,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 5.376257081183727,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-2",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "flask",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Flask\n\nFlask 是一个轻量级微框架，核心只包含路由和请求/响应处理。\n开发者需要通过扩展来添加 ORM（如 SQLAlchemy）、表单验证（WTForms）等功能。\nFlask 的设计哲学是\"显式优于隐式\"，给予开发者最大自由度。\n适合小型 API 服务、微服务和原型开发。",
+          "score": 5.2813101271781715,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 4.7186674646998235,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-3-4",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "选型建议",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## 选型建议\n\n大型全栈项目选择 Django，简单 API 服务选择 Flask，\n高性能异步 API 或 ML 模型部署选择 FastAPI。\n三者共享 Python 生态：均可用 pip 安装，支持 virtualenv/conda 环境管理。",
+          "score": 4.4888508214832905,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 1839.6566000010353,
+      "faithfulness": 1.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "partial",
+      "answerability": "partial",
+      "answer_completion_correct": true,
+      "error": null,
+      "repair_used": "none",
+      "repair_reasons": null,
+      "repair_triggered": false,
+      "draft_latency_ms": 1388.7945000024047,
+      "verification_latency_ms": 0.0,
+      "repair_latency_ms": 0.0,
+      "ttft_ms": 784.320699996897
+    },
+    {
+      "query_id": "multi-hop-003",
+      "query": "用 Django 的 ORM 和用 SQLAlchemy 在 FastAPI 中操作数据库的体验有什么不同",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- Django 提供内置 ORM [S1]。  \n- Flask 需要通过扩展添加 ORM（如 SQLAlchemy）[S3]。  \n无法确认：问题中 FastAPI 使用 SQLAlchemy 的体验，以及 Django ORM 与 SQLAlchemy 在操作数据库时的差异。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 6.039657226022576,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 5.376257081183727,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-2",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "flask",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Flask\n\nFlask 是一个轻量级微框架，核心只包含路由和请求/响应处理。\n开发者需要通过扩展来添加 ORM（如 SQLAlchemy）、表单验证（WTForms）等功能。\nFlask 的设计哲学是\"显式优于隐式\"，给予开发者最大自由度。\n适合小型 API 服务、微服务和原型开发。",
+          "score": 5.2813101271781715,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 4.7186674646998235,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-3-4",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "选型建议",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## 选型建议\n\n大型全栈项目选择 Django，简单 API 服务选择 Flask，\n高性能异步 API 或 ML 模型部署选择 FastAPI。\n三者共享 Python 生态：均可用 pip 安装，支持 virtualenv/conda 环境管理。",
+          "score": 4.4888508214832905,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 1169.3908000015654,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "verified",
+      "answerability": "partial",
+      "answer_completion_correct": true,
+      "error": null,
+      "repair_used": "none",
+      "repair_reasons": null,
+      "repair_triggered": false,
+      "draft_latency_ms": 1169.0402000022004,
+      "verification_latency_ms": 0.3282999969087541,
+      "repair_latency_ms": 0.0,
+      "ttft_ms": 383.4878999987268
+    }
+  ]
+}

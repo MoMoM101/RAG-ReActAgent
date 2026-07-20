@@ -31,8 +31,8 @@ def _create_template_db(target_revision: str) -> Path:
     Uses cfg.set_main_option so alembic/env.py targets the template file
     instead of the test database.
     """
-    from alembic.config import Config as AlcCfg
     from alembic import command as alc_cmd
+    from alembic.config import Config as AlcCfg
 
     tmp = Path(tempfile.mkdtemp(prefix=f"test_template_{target_revision}_"))
     db_path = tmp / "template.db"
@@ -192,10 +192,11 @@ def _build_test_backup_tar(
                 fp.write_bytes(content)
 
         # Determine db_schema_revision for manifest
-        if schema == "legacy":
-            actual_revision = None
-        else:
-            actual_revision = _read_alembic_revision_from_db(db_path)
+        actual_revision = (
+            None
+            if schema == "legacy"
+            else _read_alembic_revision_from_db(db_path)
+        )
 
         # Build manifest
         if include_manifest:

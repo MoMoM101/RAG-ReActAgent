@@ -5,7 +5,6 @@ qdrant-client==1.13.0
 pymupdf==1.25.3
 python-docx==1.1.2
 openpyxl==3.1.5
-pandas==2.2.3
 tiktoken==0.8.0
 openai==1.70.0
 pydantic==2.10.5

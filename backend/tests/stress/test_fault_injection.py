@@ -1,7 +1,9 @@
 """Fault injection tests: verify degradation behavior under failure conditions."""
 
+import pytest
 
 
+@pytest.mark.filterwarnings("ignore:Failed to obtain server version.*:UserWarning")
 class TestRetrievalFallbacks:
     async def test_keyword_only_fallback_when_qdrant_unavailable(self):
         from config import settings

@@ -10,6 +10,15 @@ Grade scale: 3=perfect, 2=highly relevant, 1=partially relevant, 0=not relevant
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+Answerability = Literal["full", "partial", "none"]
+
+
+def normalize_section_key(value: str, max_len: int = 30) -> str:
+    """Canonicalize qrels keys with the same rules as the production splitter."""
+    import re
+    return re.sub(r"[^a-zA-Z0-9一-鿿_-]", "-", value.strip()).strip("-")[:max_len].lower()
 
 
 @dataclass
@@ -30,7 +39,7 @@ class RelevantItem:
     def from_dict(cls, d: dict) -> RelevantItem:
         return cls(
             document_key=d["document_key"],
-            section_key=d.get("section_key", ""),
+            section_key=normalize_section_key(d.get("section_key", "")),
             grade=d.get("grade", 3),
         )
 
@@ -43,6 +52,14 @@ class QrelQuery:
     relevant: list[RelevantItem] = field(default_factory=list)
     expected_answer_facts: list[str] = field(default_factory=list)  # for answer eval
     must_cite: list[str] = field(default_factory=list)  # e.g. ["paygate#error-40003"]
+    # Retrieval relevance and answerability are deliberately separate. A passage
+    # may mention the queried entities without containing the requested relation.
+    answerability: Answerability = "full"
+    # Each entry is one semantic fact. Human annotators may separate accepted
+    # surface forms with ``|`` (for example ``feta|菲达``); matching any one
+    # expression satisfies that fact without requiring every synonym.
+    answer_expected_facts: list[str] = field(default_factory=list)
+    answerability_rationale: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -51,16 +68,26 @@ class QrelQuery:
             "relevant": [r.to_dict() for r in self.relevant],
             "expected_answer_facts": self.expected_answer_facts,
             "must_cite": self.must_cite,
+            "answerability": self.answerability,
+            "answer_expected_facts": self.answer_expected_facts,
+            "answerability_rationale": self.answerability_rationale,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> QrelQuery:
+        inferred = "full" if d.get("relevant", []) else "none"
+        answerability = d.get("answerability", inferred)
+        if answerability not in {"full", "partial", "none"}:
+            raise ValueError(f"invalid answerability: {answerability}")
         return cls(
             query_id=d["query_id"],
             query=d["query"],
             relevant=[RelevantItem.from_dict(r) for r in d.get("relevant", [])],
             expected_answer_facts=d.get("expected_answer_facts", []),
             must_cite=d.get("must_cite", []),
+            answerability=answerability,
+            answer_expected_facts=d.get("answer_expected_facts", []),
+            answerability_rationale=d.get("answerability_rationale", ""),
         )
 
 
@@ -113,7 +140,6 @@ def section_key_from_text(text: str, max_len: int = 30) -> str:
     import re
     m = re.search(r"^#{1,6}\s+(.+)$", text, re.MULTILINE)
     if m:
-        key = re.sub(r"[^a-zA-Z0-9一-鿿_-]", "-", m.group(1).strip())
-        return key.strip("-")[:max_len].lower()
+        return normalize_section_key(m.group(1), max_len)
     first_line = text.split("\n")[0].strip()[:max_len]
-    return re.sub(r"[^a-zA-Z0-9一-鿿_-]", "-", first_line).strip("-").lower() or "section"
+    return normalize_section_key(first_line, max_len) or "section"

@@ -128,6 +128,27 @@ export function MessageBubble({ message }: Props) {
           <SourceCard sources={message.sources} />
         )}
 
+        {message.verification && (
+          message.verification.display_status === "verified"
+          || message.verification.display_status === "warning"
+          || (!message.verification.display_status && (
+            message.verification.status === "verified"
+            || (message.verification.unsupported_claims?.length ?? 0) > 0
+          ))
+        ) && (
+          <div
+            title={`引用精确率 ${(message.verification.citation_precision * 100).toFixed(0)}%，引用完整率 ${(message.verification.citation_recall * 100).toFixed(0)}%`}
+            style={{
+              marginTop: 6,
+              fontSize: 11,
+              color: message.verification.display_status === "warning" ? "var(--warning, #b45309)" : "var(--success, #16a34a)",
+            }}
+          >
+            {message.verification.display_status === "warning" ? "⚠ 部分事实缺少来源支持" : "✓ 来源验证通过"}
+            {` · 忠实度 ${(message.verification.faithfulness * 100).toFixed(0)}%`}
+          </div>
+        )}
+
         {/* Feedback + Copy */}
         {!message.isStreaming && message.content && (
           <div className="feedback-btns">

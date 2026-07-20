@@ -1,10 +1,10 @@
 """Audit log query API — system_admin only."""
 
 from fastapi import APIRouter, Depends, Query, Request
+from security import get_current_user, require_role
 from sqlalchemy import text as sa_text
 
 from models.database import session_scope
-from security import get_current_user, require_role
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 

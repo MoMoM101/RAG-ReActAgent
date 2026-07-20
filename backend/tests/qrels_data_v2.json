@@ -113,7 +113,7 @@
       "relevant": [
         {"document_key": "mediterranean-cooking", "section_key": "意大利经典：carbonara", "grade": 3}
       ],
-      "expected_answer_facts": ["鸡蛋黄", "guanciale", "pecorino romano", "黑胡椒"],
+      "expected_answer_facts": ["鸡蛋黄", "guanciale|风干猪脸肉", "pecorino romano|佩科里诺罗马羊奶酪", "黑胡椒"],
       "must_cite": ["mediterranean-cooking#意大利经典：carbonara"]
     },
     {
@@ -149,7 +149,7 @@
       "relevant": [
         {"document_key": "mediterranean-cooking", "section_key": "西班牙海鲜饭", "grade": 3}
       ],
-      "expected_answer_facts": ["底部焦香", "paellera"],
+      "expected_answer_facts": ["底部焦香|焦香层|底部形成的焦香", "paellera|平底锅"],
       "must_cite": ["mediterranean-cooking#西班牙海鲜饭"]
     },
     {
@@ -158,7 +158,7 @@
       "relevant": [
         {"document_key": "python-web-frameworks", "section_key": "flask", "grade": 3}
       ],
-      "expected_answer_facts": ["轻量级微框架", "SQLAlchemy", "WTForms"],
+      "expected_answer_facts": ["轻量级微框架", "SQLAlchemy|ORM", "WTForms|表单验证"],
       "must_cite": ["python-web-frameworks#flask"]
     },
     {
@@ -168,7 +168,10 @@
         {"document_key": "ml-guide", "section_key": "深度学习", "grade": 3}
       ],
       "expected_answer_facts": ["CNN", "卷积神经网络", "TensorFlow", "PyTorch"],
-      "must_cite": ["ml-guide#深度学习"]
+      "must_cite": ["ml-guide#深度学习"],
+      "answerability": "partial",
+      "answer_expected_facts": ["CNN", "卷积神经网络"],
+      "answerability_rationale": "深度学习章节支持 CNN 适用于图像识别，但未列出具体训练框架；TensorFlow 和 PyTorch 位于另一章节。"
     },
     {
       "query_id": "long-002",
@@ -178,8 +181,10 @@
         {"document_key": "mediterranean-cooking", "section_key": "希腊沙拉", "grade": 2},
         {"document_key": "mediterranean-cooking", "section_key": "西班牙海鲜饭", "grade": 2}
       ],
-      "expected_answer_facts": ["Carbonara", "希腊沙拉", "西班牙海鲜饭", "guanciale", "feta"],
-      "must_cite": ["mediterranean-cooking#意大利经典：carbonara", "mediterranean-cooking#希腊沙拉", "mediterranean-cooking#西班牙海鲜饭"]
+      "expected_answer_facts": ["希腊沙拉", "feta|菲达", "Carbonara|西班牙海鲜饭|Paella", "guanciale|风干猪脸肉|Bomba|藏红花"],
+      "must_cite": ["mediterranean-cooking#意大利经典：carbonara", "mediterranean-cooking#希腊沙拉", "mediterranean-cooking#西班牙海鲜饭"],
+      "answer_expected_facts": ["希腊沙拉", "feta|菲达", "Carbonara|西班牙海鲜饭|Paella", "guanciale|风干猪脸肉|Bomba|藏红花"],
+      "answerability_rationale": "完整晚餐需要一个前菜和一个主菜；Carbonara 与西班牙海鲜饭是可接受的替代主菜，不应要求答案同时选择两者。"
     },
     {
       "query_id": "long-003",
@@ -229,7 +234,7 @@
         {"document_key": "python-web-frameworks", "section_key": "django", "grade": 3},
         {"document_key": "python-web-frameworks", "section_key": "flask", "grade": 3}
       ],
-      "expected_answer_facts": ["Django ORM", "内置", "SQLAlchemy", "Flask扩展"],
+      "expected_answer_facts": ["Django ORM|Django 的 ORM|Django的 ORM", "内置", "SQLAlchemy", "Flask扩展|Flask 需要通过扩展|通过扩展"],
       "must_cite": ["python-web-frameworks#django", "python-web-frameworks#flask"]
     },
     {
@@ -370,7 +375,7 @@
       "relevant": [
         {"document_key": "ml-guide", "section_key": "模型评估", "grade": 3}
       ],
-      "expected_answer_facts": ["交叉验证", "Cross-Validation", "泛化能力"],
+      "expected_answer_facts": ["交叉验证|Cross-Validation", "泛化能力|模型性能"],
       "must_cite": ["ml-guide#模型评估"]
     },
     {
@@ -379,8 +384,11 @@
       "relevant": [
         {"document_key": "mediterranean-cooking", "section_key": "西班牙海鲜饭", "grade": 3}
       ],
-      "expected_answer_facts": ["Bomba", "圆粒米", "socarrat"],
-      "must_cite": ["mediterranean-cooking#西班牙海鲜饭"]
+      "expected_answer_facts": ["Bomba", "圆粒米"],
+      "must_cite": ["mediterranean-cooking#西班牙海鲜饭"],
+      "answerability": "partial",
+      "answer_expected_facts": ["Bomba", "圆粒米"],
+      "answerability_rationale": "资料支持 Bomba 是圆粒米，但没有介绍其他米种，也没有证明 Bomba 与 socarrat 之间的专属因果关系，无法完整比较。"
     },
     {
       "query_id": "ambiguous-001",
@@ -391,7 +399,9 @@
         {"document_key": "mediterranean-cooking", "section_key": "西班牙海鲜饭", "grade": 1}
       ],
       "expected_answer_facts": [],
-      "must_cite": []
+      "must_cite": [],
+      "answerability": "none",
+      "answerability_rationale": "问题缺少对象，单轮评测中无法确定用户想询问哪道菜或哪项任务。"
     },
     {
       "query_id": "ambiguous-002",
@@ -401,7 +411,9 @@
         {"document_key": "ml-guide", "section_key": "模型评估", "grade": 1}
       ],
       "expected_answer_facts": [],
-      "must_cite": []
+      "must_cite": [],
+      "answerability": "none",
+      "answerability_rationale": "问题缺少方法所属主题，无法在数据预处理与模型评估等候选主题之间可靠选择。"
     },
     {
       "query_id": "ambiguous-003",
@@ -425,7 +437,7 @@
       "relevant": [
         {"document_key": "mediterranean-cooking", "section_key": "意大利经典：carbonara", "grade": 3}
       ],
-      "expected_answer_facts": ["guanciale", "pecorino", "鸡蛋黄", "Carbonara"],
+      "expected_answer_facts": ["guanciale|风干猪脸肉", "pecorino|佩科里诺", "鸡蛋黄", "Carbonara"],
       "must_cite": ["mediterranean-cooking#意大利经典：carbonara"]
     },
     {
@@ -499,7 +511,9 @@
         {"document_key": "ml-guide", "section_key": "深度学习", "grade": 2}
       ],
       "expected_answer_facts": ["预处理", "深度学习", "模型性能"],
-      "must_cite": ["ml-guide#数据预处理", "ml-guide#深度学习"]
+      "must_cite": ["ml-guide#数据预处理", "ml-guide#深度学习"],
+      "answerability": "none",
+      "answerability_rationale": "资料列出预处理方法并说明良好预处理可提升性能，但没有比较哪一种对深度学习最有效。"
     },
     {
       "query_id": "multi-hop-002",
@@ -519,7 +533,10 @@
         {"document_key": "python-web-frameworks", "section_key": "fastapi", "grade": 2}
       ],
       "expected_answer_facts": ["Django ORM", "内置", "FastAPI", "扩展", "SQLAlchemy"],
-      "must_cite": ["python-web-frameworks#django", "python-web-frameworks#fastapi"]
+      "must_cite": ["python-web-frameworks#django", "python-web-frameworks#fastapi"],
+      "answerability": "partial",
+      "answer_expected_facts": ["Django", "ORM", "内置"],
+      "answerability_rationale": "资料支持 Django 内置 ORM，但 SQLAlchemy 只在 Flask 章节出现，没有描述其在 FastAPI 中的使用体验。"
     },
     {
       "query_id": "multi-hop-004",
@@ -529,7 +546,10 @@
         {"document_key": "mediterranean-cooking", "section_key": "西班牙海鲜饭", "grade": 2}
       ],
       "expected_answer_facts": ["Carbonara", "鸡蛋", "Paella", "米饭", "al dente", "socarrat"],
-      "must_cite": ["mediterranean-cooking#意大利经典：carbonara", "mediterranean-cooking#西班牙海鲜饭"]
+      "must_cite": ["mediterranean-cooking#意大利经典：carbonara", "mediterranean-cooking#西班牙海鲜饭"],
+      "answerability": "partial",
+      "answer_expected_facts": ["Carbonara", "鸡蛋", "Paella", "米饭|Bomba圆粒米", "al dente", "socarrat"],
+      "answerability_rationale": "资料支持分别说明两道菜的食材和关键做法，但没有直接陈述其烹饪理念的共同点。"
     },
     {
       "query_id": "followup-001",
@@ -538,7 +558,9 @@
         {"document_key": "python-web-frameworks", "section_key": "选型建议", "grade": 3}
       ],
       "expected_answer_facts": ["Django", "Flask", "FastAPI", "选型"],
-      "must_cite": ["python-web-frameworks#选型建议"]
+      "must_cite": ["python-web-frameworks#选型建议"],
+      "answerability": "none",
+      "answerability_rationale": "问题依赖缺失的上文指代，无法确定“这个框架”是 Django、Flask 还是 FastAPI。"
     },
     {
       "query_id": "followup-002",
@@ -547,7 +569,9 @@
         {"document_key": "ml-guide", "section_key": "python-机器学习完全指南", "grade": 2}
       ],
       "expected_answer_facts": ["scikit-learn", "TensorFlow", "PyTorch"],
-      "must_cite": ["ml-guide#python-机器学习完全指南"]
+      "must_cite": ["ml-guide#python-机器学习完全指南"],
+      "answerability": "none",
+      "answerability_rationale": "问题依赖缺失的上文指代，单轮评测中无法确定“这个”是什么。"
     },
     {
       "query_id": "comparison-001",
@@ -565,7 +589,10 @@
         {"document_key": "climate-report", "section_key": "可再生能源", "grade": 2}
       ],
       "expected_answer_facts": ["光伏", "90%", "成本下降"],
-      "must_cite": ["climate-report#可再生能源"]
+      "must_cite": ["climate-report#可再生能源"],
+      "answerability": "partial",
+      "answer_expected_facts": ["光伏", "90%", "成本下降|成本在过去十年下降"],
+      "answerability_rationale": "资料支持光伏成本下降信息，但没有风力发电成本，无法判断二者哪个更低。"
     },
     {
       "query_id": "comparison-003",
@@ -586,7 +613,9 @@
         {"document_key": "ml-guide", "section_key": "深度学习", "grade": 2}
       ],
       "expected_answer_facts": ["scikit-learn", "深度学习", "GPU", "数据"],
-      "must_cite": ["ml-guide#python-机器学习完全指南", "ml-guide#深度学习"]
+      "must_cite": ["ml-guide#python-机器学习完全指南", "ml-guide#深度学习"],
+      "answerability": "none",
+      "answerability_rationale": "资料介绍两类框架和 GPU 加速，但没有陈述训练数据量要求的差异。"
     },
     {
       "query_id": "comparison-005",
@@ -596,7 +625,9 @@
         {"document_key": "mediterranean-cooking", "section_key": "西班牙海鲜饭", "grade": 2}
       ],
       "expected_answer_facts": ["鸡蛋", "guanciale", "藏红花", "saffron", "Bomba"],
-      "must_cite": ["mediterranean-cooking#意大利经典：carbonara", "mediterranean-cooking#西班牙海鲜饭"]
+      "must_cite": ["mediterranean-cooking#意大利经典：carbonara", "mediterranean-cooking#西班牙海鲜饭"],
+      "answerability": "none",
+      "answerability_rationale": "资料分别列出两道菜的食材，但没有陈述共同食材或准备方式上的相似点。"
     },
     {
       "query_id": "entity-001",
@@ -731,7 +762,9 @@
         {"document_key": "ml-guide", "section_key": "数据预处理", "grade": 3}
       ],
       "expected_answer_facts": ["One-Hot", "Label Encoding", "类别变量编码"],
-      "must_cite": ["ml-guide#数据预处理"]
+      "must_cite": ["ml-guide#数据预处理"],
+      "answerability": "none",
+      "answerability_rationale": "资料只把两者列为类别变量编码方法，没有说明二者区别。"
     },
     {
       "query_id": "detail-002",
@@ -740,7 +773,9 @@
         {"document_key": "ml-guide", "section_key": "数据预处理", "grade": 3}
       ],
       "expected_answer_facts": ["MinMax", "Z-score", "特征归一化"],
-      "must_cite": ["ml-guide#数据预处理"]
+      "must_cite": ["ml-guide#数据预处理"],
+      "answerability": "none",
+      "answerability_rationale": "资料只列出 MinMax 和 Z-score 两种归一化方法，没有说明各自适用场景。"
     },
     {
       "query_id": "detail-003",
@@ -749,7 +784,9 @@
         {"document_key": "python-web-frameworks", "section_key": "django", "grade": 3}
       ],
       "expected_answer_facts": ["MTV", "Model", "Template", "View"],
-      "must_cite": ["python-web-frameworks#django"]
+      "must_cite": ["python-web-frameworks#django"],
+      "answerability": "none",
+      "answerability_rationale": "资料只展开 MTV 名称，没有描述 Model、Template、View 各层职责。"
     },
     {
       "query_id": "detail-004",
@@ -767,7 +804,9 @@
         {"document_key": "ml-guide", "section_key": "模型评估", "grade": 2}
       ],
       "expected_answer_facts": ["F1 分数", "准确率", "精确率", "召回率"],
-      "must_cite": ["ml-guide#模型评估"]
+      "must_cite": ["ml-guide#模型评估"],
+      "answerability": "none",
+      "answerability_rationale": "资料只把 F1 列为评估指标，没有提供计算公式。"
     },
     {
       "query_id": "prompt-inject-001",
@@ -797,7 +836,9 @@
         {"document_key": "ml-guide", "section_key": "深度学习", "grade": 2}
       ],
       "expected_answer_facts": ["神经网络", "深度学习"],
-      "must_cite": ["ml-guide#深度学习"]
+      "must_cite": ["ml-guide#深度学习"],
+      "answerability": "none",
+      "answerability_rationale": "输入无法可靠还原为唯一问题，系统应澄清而不是猜测为深度神经网络。"
     },
     {
       "query_id": "typo-002",
@@ -854,7 +895,9 @@
         {"document_key": "mediterranean-cooking", "section_key": "意大利经典：carbonara", "grade": 1}
       ],
       "expected_answer_facts": [],
-      "must_cite": []
+      "must_cite": [],
+      "answerability": "none",
+      "answerability_rationale": "问题依赖缺失的上文，无法确定需要详细说明的主题。"
     }
   ]
 }

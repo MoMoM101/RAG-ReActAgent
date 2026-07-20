@@ -1,9 +1,10 @@
 import hashlib
 import os
+import re
 import tempfile
+from collections.abc import AsyncIterator
 from contextlib import suppress
 from pathlib import Path
-from typing import AsyncIterator
 
 from config import settings
 
@@ -63,25 +64,45 @@ def finalize_upload(temp_path: str, filename: str) -> str:
     return str(file_path)
 
 
-def find_upload(filename: str, file_type: str) -> str | None:
+def find_upload(
+    filename: str,
+    file_type: str,
+    *,
+    expected_sha256: str | None = None,
+    root_dir: str | Path | None = None,
+) -> str | None:
     """Locate an original upload, including collision-suffixed filenames."""
-    if not UPLOAD_DIR.is_dir():
+    upload_dir = Path(root_dir).resolve() if root_dir is not None else UPLOAD_DIR
+    if not upload_dir.is_dir():
         return None
-    exact = _safe_path(filename)
-    if exact.is_file():
+    exact = (upload_dir / Path(filename).name).resolve()
+    if not exact.is_relative_to(upload_dir):
+        return None
+    if exact.is_file() and _matches_hash(exact, expected_sha256):
         return str(exact)
 
     stem = Path(filename).stem
     if not stem:
         return None
-    for candidate in UPLOAD_DIR.iterdir():
+    for candidate in upload_dir.iterdir():
         if (
             candidate.is_file()
             and candidate.name.startswith(f"{stem}_")
             and candidate.name.endswith(file_type)
+            and _matches_hash(candidate, expected_sha256)
         ):
             return str(candidate)
     return None
+
+
+def _matches_hash(path: Path, expected_sha256: str | None) -> bool:
+    if not expected_sha256 or len(expected_sha256) != 64:
+        return True
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        while chunk := source.read(64 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest() == expected_sha256.lower()
 
 
 def delete_file(file_path: str) -> None:
@@ -208,3 +229,38 @@ class LocalFileStorage(FileStorage):
 
     async def exists(self, storage_key: str) -> bool:
         return self._safe_path(storage_key).exists()
+
+    def local_path(self, storage_key: str) -> str:
+        """Return a verified local path for zero-copy document processing."""
+        path = self._safe_path(storage_key)
+        if not path.is_file():
+            raise FileNotFoundError(storage_key)
+        return str(path)
+
+    async def clear(self) -> None:
+        """Clear known storage layouts without traversing arbitrary directories."""
+        if self._staging_dir.is_dir():
+            for staged in self._staging_dir.iterdir():
+                if staged.is_file():
+                    staged.unlink()
+
+        key_pattern = re.compile(r"^[0-9a-f]{64}$")
+        for first in self._root.iterdir():
+            if first == self._staging_dir:
+                continue
+            if first.is_file():
+                # Legacy uploads lived directly under the configured root.
+                first.unlink()
+                continue
+            if not re.fullmatch(r"[0-9a-f]{2}", first.name):
+                continue
+            for second in first.iterdir():
+                if not second.is_dir() or not re.fullmatch(r"[0-9a-f]{2}", second.name):
+                    continue
+                for stored in second.iterdir():
+                    if stored.is_file() and key_pattern.fullmatch(stored.name):
+                        stored.unlink()
+                with suppress(OSError):
+                    second.rmdir()
+            with suppress(OSError):
+                first.rmdir()

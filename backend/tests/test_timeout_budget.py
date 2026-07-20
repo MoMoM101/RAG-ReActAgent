@@ -60,7 +60,7 @@ class TestAsyncTimeout:
 
         try:
             result = await asyncio.wait_for(maybe_slow(), timeout=0.005)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             result = "timeout_fallback"
 
         assert result == "timeout_fallback"

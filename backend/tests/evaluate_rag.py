@@ -12,17 +12,19 @@
 旧版 compute_metrics() 仅供历史结果读取，禁止生成新基线。
 """
 
-import io
 import json
 import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Force UTF-8 output on Windows
-if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+# Force UTF-8 only for direct CLI execution. Replacing pytest's capture streams
+# at import time closes the underlying temporary files during test teardown.
+if sys.platform == "win32" and __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # Ensure backend is on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -30,7 +32,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from enum import Enum
 from typing import Any
 
-from eval_metrics import QrelItem, RetrievedItem, compute_metrics_v2
+if __package__:
+    from tests.eval_metrics import QrelItem, RetrievedItem, compute_metrics_v2
+    from tests.qrels_schema import QrelDataset
+else:
+    from eval_metrics import QrelItem, RetrievedItem, compute_metrics_v2  # type: ignore[no-redef]
+    from qrels_schema import QrelDataset  # type: ignore[no-redef]
 
 from config import settings
 
@@ -532,6 +539,7 @@ def save_results(results: dict, filepath: str = "evaluation_results_v2.json") ->
             "rrf_keyword_weight": settings.rrf_keyword_weight,
         },
         "num_queries": len(results.get("query_cases", [])),
+        "qrels_fallback_count": results.get("qrels_fallback_count", 0),
         "aggregate_no_rerank": {
             k: v for k, v in results.get("agg_no_rerank", {}).items()
             if k != "per_query"
@@ -565,6 +573,12 @@ def save_results(results: dict, filepath: str = "evaluation_results_v2.json") ->
                 "avg_latency_ms": lat,
             }
 
+        violations = _quality_gate_violations(payload["ablation"])
+        payload["quality_gate"] = {
+            "passed": not violations,
+            "violations": violations,
+        }
+
     outpath = Path(__file__).resolve().parent / filepath
 
     # ── Gate: validate all ratio metrics are in [0, 1] ──
@@ -577,7 +591,10 @@ def save_results(results: dict, filepath: str = "evaluation_results_v2.json") ->
 
 def _validate_output_metrics(payload: dict) -> None:
     """Gate: assert all ratio metrics in [0,1] and monotonic where expected."""
-    from eval_metrics import validate_metrics_range
+    if __package__:
+        from tests.eval_metrics import validate_metrics_range as _validate_metrics_range
+    else:
+        from eval_metrics import validate_metrics_range as _validate_metrics_range  # type: ignore[no-redef]
 
     ratio_containers = []
     if payload.get("aggregate_no_rerank"):
@@ -590,7 +607,7 @@ def _validate_output_metrics(payload: dict) -> None:
 
     violations = []
     for label, container in ratio_containers:
-        for v in validate_metrics_range(container):
+        for v in _validate_metrics_range(container):
             violations.append(f"{label}: {v}")
 
     # Monotonicity: Recall@K and Hit@K must not decrease as K increases
@@ -620,6 +637,31 @@ def _ablation_to_metrics(data: dict) -> dict:
     }
 
 
+def _quality_gate_violations(ablation: dict) -> list[str]:
+    """Return actionable live-evaluation regressions without hiding the report."""
+    violations: list[str] = []
+    keyword = ablation.get("keyword-only", {})
+    semantic = ablation.get("semantic-only", {})
+    hybrid = ablation.get("hybrid-no-rerank", {})
+    reranked = ablation.get("hybrid-rerank", {})
+
+    if keyword and keyword.get("hit_k5", 0.0) < 0.75:
+        violations.append("keyword-only Hit@5 is below 75%")
+    if (
+        semantic
+        and hybrid
+        and hybrid.get("ndcg_k5", 0.0) + 0.03 < semantic.get("ndcg_k5", 0.0)
+    ):
+        violations.append("hybrid NDCG@5 trails semantic-only by more than 3 points")
+    if (
+        hybrid
+        and reranked
+        and reranked.get("ndcg_k5", 0.0) + 0.02 < hybrid.get("ndcg_k5", 0.0)
+    ):
+        violations.append("rerank reduces NDCG@5 by more than 2 points")
+    return violations
+
+
 # ── 辅助函数 ────────────────────────────────────────────────────
 
 
@@ -628,6 +670,18 @@ def _stable_doc_key(filename: str) -> str:
     import re
     base = filename.rsplit(".", 1)[0] if "." in filename else filename
     return re.sub(r"[^a-zA-Z0-9-]", "-", base).strip("-").lower()
+
+
+async def _build_document_key_map() -> dict[str, str]:
+    """Build document_id -> document_key mapping from the documents table."""
+    from sqlalchemy import select
+
+    from models.database import session_scope
+    from models.orm import Document
+    async with session_scope() as session:
+        result = await session.execute(select(Document.id, Document.filename))
+        rows = result.all()
+    return {row[0]: _stable_doc_key(row[1]) for row in rows if row[1]}
 
 
 def _git_commit() -> str:
@@ -664,10 +718,14 @@ async def run_single_strategy(
     if strategy == AblationStrategy.KEYWORD_ONLY:
         fts = BM25Search()
         text_results = await fts.search(query, top_k=top_k, document_id=document_id)
+        # Build document_id -> document_key mapping for results missing keys
+        doc_key_by_id = await _build_document_key_map()
         results = [
             RetrievalResult(
                 chunk_id=r.chunk_id, document_id=r.document_id,
                 text=r.text, score=r.score, source="keyword",
+                document_key=r.document_key or doc_key_by_id.get(r.document_id, ""),
+                section_key=r.section_key,
             )
             for r in text_results
         ]
@@ -713,7 +771,7 @@ async def run_evaluation():
 
     from sqlalchemy import select
 
-    from models.database import async_session
+    from models.database import session_scope
     from models.orm import Document
     from rag.pipeline import ingest_document
     from textdb.bm25_search import BM25Search
@@ -721,7 +779,7 @@ async def run_evaluation():
 
     # ── Step 1: 清理旧数据 ──
     print("\n[1/5] 清理旧测试数据...")
-    async with async_session() as session:
+    async with session_scope() as session:
         # 清理所有匹配测试文档的历史数据（按文件名 + 按 hash 双重匹配）
         test_filenames = [d.filename for d in TEST_DOCS]
         result = await session.execute(
@@ -758,7 +816,7 @@ async def run_evaluation():
             # Find existing doc
             import hashlib
             fh = hashlib.sha256(content_bytes).hexdigest()
-            async with async_session() as session:
+            async with session_scope() as session:
                 result = await session.execute(select(Document).where(Document.file_hash == fh))
                 doc = result.scalar_one_or_none()
                 if doc:
@@ -808,24 +866,47 @@ async def run_evaluation():
         for s in strategies
     }
 
-    # Build qrels (v2 structured) from ground truth annotations
+    # Build qrels from the reviewed stable-key dataset. The previous
+    # document-level fallback treated every chunk in a relevant document as
+    # relevant and materially inflated precision/NDCG.
+    qrels_dataset = QrelDataset.load(
+        str(Path(__file__).resolve().parent / "qrels_data_v2.json")
+    )
+    qrels_by_query = {item.query: item for item in qrels_dataset.queries}
     qrels_per_query: list[list[QrelItem]] = []
-    for _q_idx, qc in enumerate(QUERY_CASES):
-        qrels: list[QrelItem] = []
-        sources = qc.cross_doc_targets if qc.cross_doc_targets else {qc.doc_index: qc.relevant_chunk_indices}
-        for doc_idx, chunk_indices in sources.items():
-            if doc_idx >= len(TEST_DOCS):
-                continue
-            doc_def = TEST_DOCS[doc_idx]
-            doc_key = _stable_doc_key(doc_def.filename)
-            for _chunk_idx in chunk_indices:
-                # Empty section_key = document-level match (any chunk is relevant)
-                qrels.append(QrelItem(
-                    document_key=doc_key,
-                    section_key="",
-                    grade=2,  # default relevance grade
-                ))
-        qrels_per_query.append(qrels)
+    fallback_qrels_count = 0
+    for qc in QUERY_CASES:
+        reviewed = qrels_by_query.get(qc.query)
+        if reviewed is None:
+            fallback_qrels_count += 1
+            derived: list[QrelItem] = []
+            sources = qc.cross_doc_targets or {
+                qc.doc_index: qc.relevant_chunk_indices
+            }
+            for doc_idx, chunk_indices in sources.items():
+                if doc_idx >= len(TEST_DOCS):
+                    continue
+                doc_def = TEST_DOCS[doc_idx]
+                chunks = split_text(
+                    doc_def.content, settings.chunk_size, settings.chunk_overlap
+                )
+                for chunk_idx in chunk_indices:
+                    if not chunks:
+                        continue
+                    mapped_idx = min(chunk_idx, len(chunks) - 1)
+                    derived.append(QrelItem(
+                        _stable_doc_key(doc_def.filename),
+                        chunks[mapped_idx].section_key,
+                        2,
+                    ))
+            qrels_per_query.append(derived)
+            continue
+        qrels_per_query.append([
+            QrelItem(item.document_key, item.section_key, item.grade)
+            for item in reviewed.relevant
+        ])
+    if fallback_qrels_count:
+        print(f"   [WARN] {fallback_qrels_count} queries use section-level legacy annotations")
 
     for j, qc in enumerate(QUERY_CASES):
         qrels = qrels_per_query[j]
@@ -943,6 +1024,7 @@ async def run_evaluation():
         "query_cases": QUERY_CASES,
         "doc_ids": doc_ids,
         "strategy_results": strategy_results,
+        "qrels_fallback_count": fallback_qrels_count,
     }
 
     # ── Persist results ──
@@ -956,13 +1038,13 @@ async def cleanup():
     print("\n清理测试数据...")
     from sqlalchemy import select
 
-    from models.database import async_session
+    from models.database import session_scope
     from models.orm import Document
     from textdb.bm25_search import BM25Search
     from vectordb.factory import create_vectordb
 
     test_filenames = [d.filename for d in TEST_DOCS]
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Document).where(Document.filename.in_(test_filenames))
         )

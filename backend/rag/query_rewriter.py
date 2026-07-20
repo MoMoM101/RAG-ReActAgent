@@ -23,16 +23,15 @@ async def rewrite(query: str, n_variants: int = 2) -> list[str]:
     if n_variants <= 0:
         return []
 
-    llm = create_llm()
-    messages = [
-        ChatMessage(role="system", content=REWRITE_SYSTEM_PROMPT),
-        ChatMessage(
-            role="user",
-            content=f"改写为 {n_variants} 个搜索版本：\n{query}",
-        ),
-    ]
-
     try:
+        llm = create_llm()
+        messages = [
+            ChatMessage(role="system", content=REWRITE_SYSTEM_PROMPT),
+            ChatMessage(
+                role="user",
+                content=f"改写为 {n_variants} 个搜索版本：\n{query}",
+            ),
+        ]
         parts: list[str] = []
         async for chunk in llm.chat_stream(messages):
             if chunk.content:

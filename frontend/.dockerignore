@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+.env.*
+node_modules
+dist
+coverage
+.pytest_cache
+npm-debug.log*

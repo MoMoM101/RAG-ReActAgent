@@ -1,0 +1,342 @@
+{
+  "metric_version": "qrels-v2",
+  "metrics_version": 2,
+  "qrels_version": "2.0",
+  "timestamp": "2026-07-14T22:43:21.770535",
+  "git_commit": "9afa9cc",
+  "config": {
+    "embedding_provider": "qwen",
+    "embedding_model": "text-embedding-v4",
+    "embedding_dim": 1024,
+    "chunk_size": 200,
+    "chunk_overlap": 40,
+    "rerank_enabled": true,
+    "rerank_model": "BAAI/bge-reranker-v2-m3",
+    "ocr_enabled": true,
+    "retrieval_top_k": 8,
+    "rerank_top_n": 24,
+    "rrf_k": 30,
+    "rrf_semantic_weight": 2.0,
+    "rrf_keyword_weight": 1.0
+  },
+  "num_queries": 29,
+  "qrels_fallback_count": 29,
+  "aggregate_no_rerank": {
+    "precision": {
+      "3": 0.1264367816091954,
+      "5": 0.12413793103448276,
+      "10": 0.10344827586206896
+    },
+    "recall": {
+      "3": 0.2528735632183908,
+      "5": 0.367816091954023,
+      "10": 0.6135057471264368
+    },
+    "ndcg": {
+      "3": 0.19974416486621235,
+      "5": 0.25191102064663745,
+      "10": 0.33763619825110286
+    },
+    "hit": {
+      "3": 0.3103448275862069,
+      "5": 0.41379310344827586,
+      "10": 0.7241379310344828
+    },
+    "mrr": 0.25852490421455937
+  },
+  "aggregate_rerank": {
+    "precision": {
+      "3": 0.1264367816091954,
+      "5": 0.11724137931034484,
+      "10": 0.09999999999999999
+    },
+    "recall": {
+      "3": 0.2528735632183908,
+      "5": 0.3563218390804598,
+      "10": 0.6020114942528735
+    },
+    "ndcg": {
+      "3": 0.19974416486621235,
+      "5": 0.244941801801791,
+      "10": 0.3306669794062564
+    },
+    "hit": {
+      "3": 0.3103448275862069,
+      "5": 0.3793103448275862,
+      "10": 0.6896551724137931
+    },
+    "mrr": 0.24990421455938697
+  },
+  "avg_latency_ms_no_rerank": 466.58620689655174,
+  "per_query": [
+    {
+      "query": "ERR_40005",
+      "category": "ambiguous-broad",
+      "mrr": 0.25,
+      "precision_k3": 0.0,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "REF_001",
+      "category": "ambiguous-broad",
+      "mrr": 0.0,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "Txn_1003",
+      "category": "ambiguous-broad",
+      "mrr": 0.0,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "refund error code for merchant balance insufficient",
+      "category": "cross-document",
+      "mrr": 0.1,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "refund error code when balance insufficient",
+      "category": "cross-document",
+      "mrr": 0.1111111111111111,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "refund error credit insufficient",
+      "category": "long-descriptive",
+      "mrr": 0.16666666666666666,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "humidity sensor +/-1.0% RH accuracy or better",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "HDC3022 accuracy specifications",
+      "category": "long-descriptive",
+      "mrr": 0.3333333333333333,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "BME280 pressure sensor accuracy",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "sensor with PTFE membrane for automotive",
+      "category": "long-descriptive",
+      "mrr": 0.5,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "sensor with integrated heater for condensation",
+      "category": "long-descriptive",
+      "mrr": 0.1,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "which sensor has integrated IIR filter",
+      "category": "long-descriptive",
+      "mrr": 0.5,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "I2C address 0x76 sensor",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "NIST traceable humidity sensor",
+      "category": "long-descriptive",
+      "mrr": 0.16666666666666666,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "72 hours data breach notification requirement",
+      "category": "cross-document",
+      "mrr": 0.0,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "immediate breach notification to affected individuals",
+      "category": "long-descriptive",
+      "mrr": 0.125,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "PAN masking first 6 last 4 digits",
+      "category": "long-descriptive",
+      "mrr": 0.0,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "deletion right when consent withdrawn",
+      "category": "cross-document",
+      "mrr": 0.5,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "deletion right when purpose achieved retention expired",
+      "category": "long-descriptive",
+      "mrr": 0.0,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "right to data portability in machine readable format",
+      "category": "long-descriptive",
+      "mrr": 0.3333333333333333,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "50 million CNY fine for violation",
+      "category": "long-descriptive",
+      "mrr": 0.0,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "20 million EUR fine 4% of global turnover",
+      "category": "long-descriptive",
+      "mrr": 0.2,
+      "precision_k3": 0.0,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "what authentication methods do payment APIs support",
+      "category": "cross-document",
+      "mrr": 0.25,
+      "precision_k3": 0.0,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "what is the maximum payment amount allowed per transaction",
+      "category": "cross-document",
+      "mrr": 0.0,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "how to handle a refund when payment is not yet confirmed",
+      "category": "cross-document",
+      "mrr": 0.125,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "which sensors can operate at -40C to +125C temperature range",
+      "category": "cross-document",
+      "mrr": 0.5,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "refund",
+      "category": "cross-document",
+      "mrr": 0.1111111111111111,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "encryption",
+      "category": "cross-document",
+      "mrr": 0.0,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    },
+    {
+      "query": "accuracy",
+      "category": "cross-document",
+      "mrr": 0.125,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    }
+  ],
+  "ablation": {
+    "semantic-only": {
+      "precision_k5": 0.1310344827586207,
+      "mrr": 0.29626436781609194,
+      "hit_k5": 0.4482758620689655,
+      "ndcg_k5": 0.2997087679068454,
+      "avg_latency_ms": 370.37931034482756
+    },
+    "keyword-only": {
+      "precision_k5": 0.07586206896551725,
+      "mrr": 0.14389709906951287,
+      "hit_k5": 0.27586206896551724,
+      "ndcg_k5": 0.12655001171338304,
+      "avg_latency_ms": 38.55172413793103
+    },
+    "hybrid-no-rerank": {
+      "precision_k5": 0.12413793103448276,
+      "mrr": 0.25852490421455937,
+      "hit_k5": 0.41379310344827586,
+      "ndcg_k5": 0.25191102064663745,
+      "avg_latency_ms": 466.58620689655174
+    },
+    "hybrid-rerank": {
+      "precision_k5": 0.11724137931034484,
+      "mrr": 0.24990421455938697,
+      "hit_k5": 0.3793103448275862,
+      "ndcg_k5": 0.244941801801791,
+      "avg_latency_ms": 463.3103448275862
+    }
+  },
+  "quality_gate": {
+    "passed": false,
+    "violations": [
+      "keyword-only Hit@5 is below 75%",
+      "hybrid NDCG@5 trails semantic-only by more than 3 points"
+    ]
+  }
+}

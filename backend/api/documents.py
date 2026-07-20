@@ -12,17 +12,15 @@ from limiter import limiter
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-# TODO(D3): migrate upload streaming to get_storage().create_staging() +
-# append() + commit() pattern once all documents have storage_key populated.
-# The delete endpoints below should also use get_storage().delete(storage_key)
-# when available instead of filename-based directory scanning.
-from storage.files import create_upload_temp, delete_file
+from storage import get_storage, materialize, stage_path
+from storage.base import StagedObject
+from storage.files import delete_file, find_upload
 
 from config import DOCUMENT_UPLOAD_HARD_LIMIT_MB, settings
-from models.database import session_scope, get_db
+from models.database import get_db, session_scope
 from models.orm import DocStatus, Document
 from rag.answer_cache import bump_collection_version
-from rag.pipeline import _process_document, ingest_document_from_path
+from rag.pipeline import _process_document, ingest_document_from_staged
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
@@ -41,6 +39,42 @@ SSE_HEARTBEAT_SECONDS = 15
 TERMINAL_DOCUMENT_STATUSES = {"ready", "failed", "not_found"}
 
 
+async def _delete_document_source(doc: Document) -> None:
+    """Delete a committed object, with a hash-safe legacy-file fallback."""
+    storage = get_storage()
+    if doc.storage_key and await storage.exists(doc.storage_key):
+        await storage.delete(doc.storage_key)
+        return
+    legacy_path = find_upload(
+        doc.filename,
+        doc.file_type,
+        expected_sha256=doc.file_hash,
+        root_dir=settings.upload_dir,
+    )
+    if legacy_path:
+        delete_file(legacy_path)
+
+
+async def _ensure_document_storage(doc: Document) -> str | None:
+    """Return a usable storage key, importing a legacy flat upload if needed."""
+    storage = get_storage()
+    if doc.storage_key and await storage.exists(doc.storage_key):
+        return doc.storage_key
+    legacy_path = find_upload(
+        doc.filename,
+        doc.file_type,
+        expected_sha256=doc.file_hash,
+        root_dir=settings.upload_dir,
+    )
+    if legacy_path is None:
+        return None
+    staged = await stage_path(storage, legacy_path, doc.filename)
+    expected_hash = doc.file_hash if len(doc.file_hash) == 64 else None
+    stored = await storage.commit(staged, expected_sha256=expected_hash)
+    doc.storage_key = stored.storage_key
+    return stored.storage_key
+
+
 def _max_file_size_bytes() -> int:
     return settings.document_max_upload_mb * 1024 * 1024
 
@@ -57,29 +91,31 @@ def _document_payload(doc: Document) -> dict:
     }
 
 
-async def _stream_upload_to_temp(file: UploadFile) -> tuple[str, str, int]:
-    """Stream an upload to disk while hashing and enforcing the size limit."""
-    temp_path = create_upload_temp()
+async def _stream_upload_to_staging(
+    file: UploadFile,
+) -> tuple[StagedObject, str, int]:
+    """Stream an upload through the configured storage backend."""
+    storage = get_storage()
+    staged = await storage.create_staging(file.filename or "unknown")
     digest = hashlib.sha256()
     total = 0
     max_file_size = _max_file_size_bytes()
     try:
-        with open(temp_path, "wb") as output:
-            while chunk := await file.read(UPLOAD_CHUNK_SIZE):
-                total += len(chunk)
-                if total > max_file_size:
-                    raise HTTPException(
-                        413,
-                        "File too large: exceeds "
-                        f"{settings.document_max_upload_mb} MB",
-                    )
-                digest.update(chunk)
-                await asyncio.to_thread(output.write, chunk)
+        while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+            total += len(chunk)
+            if total > max_file_size:
+                raise HTTPException(
+                    413,
+                    "File too large: exceeds "
+                    f"{settings.document_max_upload_mb} MB",
+                )
+            digest.update(chunk)
+            await storage.append(staged, chunk)
         if total == 0:
             raise HTTPException(400, "File is empty")
-        return temp_path, digest.hexdigest(), total
+        return staged, digest.hexdigest(), total
     except BaseException:
-        delete_file(temp_path)
+        await storage.abort(staged)
         raise
     finally:
         await file.close()
@@ -97,11 +133,11 @@ async def upload_document(
     if ext not in ALLOWED_TYPES:
         raise HTTPException(400, f"Unsupported file type: {ext}")
 
-    temp_path, file_hash, file_size = await _stream_upload_to_temp(file)
+    staged, file_hash, file_size = await _stream_upload_to_staging(file)
     try:
-        doc_id = await ingest_document_from_path(
+        doc_id = await ingest_document_from_staged(
             filename=file.filename or "unknown",
-            temp_path=temp_path,
+            staged=staged,
             file_hash=file_hash,
             file_size=file_size,
             file_type=ext,
@@ -110,8 +146,8 @@ async def upload_document(
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
     finally:
-        # No-op after atomic finalize; removes staging data on early failures.
-        delete_file(temp_path)
+        # No-op after commit; removes staging data on early failures.
+        await get_storage().abort(staged)
 
     doc = (await db.execute(select(Document).where(Document.id == doc_id))).scalar_one()
     await audit_from_request(request, "document_upload",
@@ -159,9 +195,9 @@ async def upload_document_batch(
             })
             continue
 
-        temp_path = ""
+        staged: StagedObject | None = None
         try:
-            temp_path, file_hash, file_size = await _stream_upload_to_temp(file)
+            staged, file_hash, file_size = await _stream_upload_to_staging(file)
             streamed_total += file_size
             if streamed_total > total_limit:
                 items.append({
@@ -171,9 +207,9 @@ async def upload_document_batch(
                     "error": "Batch total size limit exceeded",
                 })
                 continue
-            doc_id = await ingest_document_from_path(
+            doc_id = await ingest_document_from_staged(
                 filename=filename,
-                temp_path=temp_path,
+                staged=staged,
                 file_hash=file_hash,
                 file_size=file_size,
                 file_type=ext,
@@ -210,8 +246,8 @@ async def upload_document_batch(
                 "error": "Internal processing error",
             })
         finally:
-            if temp_path:
-                delete_file(temp_path)
+            if staged is not None:
+                await get_storage().abort(staged)
 
     succeeded = sum(bool(item["success"]) for item in items)
     failed = sum(not item["success"] for item in items)
@@ -261,8 +297,6 @@ async def list_documents(db: AsyncSession = Depends(get_db)):
 @router.delete("/clear-all")
 async def clear_all_documents(db: AsyncSession = Depends(get_db)):
     """删除全部文档（向量 + FTS + 文件 + DB 记录）。"""
-    from storage.files import delete_file
-
     from textdb.bm25_search import BM25Search
     from vectordb.factory import create_vectordb
 
@@ -284,20 +318,11 @@ async def clear_all_documents(db: AsyncSession = Depends(get_db)):
 
     vectordb = await create_vectordb()
     fts = BM25Search()
-    upload_dir = settings.upload_dir
-
     for doc in docs:
         await vectordb.delete_by_document(doc.id)
         await fts.delete_by_document(doc.id)
 
-        if os.path.isdir(upload_dir):
-            stem = doc.filename.rsplit(".", 1)[0] if "." in doc.filename else doc.filename
-            if stem:
-                # TODO(D3): use get_storage().delete(doc.storage_key) once all
-                # documents have storage_key populated via migration 0002 backfill.
-                for f in os.listdir(upload_dir):
-                    if f == doc.filename or (f.startswith(stem + "_") and f.endswith(doc.file_type)):
-                        delete_file(os.path.join(upload_dir, f))
+        await _delete_document_source(doc)
 
     count = len(docs)
     await db.execute(sa_delete(Document))
@@ -309,8 +334,6 @@ async def clear_all_documents(db: AsyncSession = Depends(get_db)):
 
 @router.delete("/{doc_id}")
 async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
-    from storage.files import delete_file
-
     from textdb.bm25_search import BM25Search
     from vectordb.factory import create_vectordb
 
@@ -328,16 +351,7 @@ async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     await vectordb.delete_by_document(doc_id)
     await fts.delete_by_document(doc_id)
 
-    # Try to delete file
-    upload_dir = settings.upload_dir
-    # TODO(D3): use get_storage().delete(doc.storage_key) once all documents
-    # have storage_key populated via migration 0002 backfill.
-    if os.path.isdir(upload_dir):
-        stem = doc.filename.rsplit(".", 1)[0] if "." in doc.filename else doc.filename
-        if stem:
-            for f in os.listdir(upload_dir):
-                if f == doc.filename or (f.startswith(stem + "_") and f.endswith(doc.file_type)):
-                    delete_file(os.path.join(upload_dir, f))
+    await _delete_document_source(doc)
 
     await db.delete(doc)
     await db.commit()
@@ -387,25 +401,9 @@ async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     if doc.status not in (DocStatus.failed, DocStatus.ready):
         raise HTTPException(400, "Only failed or ready documents can be reprocessed")
 
-    filename = doc.filename
     file_type = doc.file_type
-
-    # Find file path
-    upload_dir = settings.upload_dir
-    if not os.path.isdir(upload_dir):
-        raise HTTPException(404, "Upload directory not found")
-
-    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
-    file_path = None
-    for f in os.listdir(upload_dir):
-        if f == filename:
-            file_path = os.path.join(upload_dir, f)
-            break
-        if stem and f.startswith(stem + "_") and f.endswith(file_type):
-            file_path = os.path.join(upload_dir, f)
-            break
-
-    if not file_path:
+    storage_key = await _ensure_document_storage(doc)
+    if storage_key is None:
         raise HTTPException(404, "Original file not found")
 
     # Atomic claim prevents duplicate clicks from scheduling duplicate work.
@@ -429,7 +427,10 @@ async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
 
     async def _background_reprocess():
         try:
-            await _process_document(doc_id, file_path, file_type)
+            async with materialize(
+                get_storage(), storage_key, suffix=file_type
+            ) as file_path:
+                await _process_document(doc_id, file_path, file_type)
         except Exception as exc:
             error = str(exc)[:500]
             async with session_scope() as session:
@@ -549,5 +550,3 @@ async def queue_stats(db: AsyncSession = Depends(get_db)):
         "by_status": counts,
         "stuck_in_progress": stuck,
     }
-
-

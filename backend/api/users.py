@@ -1,14 +1,14 @@
 """User management API — system_admin only."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
-from sqlalchemy import select
-
 from audit import audit_from_request
 from auth.jwt import hash_password
-from models.database import session_scope
-from models.orm import User
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from security import get_current_user, require_role
+from sqlalchemy import select
+
+from models.database import session_scope
+from models.orm import User, UserRole
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -100,7 +100,7 @@ async def update_user(
         if req.role is not None:
             if req.role not in ("viewer", "editor", "knowledge_admin", "system_admin"):
                 raise HTTPException(400, f"Invalid role: {req.role}")
-            user.role = req.role
+            user.role = UserRole(req.role)
         if req.disabled is not None:
             current = get_current_user(request)
             if user.id == current.user_id:

@@ -1,6 +1,5 @@
 """Phase 3a: ingestion idempotency, error classification, and retry behavior."""
 
-import asyncio
 
 import pytest
 
@@ -17,7 +16,7 @@ class TestErrorClassification:
         assert _classify_error(Exception("too many requests")) == "rate_limit"
 
     def test_transient_timeout(self):
-        assert _classify_error(asyncio.TimeoutError()) == "transient"
+        assert _classify_error(TimeoutError()) == "transient"
 
     def test_transient_connection(self):
         assert _classify_error(ConnectionError()) == "transient"
@@ -27,6 +26,8 @@ class TestErrorClassification:
         assert _classify_error(Exception("connection reset by peer")) == "transient"
         assert _classify_error(Exception("request timeout")) == "transient"
         assert _classify_error(Exception("connection refused")) == "transient"
+        assert _classify_error(Exception("500 (Internal Server Error)")) == "transient"
+        assert _classify_error(Exception("Failed to apply operation to Active replica")) == "transient"
 
     def test_permanent_value_error(self):
         assert _classify_error(ValueError("unsupported format")) == "permanent"

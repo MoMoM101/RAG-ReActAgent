@@ -4,67 +4,51 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from memory.profile_core import (
+    MAX_FACTS,
+)
+from memory.profile_core import (
+    empty_profile as _empty,
+)
+from memory.profile_core import (
+    evict_facts as _evict_facts,
+)
+from memory.profile_core import (
+    flatten_profile as _flatten,
+)
+from memory.profile_core import (
+    format_profile_text as format_profile,
+)
+from memory.profile_core import (
+    parse_item_id as _parse_id,
+)
+from memory.profile_core import (
+    score_fact as _score_fact,
+)
+from memory.profile_store import load_profile, save_profile
 
-from models.database import session_scope
-from models.orm import UserProfile
+__all__ = [
+    "MAX_FACTS",
+    "_empty",
+    "_evict_facts",
+    "_flatten",
+    "_parse_id",
+    "_score_fact",
+    "format_profile",
+]
 
 logger = logging.getLogger(__name__)
 
-MAX_FACTS = 30
 PROFILE_COLLECTION = "user_profile"
-
-
-def _score_fact(fact: dict) -> float:
-    """Weighted score: 30% access count + 70% recency. Higher = keep."""
-    ts_str = fact.get("ts", "")
-    days = 365.0
-    if ts_str:
-        try:
-            dt = datetime.fromisoformat(ts_str)
-            days = (datetime.now(UTC) - dt).total_seconds() / 86400.0
-        except (ValueError, TypeError):
-            pass
-    recency_score = max(0.0, 1.0 - days / 365.0)
-    access_count = fact.get("access_count", 0)
-    return access_count * 0.3 + recency_score * 0.7
-
-
-def _evict_facts(facts: list[dict], max_count: int) -> list[dict]:
-    """Remove lowest-scored facts when exceeding max_count."""
-    if len(facts) <= max_count:
-        return facts
-    scored = [(f, _score_fact(f)) for f in facts]
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return [f for f, _ in scored[:max_count]]
-
-
-def _empty() -> dict:
-    return {"name": "", "role": "", "preferences": [], "decisions": [], "facts": []}
+PROFILE_INDEX_DIRTY = False
 
 
 async def _load() -> dict:
-    async with session_scope() as s:
-        r = await s.execute(
-            select(UserProfile).order_by(UserProfile.version.desc()).limit(1)
-        )
-        row = r.scalar_one_or_none()
-        return row.profile_data if row else _empty()
+    return await load_profile()
 
 
 async def _save(data: dict):
-    async with session_scope() as s:
-        r = await s.execute(
-            select(UserProfile).order_by(UserProfile.version.desc()).limit(1)
-        )
-        row = r.scalar_one_or_none()
-        if row:
-            row.profile_data = data
-            row.version += 1
-            row.generated_at = datetime.now(UTC)
-        else:
-            s.add(UserProfile(profile_data=data, memory_ids=[], version=1))
-        await s.commit()
+    await save_profile(data)
     # 写入 Qdrant 索引
     await _index_profile(data)
 
@@ -109,7 +93,7 @@ async def _is_similar(text: str, candidates: list[str]) -> bool:
     return False
 
 
-async def _cleanup_old_profile_collections() -> None:
+async def _cleanup_old_profile_collections() -> bool:
     """删除所有 user_profile_* 前缀的 collection，用于画像清空后清理残留。"""
     try:
         from vectordb.qdrant import QdrantVectorDB
@@ -118,8 +102,9 @@ async def _cleanup_old_profile_collections() -> None:
         for c in all_collections.collections:
             if c.name == "user_profile" or c.name.startswith("user_profile_"):
                 vdb.client.delete_collection(c.name)
+        return True
     except Exception:
-        pass
+        return False
 
 
 # ── Qdrant 索引 ───────────────────────
@@ -130,7 +115,8 @@ async def _index_profile(data: dict):
     使用双缓冲模式：创建新 collection → 写入 → 切换指针 → 删旧。
     避免 Qdrant 本地模式的 delete+create 数据腐败问题。
     """
-    global PROFILE_COLLECTION
+    global PROFILE_COLLECTION, PROFILE_INDEX_DIRTY
+    PROFILE_INDEX_DIRTY = True
     try:
         from embedding.factory import create_embedding
         from vectordb.qdrant import QdrantVectorDB
@@ -151,7 +137,8 @@ async def _index_profile(data: dict):
 
         if not texts:
             # 画像为空时仍需确保旧 collection 被清理，避免残留旧维度数据
-            await _cleanup_old_profile_collections()
+            if await _cleanup_old_profile_collections():
+                PROFILE_INDEX_DIRTY = False
             return
 
         emb = create_embedding()
@@ -185,6 +172,7 @@ async def _index_profile(data: dict):
 
         # 持久化指针
         _persist_profile_collection(new_name)
+        PROFILE_INDEX_DIRTY = False
 
     except Exception:
         logger.warning("profile Qdrant index failed, recall_memory may return stale results", exc_info=True)
@@ -263,6 +251,18 @@ async def _identity_similar(value: str, data: dict) -> bool:
 # ── 拦截器入口 ────────────────────────
 
 async def handle_intercept(content: str, mem_type: str) -> dict:
+    if mem_type == "identity_name":
+        data = await _load()
+        if content and not await _identity_similar(content, data):
+            return await upsert_field("name", content)
+        return data
+
+    if mem_type == "identity_role":
+        data = await _load()
+        if content and not await _identity_similar(content, data):
+            return await upsert_field("role", content)
+        return data
+
     if mem_type == "identity":
         data = await _load()
         # Try name patterns first
@@ -311,7 +311,15 @@ async def handle_session_extract(extracted: list[dict]) -> dict:
         mem_type = item.get("memory_type", "fact")
         if not content:
             continue
-        if mem_type == "identity":
+        if mem_type == "identity_name":
+            if content and not await _identity_similar(content, data):
+                data["name"] = content
+                new_count += 1
+        elif mem_type == "identity_role":
+            if content and not await _identity_similar(content, data):
+                data["role"] = content
+                new_count += 1
+        elif mem_type == "identity":
             # Name patterns: explicit name markers or "名字是" phrasing
             if "叫" in content or "名字" in content or "姓名" in content:
                 value = content
@@ -386,7 +394,7 @@ async def search_profile(query: str, top_k: int = 5) -> list[dict]:
         from vectordb.qdrant import QdrantVectorDB
 
         vdb = QdrantVectorDB(collection_name=PROFILE_COLLECTION)
-        if await vdb.collection_exists():
+        if not PROFILE_INDEX_DIRTY and await vdb.collection_exists():
             emb = create_embedding()
             vec = await emb.embed_query(query)
             results = await vdb.search(vec, top_k=top_k)
@@ -424,42 +432,7 @@ async def search_profile(query: str, top_k: int = 5) -> list[dict]:
         return []
 
 
-def _flatten(data: dict) -> list[str]:
-    """展开画像为可搜索的文本列表。"""
-    texts = []
-    if data.get("name"):
-        texts.append(f"用户名叫{data['name']}")
-    if data.get("role"):
-        texts.append(f"用户是{data['role']}")
-    for p in data.get("preferences", []):
-        texts.append(p)
-    for d in data.get("decisions", []):
-        texts.append(d)
-    for f in data.get("facts", []):
-        c = f["content"] if isinstance(f, dict) else f
-        texts.append(c)
-    return texts
-
-
 # ── 单条增删改 ──────────────────────
-
-_FIELD_MAP = {"name": "name", "role": "role", "preference": "preferences",
-              "decision": "decisions", "fact": "facts"}
-
-
-def _parse_id(item_id: str) -> tuple[str, int] | None:
-    """解析复合 ID 'field_tag:index'。"""
-    parts = item_id.split(":", 1)
-    if len(parts) != 2:
-        return None
-    field = _FIELD_MAP.get(parts[0])
-    if field is None:
-        return None
-    try:
-        index = int(parts[1])
-    except ValueError:
-        return None
-    return field, index
 
 
 async def update_item(item_id: str, content: str) -> dict | None:
@@ -520,26 +493,3 @@ async def delete_item(item_id: str) -> dict | None:
 
 async def get_profile() -> dict:
     return await _load()
-
-
-def format_profile(profile: dict) -> str:
-    if not profile:
-        return ""
-    parts = []
-    if profile.get("name"):
-        parts.append(f"用户名: {profile['name']}")
-    if profile.get("role"):
-        parts.append(f"职业: {profile['role']}")
-    prefs = profile.get("preferences", [])
-    if prefs:
-        parts.append(f"偏好: {'、'.join(prefs)}")
-    decs = profile.get("decisions", [])
-    if decs:
-        parts.append(f"已知决策: {'、'.join(decs)}")
-    facts = profile.get("facts", [])
-    if facts:
-        flat = [f["content"] if isinstance(f, dict) else f for f in facts]
-        parts.append(f"补充信息: {'、'.join(flat[-10:])}")
-    if not parts:
-        return ""
-    return "## 用户画像\n" + "\n".join(parts) + "\n"

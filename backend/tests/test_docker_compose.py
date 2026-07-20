@@ -4,6 +4,9 @@ from pathlib import Path
 import yaml
 
 DOCKER_COMPOSE = Path(__file__).resolve().parent.parent.parent / "docker-compose.yml"
+BACKEND_DOCKERFILE = Path(__file__).resolve().parent.parent / "Dockerfile"
+BACKEND_DOCKERIGNORE = Path(__file__).resolve().parent.parent / ".dockerignore"
+E2E_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "docker_e2e_acceptance.ps1"
 
 
 def test_docker_compose_exists():
@@ -46,3 +49,36 @@ def test_backend_listens_on_all_interfaces():
             )
             return
     raise AssertionError("SERVER_HOST not found in backend environment")
+
+
+def test_backend_image_migrates_database_before_startup():
+    """A fresh Docker volume must be migrated before the revision gate runs."""
+    dockerfile = BACKEND_DOCKERFILE.read_text(encoding="utf-8")
+    command = next(line for line in dockerfile.splitlines() if line.startswith("CMD "))
+
+    assert "alembic upgrade head" in command
+    assert command.index("alembic upgrade head") < command.index("uvicorn main:app")
+
+
+def test_default_backend_image_excludes_optional_ocr_system_libraries():
+    """The default image does not install optional OCR dependencies."""
+    dockerfile = BACKEND_DOCKERFILE.read_text(encoding="utf-8")
+    assert "libgl1" not in dockerfile
+    assert "libglib2.0-0" not in dockerfile
+
+
+def test_backend_build_context_excludes_tests():
+    """Test and evaluation data must not inflate the runtime image."""
+    patterns = {
+        line.strip()
+        for line in BACKEND_DOCKERIGNORE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert "tests" in patterns or "tests/" in patterns
+
+
+def test_e2e_copies_consistency_check_into_runtime_container():
+    """The slim runtime image excludes tests, so E2E injects its read-only probe."""
+    script = E2E_SCRIPT.read_text(encoding="utf-8")
+    assert "docker cp $ConsistencyScriptPath" in script
+    assert 'RAG_AGENT_APP_ROOT=/app python $containerScript' in script

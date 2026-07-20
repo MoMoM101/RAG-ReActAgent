@@ -192,7 +192,7 @@ class SearchDocsTool(BaseTool):
                     ],
                 },
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("retrieval timed out for query: %s", query[:100])
             return ToolResult(
                 success=True,

@@ -11,8 +11,14 @@ class TestIdentityExtraction:
         candidates = extract_memory_candidates("我叫张三")
         assert ("用户叫张三", "identity") in candidates
 
-    def test_wo_shi(self):
+    def test_bare_wo_shi_not_extracted_by_regex(self):
+        """Bare '我是X' is too ambiguous for regex — handled by classifier LLM."""
         candidates = extract_memory_candidates("我是软件工程师")
+        assert len(candidates) == 0  # no longer extracted by regex
+
+    def test_explicit_role_marker(self):
+        """'我职业是X' with explicit marker is unambiguous and still extracted."""
+        candidates = extract_memory_candidates("我职业是软件工程师")
         assert ("用户是软件工程师", "identity") in candidates
 
     def test_wo_jiao_with_punctuation(self):
@@ -20,8 +26,9 @@ class TestIdentityExtraction:
         assert ("用户叫张三", "identity") in candidates
 
     def test_wo_shi_with_period(self):
+        """Bare '我是X' not extracted. Period-delimited case covered by classifier."""
         candidates = extract_memory_candidates("我是后端开发。")
-        assert ("用户是后端开发", "identity") in candidates
+        assert len(candidates) == 0
 
 
 class TestPreferenceExtraction:
@@ -91,8 +98,16 @@ class TestMultipleCandidates:
         assert "preference" in types
 
     def test_three_in_one_message(self):
-        candidates = extract_memory_candidates("我叫李四，我是前端工程师，我决定用React")
+        """Name + role (with explicit marker) + decision in one message."""
+        candidates = extract_memory_candidates("我叫李四，我职业是前端工程师，我决定用React")
         assert len(candidates) == 3
+
+    def test_name_and_role_compound(self):
+        """Name + explicit role marker gives two identity candidates."""
+        candidates = extract_memory_candidates("我叫李四，我工作是后端开发")
+        assert len(candidates) == 2
+        types = {t for _, t in candidates}
+        assert types == {"identity"}
 
     def test_dedup_same_type(self):
         """同一句式不重复匹配（'我叫XX' 只匹配一次）。"""

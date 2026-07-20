@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from models.database import async_session
+from models.database import session_scope
 
 from .base import BaseTextDB, TextSearchResult
 
@@ -64,13 +64,13 @@ class SQLiteFTS5(BaseTextDB):
 
     async def _exec(self, sql: str) -> None:
         """Execute raw SQL via driver-level connection (avoids bind-param parsing)."""
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             await conn.exec_driver_sql(sql)
             await session.commit()
 
     async def _query(self, sql: str) -> list[Any]:
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             result = await conn.exec_driver_sql(sql)
             return list(result.fetchall())

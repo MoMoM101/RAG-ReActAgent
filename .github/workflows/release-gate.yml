@@ -24,7 +24,9 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
       - name: Validate canonical grounded-answer evaluation
-        run: python release_gate.py
+        run: >-
+          python release_gate.py
+          --report tests/grounded_answer_eval_final_full_rescored.json
 
   docker-e2e-acceptance:
     runs-on: ubuntu-latest

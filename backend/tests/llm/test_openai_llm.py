@@ -1,8 +1,100 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from config import settings
 from llm.base import ChatMessage, LLMResponse
-from llm.openai_llm import OpenAILLM
+from llm.openai_llm import OpenAILLM, _close_stream_safely
+
+
+def test_deepseek_v4_disables_thinking_for_latency_sensitive_rag():
+    llm = OpenAILLM.__new__(OpenAILLM)
+    llm.base_url = "https://api.deepseek.com"
+    llm.model = "deepseek-v4-flash"
+
+    with patch.object(settings, "llm_thinking_enabled", False):
+        assert llm._thinking_extra_body() == {
+            "thinking": {"type": "disabled"},
+        }
+
+
+def test_thinking_toggle_is_not_sent_to_other_providers():
+    llm = OpenAILLM.__new__(OpenAILLM)
+    llm.base_url = "https://api.openai.com/v1"
+    llm.model = "gpt-4o"
+
+    assert llm._thinking_extra_body() is None
+
+
+@pytest.mark.asyncio
+async def test_stream_final_response_exposes_finish_reason():
+    class Stream:
+        def __init__(self, chunks):
+            self._chunks = chunks
+
+        def __aiter__(self):
+            self._iterator = iter(self._chunks)
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._iterator)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+    def chunk(content=None, finish_reason=None):
+        delta = SimpleNamespace(
+            content=content,
+            tool_calls=None,
+            model_extra={},
+        )
+        choice = SimpleNamespace(delta=delta, finish_reason=finish_reason)
+        return SimpleNamespace(choices=[choice])
+
+    llm = OpenAILLM.__new__(OpenAILLM)
+    create = AsyncMock(
+        return_value=Stream([
+            chunk(content="draft"),
+            chunk(finish_reason="length"),
+        ]),
+    )
+    llm.client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=create),
+        ),
+    )
+
+    responses = [response async for response in llm._stream_once({})]
+
+    assert responses[-1].is_final is True
+    assert responses[-1].finish_reason == "length"
+
+
+@pytest.mark.asyncio
+async def test_close_stream_safely_supports_async_close():
+    class Stream:
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+    stream = Stream()
+    await _close_stream_safely(stream)
+    assert stream.closed
+
+
+@pytest.mark.asyncio
+async def test_close_stream_safely_supports_aclose():
+    class Stream:
+        closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    stream = Stream()
+    await _close_stream_safely(stream)
+    assert stream.closed
 
 
 def _api_key_valid() -> bool:

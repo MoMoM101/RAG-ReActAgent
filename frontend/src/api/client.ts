@@ -44,6 +44,64 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return res.json();
 }
 
+export function apiUpload<T>(
+  path: string,
+  form: FormData,
+  onProgress?: (percent: number) => void,
+  signal?: AbortSignal,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const abortRequest = () => xhr.abort();
+    const cleanup = () => signal?.removeEventListener("abort", abortRequest);
+    xhr.open("POST", `${BASE_URL}${path}`);
+    const headers = authHeaders() as Record<string, string>;
+    Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      }
+    };
+    xhr.onload = () => {
+      cleanup();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as T);
+        } catch {
+          reject(new ApiError(xhr.status, "上传响应格式无效"));
+        }
+        return;
+      }
+      if (xhr.status === 401) {
+        sessionStorage.removeItem("rag_admin_token");
+        window.dispatchEvent(new CustomEvent("auth:required"));
+      }
+      let detail = `POST ${path}: ${xhr.status}`;
+      try {
+        const body = JSON.parse(xhr.responseText) as { detail?: string };
+        if (body.detail) detail = body.detail;
+      } catch { /* keep default */ }
+      reject(new ApiError(xhr.status, detail));
+    };
+    xhr.onerror = () => {
+      cleanup();
+      reject(new ApiError(0, "上传网络连接失败"));
+    };
+    xhr.onabort = () => {
+      cleanup();
+      reject(new DOMException("Upload cancelled", "AbortError"));
+    };
+
+    if (signal?.aborted) {
+      xhr.abort();
+      return;
+    }
+    signal?.addEventListener("abort", abortRequest, { once: true });
+    xhr.send(form);
+  });
+}
+
 export async function apiDelete<T = void>(path: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: "DELETE",

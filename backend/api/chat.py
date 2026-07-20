@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agent.loop import run_agent_loop
 from config import settings
 from llm.base import ChatMessage, ToolCall
-from models.database import session_scope, get_db
+from models.database import get_db, session_scope
 from models.orm import Conversation, Message
 
 router = APIRouter(tags=["chat"])

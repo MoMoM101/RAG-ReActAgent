@@ -1,0 +1,19 @@
+[run]
+branch = True
+source = .
+omit =
+    tests/*
+    alembic/versions/*
+    .venv/*
+    */__pycache__/*
+
+[report]
+exclude_also =
+    if TYPE_CHECKING:
+    if __name__ == .__main__.:
+    raise NotImplementedError
+show_missing = True
+skip_covered = False
+
+[xml]
+output = coverage.xml

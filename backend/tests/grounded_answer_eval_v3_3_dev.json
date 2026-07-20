@@ -1,0 +1,1560 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-07-14T13:35:11.726872+00:00",
+  "dataset": {
+    "name": "rag-agent-eval-v2",
+    "version": "2.0"
+  },
+  "methodology": {
+    "control": "legacy source-only prompt without mandatory citations",
+    "optimized": "V3.3 coverage-first, claim-level citations, and at most one deterministically accepted grounding repair",
+    "retrieval": "same production splitter + BM25 top-5 sources for both groups",
+    "scoring": "deterministic claim-to-evidence verifier; answerability is labeled independently from retrieval relevance",
+    "latency": "timer starts after acquiring the local concurrency slot"
+  },
+  "aggregate": {
+    "control": {
+      "queries_completed": 12,
+      "answerable_queries": 9,
+      "unanswerable_queries": 3,
+      "partially_answerable_queries": 4,
+      "faithfulness": 0.6790123456790123,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "abstention_accuracy": 0.6666666666666666,
+      "expected_fact_recall": 0.8518518518518519,
+      "answer_completion_accuracy": 0.75,
+      "avg_latency_ms": 2321.0866250001345,
+      "errors": 0
+    },
+    "optimized": {
+      "queries_completed": 12,
+      "answerable_queries": 9,
+      "unanswerable_queries": 3,
+      "partially_answerable_queries": 4,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "abstention_accuracy": 1.0,
+      "expected_fact_recall": 0.8981481481481483,
+      "answer_completion_accuracy": 1.0,
+      "avg_latency_ms": 5298.935575000239,
+      "errors": 0
+    }
+  },
+  "quality_gate": {
+    "passed": true,
+    "violations": [],
+    "floors": {
+      "citation_precision": 0.95,
+      "citation_recall": 0.95,
+      "abstention_accuracy": 0.98,
+      "expected_fact_recall": 0.85,
+      "answer_completion_accuracy": 0.95,
+      "max_faithfulness_regression": 0.0,
+      "max_fact_recall_regression": 0.02
+    }
+  },
+  "records": [
+    {
+      "query_id": "exact-003",
+      "query": "什么是深度学习",
+      "mode": "control",
+      "answerable": true,
+      "answer": "深度学习是机器学习的一个子领域，它使用多层神经网络来学习数据的层次化表示。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-0-2",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "深度学习",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 深度学习\n\n深度学习是机器学习的一个子领域，使用多层神经网络来学习数据的层次化表示。\n卷积神经网络（CNN）擅长图像识别任务，循环神经网络（RNN）适合序列数据，\n而 Transformer 架构在自然语言处理领域取得了革命性突破。\nBERT、GPT 等预训练大模型都是基于 Transformer 架构的。",
+          "score": 5.671080807687995,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 4.396030430924739,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-3",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "fastapi",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## FastAPI\n\nFastAPI 是新一代 Python Web 框架，基于 Starlette 和 Pydantic。\n核心特性：自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await）。\n性能媲美 Node.js 和 Go，是目前增长最快的 Python 框架之一。\n特别适合构建高性能 API 和机器学习模型在线推理服务。",
+          "score": 1.7251056032277439,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-1",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "数据预处理",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 数据预处理\n\n在训练模型之前，数据预处理是必不可少的步骤。\n常见的预处理操作包括：缺失值处理（删除或填充）、特征归一化（MinMax 或 Z-score）、\n类别变量编码（One-Hot 或 Label Encoding）、以及特征工程（创建新特征）。\n良好的预处理可以显著提升模型性能，通常比调参更重要。",
+          "score": 1.5134117800964946,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-0-3",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "模型评估",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 模型评估\n\n模型训练完成后，需要使用测试集评估其泛化能力。\n常用指标包括：准确率、精确率、召回率、F1 分数和 ROC-AUC。\n交叉验证（Cross-Validation）可以更稳定地估计模型性能。",
+          "score": 1.342447360140144,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 1670.8780000008119,
+      "faithfulness": 1.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 0.25,
+      "verification_status": "partial",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "short-003",
+      "query": "可再生能源",
+      "mode": "control",
+      "answerable": true,
+      "answer": "可再生能源包括太阳能和风能，是全球增长最快的能源形式，年均增长率约20%。2023年全球装机容量突破3,000 GW，中国占新增装机的一半以上。光伏发电成本下降90%，已低于化石燃料，同时储能技术的进步正在解决其间歇性问题。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-1-3",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "可再生能源",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 可再生能源\n\n太阳能和风能是全球增长最快的能源形式，年均增长率约 20%。\n2023 年全球可再生能源装机容量突破 3,000 GW，其中中国占全球新增装机的 50% 以上。\n光伏发电成本在过去十年下降了 90%，已低于化石燃料。\n储能技术的进步正在解决可再生能源的间歇性问题。",
+          "score": 8.008418348345733,
+          "rank": 1
+        }
+      ],
+      "latency_ms": 1720.3133000002708,
+      "faithfulness": 1.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "partial",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "long-004",
+      "query": "作为一名全栈开发者，我应该选择哪个 Python Web 框架来构建一个同时包含后台管理和 REST API 的系统",
+      "mode": "control",
+      "answerable": true,
+      "answer": "根据现有资料，建议选择 Django。Django 内置了后台管理界面、ORM 和认证系统，并通过 Django REST Framework 提供标准的 RESTful API 支持，非常适合同时需要后台管理和 API 的全栈项目。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 20.896306171944246,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-3-2",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "flask",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Flask\n\nFlask 是一个轻量级微框架，核心只包含路由和请求/响应处理。\n开发者需要通过扩展来添加 ORM（如 SQLAlchemy）、表单验证（WTForms）等功能。\nFlask 的设计哲学是\"显式优于隐式\"，给予开发者最大自由度。\n适合小型 API 服务、微服务和原型开发。",
+          "score": 14.490238913322454,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-4",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "选型建议",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## 选型建议\n\n大型全栈项目选择 Django，简单 API 服务选择 Flask，\n高性能异步 API 或 ML 模型部署选择 FastAPI。\n三者共享 Python 生态：均可用 pip 安装，支持 virtualenv/conda 环境管理。",
+          "score": 13.459749154928325,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-3-3",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "fastapi",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## FastAPI\n\nFastAPI 是新一代 Python Web 框架，基于 Starlette 和 Pydantic。\n核心特性：自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await）。\n性能媲美 Node.js 和 Go，是目前增长最快的 Python 框架之一。\n特别适合构建高性能 API 和机器学习模型在线推理服务。",
+          "score": 9.001355904176991,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-3-0",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "python-web-框架对比指南",
+          "text": "# Python Web 框架对比指南",
+          "score": 5.511574367139573,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 2104.2335000020103,
+      "faithfulness": 1.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 0.75,
+      "verification_status": "partial",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "long-002",
+      "query": "如果我想在家里做一顿传统的地中海风味的完整晚餐，包括前菜和主菜，有什么推荐的菜谱和做法",
+      "mode": "control",
+      "answerable": true,
+      "answer": "根据现有资料，可以推荐以下地中海风味晚餐组合：\n\n**前菜：希腊沙拉（Horiatiki）**  \n- 食材：新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪、卡拉马塔橄榄。  \n- 调味：特级初榨橄榄油、红酒醋、干牛至、盐。  \n- 注意：不使用生菜叶作为基底。\n\n**主菜：西班牙海鲜饭**  \n可选传统瓦伦西亚版本或海鲜版本。  \n- 传统瓦伦西亚版（Paella Valenciana）：用Bomba圆粒米、藏红花、鸡肉、兔肉、扁豆和蜗牛。  \n- 海鲜版（Paella de Marisco）：用虾、贻贝、鱿鱼等代替肉类。\n\n以上两道菜均来自《地中海美食烹饪指南》，做法简要如上，具体烹饪细节未提供更多资料。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 5.329022314865314,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 4.136231935856705,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 4.058959656073455,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 4.028380548465268,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 3.5213227314561912,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 3068.7288000008266,
+      "faithfulness": 0.7777777777777778,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "partial",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "cn-en-mix-005",
+      "query": "Bomba rice 做的 paella 和其他 rice 有什么不同",
+      "mode": "control",
+      "answerable": true,
+      "answer": "根据现有资料，西班牙海鲜饭（Paella）使用Bomba圆粒米，这种米能吸收更多水分并保持形状，使米饭均匀受热并形成底部焦香的socarrat。其他米的特性未在资料中提及，因此无法进一步比较。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 6.695885099074262,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 3.1294302588696015,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 3.048666908659815,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-2-5",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。\n关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的 socarrat。",
+          "score": 2.970213925614075,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 1.4509519943822538,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 1865.612900000997,
+      "faithfulness": 1.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "partial",
+      "answerability": "partial",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "ambiguous-001",
+      "query": "怎么做",
+      "mode": "control",
+      "answerable": false,
+      "answer": "抱歉，由于没有检索到相关资料，我无法为您提供如何做的具体指导。请提供更明确的问题或所需领域，以便我进一步查找。",
+      "sources": [],
+      "latency_ms": 1620.633499998803,
+      "faithfulness": null,
+      "citation_precision": null,
+      "citation_recall": null,
+      "refused": false,
+      "abstention_correct": false,
+      "expected_fact_recall": null,
+      "verification_status": null,
+      "answerability": "none",
+      "answer_completion_correct": false,
+      "error": null
+    },
+    {
+      "query_id": "unanswerable-001",
+      "query": "日本的消费税税率是多少",
+      "mode": "control",
+      "answerable": false,
+      "answer": "无法从现有资料确定日本的消费税税率。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-0-2",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "深度学习",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 深度学习\n\n深度学习是机器学习的一个子领域，使用多层神经网络来学习数据的层次化表示。\n卷积神经网络（CNN）擅长图像识别任务，循环神经网络（RNN）适合序列数据，\n而 Transformer 架构在自然语言处理领域取得了革命性突破。\nBERT、GPT 等预训练大模型都是基于 Transformer 架构的。",
+          "score": 1.1222340421058778,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 1.1222340421058778,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-2-5",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。\n关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的 socarrat。",
+          "score": 1.0721752627312473,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-3-3",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "fastapi",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## FastAPI\n\nFastAPI 是新一代 Python Web 框架，基于 Starlette 和 Pydantic。\n核心特性：自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await）。\n性能媲美 Node.js 和 Go，是目前增长最快的 Python 框架之一。\n特别适合构建高性能 API 和机器学习模型在线推理服务。",
+          "score": 1.0430952019898336,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 1.0346543546405702,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 987.4796000003698,
+      "faithfulness": null,
+      "citation_precision": null,
+      "citation_recall": null,
+      "refused": true,
+      "abstention_correct": true,
+      "expected_fact_recall": null,
+      "verification_status": null,
+      "answerability": "none",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "multi-hop-003",
+      "query": "用 Django 的 ORM 和用 SQLAlchemy 在 FastAPI 中操作数据库的体验有什么不同",
+      "mode": "control",
+      "answerable": true,
+      "answer": "根据现有资料，无法确定Django的ORM与在FastAPI中使用SQLAlchemy操作数据库的体验有何不同。资料仅提到Django内置ORM，而Flask可通过扩展使用SQLAlchemy，但未涉及具体的比较。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 6.039657226022576,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 5.376257081183727,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-2",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "flask",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Flask\n\nFlask 是一个轻量级微框架，核心只包含路由和请求/响应处理。\n开发者需要通过扩展来添加 ORM（如 SQLAlchemy）、表单验证（WTForms）等功能。\nFlask 的设计哲学是\"显式优于隐式\"，给予开发者最大自由度。\n适合小型 API 服务、微服务和原型开发。",
+          "score": 5.2813101271781715,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 4.7186674646998235,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-3-4",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "选型建议",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## 选型建议\n\n大型全栈项目选择 Django，简单 API 服务选择 Flask，\n高性能异步 API 或 ML 模型部署选择 FastAPI。\n三者共享 Python 生态：均可用 pip 安装，支持 virtualenv/conda 环境管理。",
+          "score": 4.4888508214832905,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 1656.5187000014703,
+      "faithfulness": 0.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": true,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "unverified",
+      "answerability": "partial",
+      "answer_completion_correct": false,
+      "error": null
+    },
+    {
+      "query_id": "comparison-002",
+      "query": "光伏发电和风力发电哪个成本更低",
+      "mode": "control",
+      "answerable": true,
+      "answer": "根据现有资料，光伏发电成本在过去十年下降了90%，已低于化石燃料，但未提供与风力发电成本的直接比较，因此无法确定两者哪个成本更低。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-1-3",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "可再生能源",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 可再生能源\n\n太阳能和风能是全球增长最快的能源形式，年均增长率约 20%。\n2023 年全球可再生能源装机容量突破 3,000 GW，其中中国占全球新增装机的 50% 以上。\n光伏发电成本在过去十年下降了 90%，已低于化石燃料。\n储能技术的进步正在解决可再生能源的间歇性问题。",
+          "score": 6.732124321818679,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-0-3",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "模型评估",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 模型评估\n\n模型训练完成后，需要使用测试集评估其泛化能力。\n常用指标包括：准确率、精确率、召回率、F1 分数和 ROC-AUC。\n交叉验证（Cross-Validation）可以更稳定地估计模型性能。",
+          "score": 2.6523066408058638,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-1-4",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "应对措施",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 应对措施\n\n《巴黎协定》目标是控制全球升温在 2°C 以内，力争 1.5°C。\n碳捕获与封存技术（CCS）虽然前景广阔，但目前成本高昂。\n个人可以通过减少碳足迹、选择绿色出行和节约能源来贡献力量。",
+          "score": 2.5752378942477936,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-1",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "数据预处理",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 数据预处理\n\n在训练模型之前，数据预处理是必不可少的步骤。\n常见的预处理操作包括：缺失值处理（删除或填充）、特征归一化（MinMax 或 Z-score）、\n类别变量编码（One-Hot 或 Label Encoding）、以及特征工程（创建新特征）。\n良好的预处理可以显著提升模型性能，通常比调参更重要。",
+          "score": 1.807857040112515,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 0.8116815320998816,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 1350.4437999981747,
+      "faithfulness": 0.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": true,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "unverified",
+      "answerability": "partial",
+      "answer_completion_correct": false,
+      "error": null
+    },
+    {
+      "query_id": "multi-hop-004",
+      "query": "意大利 Carbonara 和西班牙 Paella 在烹饪理念上有什么共同点和不同点",
+      "mode": "control",
+      "answerable": true,
+      "answer": "根据现有资料，意大利Carbonara和西班牙Paella在烹饪理念上的**共同点**是：两者都强调使用特定核心食材（如Carbonara的蛋黄、火腿和奶酪，Paella的圆粒米、藏红花等），并注重传统的烹饪工具或步骤（如Carbonara需趁热拌匀，Paella使用平底锅形成焦香底层）。\n\n**不同点**在于：Carbonara的核心是蛋酱乳化与猪脸肉的油脂融合，追求 creamy 的口感；Paella则通过宽浅锅使米饭均匀受热，强调底部焦香（socarrat）的形成，且食材构成因地区（陆地或海鲜版本）而异。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 8.81884082197032,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-2-1",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "意大利经典-carbonara",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 意大利经典：Carbonara\n\n正宗的意面 Carbonara 只需要四种核心食材：\n鸡蛋黄、风干猪脸肉（guanciale）、佩科里诺罗马羊奶酪（pecorino romano）和黑胡椒。\n关键步骤：将鸡蛋和奶酪搅拌成奶油状酱汁，猪脸肉煎至金黄，\n意面煮至 al dente，趁热将所有材料快速拌匀。",
+          "score": 7.606283578419209,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-2-5",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。\n关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的 socarrat。",
+          "score": 3.903233902398128,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 2.7286345012612365,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 2.34592111126828,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 5575.765499997942,
+      "faithfulness": 0.3333333333333333,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 0.6666666666666666,
+      "verification_status": "partial",
+      "answerability": "partial",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "comparison-003",
+      "query": "Django REST Framework 和 FastAPI 做 REST API 哪个更好",
+      "mode": "control",
+      "answerable": true,
+      "answer": "根据现有资料，**Django REST Framework (DRF)** 和 **FastAPI** 都是构建 REST API 的优秀选择，但适用场景不同：\n\n- **DRF** 是 Django 的标准扩展，继承了 Django 的“电池自带”特性，适合构建**大型全栈项目**（如内容管理系统、电子商务平台），能快速集成认证、ORM、后台管理等成熟功能。\n- **FastAPI** 是新一代高性能框架，基于异步支持，**自动生成 OpenAPI 文档**，性能媲美 Node.js 和 Go，特别适合**高性能 API 服务**和**机器学习模型部署**。\n\n选型建议：若项目本身是 Django 全栈项目或需要充分利用 Django 生态，优先选 DRF；若需要高性能、异步特性或快速开发独立 API，FastAPI 更合适。资料未直接比较两者优劣，最终取决于具体需求。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 9.291497622384302,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-3-4",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "选型建议",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## 选型建议\n\n大型全栈项目选择 Django，简单 API 服务选择 Flask，\n高性能异步 API 或 ML 模型部署选择 FastAPI。\n三者共享 Python 生态：均可用 pip 安装，支持 virtualenv/conda 环境管理。",
+          "score": 6.476307349738029,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-3",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "fastapi",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## FastAPI\n\nFastAPI 是新一代 Python Web 框架，基于 Starlette 和 Pydantic。\n核心特性：自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await）。\n性能媲美 Node.js 和 Go，是目前增长最快的 Python 框架之一。\n特别适合构建高性能 API 和机器学习模型在线推理服务。",
+          "score": 4.686069967339012,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 2.0106084854937025,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-3-2",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "flask",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Flask\n\nFlask 是一个轻量级微框架，核心只包含路由和请求/响应处理。\n开发者需要通过扩展来添加 ORM（如 SQLAlchemy）、表单验证（WTForms）等功能。\nFlask 的设计哲学是\"显式优于隐式\"，给予开发者最大自由度。\n适合小型 API 服务、微服务和原型开发。",
+          "score": 1.8826849199302136,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 3814.8196000001917,
+      "faithfulness": 1.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "partial",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "exact-003",
+      "query": "什么是深度学习",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- 深度学习是机器学习的一个子领域，使用多层神经网络来学习数据的层次化表示 [S1]。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-0-2",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "深度学习",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 深度学习\n\n深度学习是机器学习的一个子领域，使用多层神经网络来学习数据的层次化表示。\n卷积神经网络（CNN）擅长图像识别任务，循环神经网络（RNN）适合序列数据，\n而 Transformer 架构在自然语言处理领域取得了革命性突破。\nBERT、GPT 等预训练大模型都是基于 Transformer 架构的。",
+          "score": 5.671080807687995,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 4.396030430924739,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-3",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "fastapi",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## FastAPI\n\nFastAPI 是新一代 Python Web 框架，基于 Starlette 和 Pydantic。\n核心特性：自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await）。\n性能媲美 Node.js 和 Go，是目前增长最快的 Python 框架之一。\n特别适合构建高性能 API 和机器学习模型在线推理服务。",
+          "score": 1.7251056032277439,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-1",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "数据预处理",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 数据预处理\n\n在训练模型之前，数据预处理是必不可少的步骤。\n常见的预处理操作包括：缺失值处理（删除或填充）、特征归一化（MinMax 或 Z-score）、\n类别变量编码（One-Hot 或 Label Encoding）、以及特征工程（创建新特征）。\n良好的预处理可以显著提升模型性能，通常比调参更重要。",
+          "score": 1.5134117800964946,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-0-3",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "模型评估",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 模型评估\n\n模型训练完成后，需要使用测试集评估其泛化能力。\n常用指标包括：准确率、精确率、召回率、F1 分数和 ROC-AUC。\n交叉验证（Cross-Validation）可以更稳定地估计模型性能。",
+          "score": 1.342447360140144,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 1439.0148999991652,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 0.25,
+      "verification_status": "verified",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "comparison-005",
+      "query": "Carbonara 和 Paella 在食材准备上有什么相似之处",
+      "mode": "control",
+      "answerable": false,
+      "answer": "根据现有资料，无法确定Carbonara和Paella在食材准备上的相似之处。Carbonara使用鸡蛋黄、猪脸肉、羊奶酪和黑胡椒，而Paella主要使用米、藏红花以及肉类或海鲜，两者食材差异较大。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-2-1",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "意大利经典-carbonara",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 意大利经典：Carbonara\n\n正宗的意面 Carbonara 只需要四种核心食材：\n鸡蛋黄、风干猪脸肉（guanciale）、佩科里诺罗马羊奶酪（pecorino romano）和黑胡椒。\n关键步骤：将鸡蛋和奶酪搅拌成奶油状酱汁，猪脸肉煎至金黄，\n意面煮至 al dente，趁热将所有材料快速拌匀。",
+          "score": 5.979224278474749,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 3.619063417788821,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 2.7286345012612365,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-2-5",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。\n关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的 socarrat。",
+          "score": 2.3953205454279614,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 2.3478326641827416,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 2417.612299999746,
+      "faithfulness": null,
+      "citation_precision": null,
+      "citation_recall": null,
+      "refused": true,
+      "abstention_correct": true,
+      "expected_fact_recall": null,
+      "verification_status": null,
+      "answerability": "none",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "short-003",
+      "query": "可再生能源",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- 太阳能和风能是全球增长最快的能源形式，年均增长率约 20% [S1]。\n- 2023 年全球可再生能源装机容量突破 3,000 GW，其中中国占全球新增装机的 50% 以上 [S1]。\n- 光伏发电成本在过去十年下降了 90%，已低于化石燃料 [S1]。\n- 储能技术的进步正在解决可再生能源的间歇性问题 [S1]。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-1-3",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "可再生能源",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 可再生能源\n\n太阳能和风能是全球增长最快的能源形式，年均增长率约 20%。\n2023 年全球可再生能源装机容量突破 3,000 GW，其中中国占全球新增装机的 50% 以上。\n光伏发电成本在过去十年下降了 90%，已低于化石燃料。\n储能技术的进步正在解决可再生能源的间歇性问题。",
+          "score": 8.008418348345733,
+          "rank": 1
+        }
+      ],
+      "latency_ms": 2167.423700000654,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "verified",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "long-004",
+      "query": "作为一名全栈开发者，我应该选择哪个 Python Web 框架来构建一个同时包含后台管理和 REST API 的系统",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- Django 内置后台管理界面和认证系统，适合构建内容管理系统等数据驱动的 Web 应用 [S1]。\n- Django REST Framework (DRF) 是其构建 RESTful API 的标准扩展，可同时实现后台管理和 REST API [S1]。\n- 选型建议明确指出：大型全栈项目应选择 Django [S3]。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 20.896306171944246,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-3-2",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "flask",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Flask\n\nFlask 是一个轻量级微框架，核心只包含路由和请求/响应处理。\n开发者需要通过扩展来添加 ORM（如 SQLAlchemy）、表单验证（WTForms）等功能。\nFlask 的设计哲学是\"显式优于隐式\"，给予开发者最大自由度。\n适合小型 API 服务、微服务和原型开发。",
+          "score": 14.490238913322454,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-4",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "选型建议",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## 选型建议\n\n大型全栈项目选择 Django，简单 API 服务选择 Flask，\n高性能异步 API 或 ML 模型部署选择 FastAPI。\n三者共享 Python 生态：均可用 pip 安装，支持 virtualenv/conda 环境管理。",
+          "score": 13.459749154928325,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-3-3",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "fastapi",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## FastAPI\n\nFastAPI 是新一代 Python Web 框架，基于 Starlette 和 Pydantic。\n核心特性：自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await）。\n性能媲美 Node.js 和 Go，是目前增长最快的 Python 框架之一。\n特别适合构建高性能 API 和机器学习模型在线推理服务。",
+          "score": 9.001355904176991,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-3-0",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "python-web-框架对比指南",
+          "text": "# Python Web 框架对比指南",
+          "score": 5.511574367139573,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 3015.4155000018363,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "verified",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "cn-en-mix-005",
+      "query": "Bomba rice 做的 paella 和其他 rice 有什么不同",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- 西班牙海鲜饭的传统瓦伦西亚版本使用 Bomba 圆粒米 [S1]。\n\n无法确认：Bomba 米与其他米在烹饪特性、吸水性、口感或成品效果上的具体不同。现有资料未提供相关比较信息。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 6.695885099074262,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 3.1294302588696015,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 3.048666908659815,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-2-5",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。\n关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的 socarrat。",
+          "score": 2.970213925614075,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 1.4509519943822538,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 3541.7914999998175,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "verified",
+      "answerability": "partial",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "ambiguous-001",
+      "query": "怎么做",
+      "mode": "optimized",
+      "answerable": false,
+      "answer": "现有资料不足以回答该问题。",
+      "sources": [],
+      "latency_ms": 919.5336999982828,
+      "faithfulness": null,
+      "citation_precision": null,
+      "citation_recall": null,
+      "refused": true,
+      "abstention_correct": true,
+      "expected_fact_recall": null,
+      "verification_status": null,
+      "answerability": "none",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "unanswerable-001",
+      "query": "日本的消费税税率是多少",
+      "mode": "optimized",
+      "answerable": false,
+      "answer": "现有资料不足以回答该问题。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-0-2",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "深度学习",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 深度学习\n\n深度学习是机器学习的一个子领域，使用多层神经网络来学习数据的层次化表示。\n卷积神经网络（CNN）擅长图像识别任务，循环神经网络（RNN）适合序列数据，\n而 Transformer 架构在自然语言处理领域取得了革命性突破。\nBERT、GPT 等预训练大模型都是基于 Transformer 架构的。",
+          "score": 1.1222340421058778,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 1.1222340421058778,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-2-5",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。\n关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的 socarrat。",
+          "score": 1.0721752627312473,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-3-3",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "fastapi",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## FastAPI\n\nFastAPI 是新一代 Python Web 框架，基于 Starlette 和 Pydantic。\n核心特性：自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await）。\n性能媲美 Node.js 和 Go，是目前增长最快的 Python 框架之一。\n特别适合构建高性能 API 和机器学习模型在线推理服务。",
+          "score": 1.0430952019898336,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 1.0346543546405702,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 1055.442500000936,
+      "faithfulness": null,
+      "citation_precision": null,
+      "citation_recall": null,
+      "refused": true,
+      "abstention_correct": true,
+      "expected_fact_recall": null,
+      "verification_status": null,
+      "answerability": "none",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "long-002",
+      "query": "如果我想在家里做一顿传统的地中海风味的完整晚餐，包括前菜和主菜，有什么推荐的菜谱和做法",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- 传统希腊沙拉（Horiatiki）的食材包括新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪、卡拉马塔橄榄，用特级初榨橄榄油、红酒醋、干牛至和盐调味，且不使用生菜叶 [S5]。\n- 瓦伦西亚风格西班牙海鲜饭（Paella Valenciana）使用 Bomba 圆粒米、藏红花、鸡肉、兔肉、扁豆和蜗牛 [S3]。\n- 海鲜版本西班牙海鲜饭（Paella de Marisco）使用虾、贻贝、鱿鱼等代替肉类 [S3]。\n无法确认：这些菜谱的具体烹饪步骤和做法。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 5.329022314865314,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 4.136231935856705,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 4.058959656073455,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 4.028380548465268,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 3.5213227314561912,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 8947.968399999809,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "verified",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "comparison-002",
+      "query": "光伏发电和风力发电哪个成本更低",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- 光伏发电成本在过去十年下降了 90%，已低于化石燃料 [S1]。\n\n无法确认：光伏发电与风力发电的成本比较，因为现有资料未提供风力发电的成本数据。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-1-3",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "可再生能源",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 可再生能源\n\n太阳能和风能是全球增长最快的能源形式，年均增长率约 20%。\n2023 年全球可再生能源装机容量突破 3,000 GW，其中中国占全球新增装机的 50% 以上。\n光伏发电成本在过去十年下降了 90%，已低于化石燃料。\n储能技术的进步正在解决可再生能源的间歇性问题。",
+          "score": 6.732124321818679,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-0-3",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "模型评估",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 模型评估\n\n模型训练完成后，需要使用测试集评估其泛化能力。\n常用指标包括：准确率、精确率、召回率、F1 分数和 ROC-AUC。\n交叉验证（Cross-Validation）可以更稳定地估计模型性能。",
+          "score": 2.6523066408058638,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-1-4",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "应对措施",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 应对措施\n\n《巴黎协定》目标是控制全球升温在 2°C 以内，力争 1.5°C。\n碳捕获与封存技术（CCS）虽然前景广阔，但目前成本高昂。\n个人可以通过减少碳足迹、选择绿色出行和节约能源来贡献力量。",
+          "score": 2.5752378942477936,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-1",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "数据预处理",
+          "text": "文档上下文：Python 机器学习完全指南\n\n## 数据预处理\n\n在训练模型之前，数据预处理是必不可少的步骤。\n常见的预处理操作包括：缺失值处理（删除或填充）、特征归一化（MinMax 或 Z-score）、\n类别变量编码（One-Hot 或 Label Encoding）、以及特征工程（创建新特征）。\n良好的预处理可以显著提升模型性能，通常比调参更重要。",
+          "score": 1.807857040112515,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 0.8116815320998816,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 2144.819600001938,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "verified",
+      "answerability": "partial",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "multi-hop-003",
+      "query": "用 Django 的 ORM 和用 SQLAlchemy 在 FastAPI 中操作数据库的体验有什么不同",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- Django 内置了 ORM（对象关系映射）功能，包含在“电池自带”的全栈框架中 [S1]。\n\n无法确认：检索资料未提供在 FastAPI 中使用 SQLAlchemy 的操作体验，也未描述 Django ORM 与 SQLAlchemy 在 FastAPI 中的具体比较。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 6.039657226022576,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 5.376257081183727,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-2",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "flask",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Flask\n\nFlask 是一个轻量级微框架，核心只包含路由和请求/响应处理。\n开发者需要通过扩展来添加 ORM（如 SQLAlchemy）、表单验证（WTForms）等功能。\nFlask 的设计哲学是\"显式优于隐式\"，给予开发者最大自由度。\n适合小型 API 服务、微服务和原型开发。",
+          "score": 5.2813101271781715,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 4.7186674646998235,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-3-4",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "选型建议",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## 选型建议\n\n大型全栈项目选择 Django，简单 API 服务选择 Flask，\n高性能异步 API 或 ML 模型部署选择 FastAPI。\n三者共享 Python 生态：均可用 pip 安装，支持 virtualenv/conda 环境管理。",
+          "score": 4.4888508214832905,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 10879.411699999764,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "verified",
+      "answerability": "partial",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "comparison-003",
+      "query": "Django REST Framework 和 FastAPI 做 REST API 哪个更好",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- Django REST Framework (DRF) 是 Django 构建 RESTful API 的标准扩展 [S1]。\n- FastAPI 基于 Starlette 和 Pydantic，核心特性包括自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await），性能媲美 Node.js 和 Go，适合高性能 API 和机器学习模型在线推理服务 [S3]。\n- 选型建议：大型全栈项目选择 Django（隐含 DRF 用于 Django 项目），高性能异步 API 或 ML 模型部署选择 FastAPI [S2]。\n\n无法确认：现有资料未对 Django REST Framework 和 FastAPI 在构建 REST API 的优劣进行直接比较，无法判断哪个更好。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-3-1",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "django",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Django\n\nDjango 是一个\"电池自带\"的全栈 Web 框架，遵循 MTV（Model-Template-View）架构模式。\n内置功能包括 ORM、后台管理界面、认证系统、表单处理和 CSRF 保护。\n适合快速构建内容管理系统、电子商务平台等数据驱动的 Web 应用。\nDjango REST Framework (DRF) 是其构建 RESTful API 的标准扩展。",
+          "score": 9.291497622384302,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-3-4",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "选型建议",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## 选型建议\n\n大型全栈项目选择 Django，简单 API 服务选择 Flask，\n高性能异步 API 或 ML 模型部署选择 FastAPI。\n三者共享 Python 生态：均可用 pip 安装，支持 virtualenv/conda 环境管理。",
+          "score": 6.476307349738029,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-3-3",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "fastapi",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## FastAPI\n\nFastAPI 是新一代 Python Web 框架，基于 Starlette 和 Pydantic。\n核心特性：自动生成 OpenAPI 文档、类型提示驱动的参数验证、原生异步支持（async/await）。\n性能媲美 Node.js 和 Go，是目前增长最快的 Python 框架之一。\n特别适合构建高性能 API 和机器学习模型在线推理服务。",
+          "score": 4.686069967339012,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 2.0106084854937025,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-3-2",
+          "document_id": "grounded-doc-3",
+          "document_key": "python-web-frameworks",
+          "section_key": "flask",
+          "text": "文档上下文：Python Web 框架对比指南\n\n## Flask\n\nFlask 是一个轻量级微框架，核心只包含路由和请求/响应处理。\n开发者需要通过扩展来添加 ORM（如 SQLAlchemy）、表单验证（WTForms）等功能。\nFlask 的设计哲学是\"显式优于隐式\"，给予开发者最大自由度。\n适合小型 API 服务、微服务和原型开发。",
+          "score": 1.8826849199302136,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 6297.592499999155,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 1.0,
+      "verification_status": "verified",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "multi-hop-004",
+      "query": "意大利 Carbonara 和西班牙 Paella 在烹饪理念上有什么共同点和不同点",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "已确认：\n- 意大利Carbonara的烹饪要点：使用鸡蛋黄、风干猪脸肉（guanciale）、佩科里诺罗马羊奶酪和黑胡椒[S2]。\n- 意大利Carbonara的关键步骤是将鸡蛋和奶酪搅拌成酱汁，猪脸肉煎至金黄[S2]。\n- 意大利Carbonara要求意面煮至al dente，趁热将所有材料快速拌匀[S2]。\n- 西班牙海鲜饭传统版本使用Bomba圆粒米、藏红花、鸡肉、兔肉、扁豆和蜗牛[S1]。\n- 西班牙海鲜饭海鲜版本使用虾、贻贝、鱿鱼等代替肉类[S1]。\n- 西班牙海鲜饭的关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的socarrat[S3]。\n\n无法确认：现有资料未对两者在烹饪理念上的共同点和不同点进行比较。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 8.81884082197032,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-2-1",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "意大利经典-carbonara",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 意大利经典：Carbonara\n\n正宗的意面 Carbonara 只需要四种核心食材：\n鸡蛋黄、风干猪脸肉（guanciale）、佩科里诺罗马羊奶酪（pecorino romano）和黑胡椒。\n关键步骤：将鸡蛋和奶酪搅拌成奶油状酱汁，猪脸肉煎至金黄，\n意面煮至 al dente，趁热将所有材料快速拌匀。",
+          "score": 7.606283578419209,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-2-5",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。\n关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的 socarrat。",
+          "score": 3.903233902398128,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 2.7286345012612365,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 2.34592111126828,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 17702.769200001057,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 0.8333333333333334,
+      "verification_status": "verified",
+      "answerability": "partial",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "comparison-005",
+      "query": "Carbonara 和 Paella 在食材准备上有什么相似之处",
+      "mode": "optimized",
+      "answerable": false,
+      "answer": "现有资料不足以回答该问题。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-2-1",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "意大利经典-carbonara",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 意大利经典：Carbonara\n\n正宗的意面 Carbonara 只需要四种核心食材：\n鸡蛋黄、风干猪脸肉（guanciale）、佩科里诺罗马羊奶酪（pecorino romano）和黑胡椒。\n关键步骤：将鸡蛋和奶酪搅拌成奶油状酱汁，猪脸肉煎至金黄，\n意面煮至 al dente，趁热将所有材料快速拌匀。",
+          "score": 5.979224278474749,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 3.619063417788821,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 2.7286345012612365,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-2-5",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。\n关键烹饪工具是宽而浅的平底锅（paellera），使米饭均匀受热形成底部焦香的 socarrat。",
+          "score": 2.3953205454279614,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 2.3478326641827416,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 5476.043700000446,
+      "faithfulness": null,
+      "citation_precision": null,
+      "citation_recall": null,
+      "refused": true,
+      "abstention_correct": true,
+      "expected_fact_recall": null,
+      "verification_status": null,
+      "answerability": "none",
+      "answer_completion_correct": true,
+      "error": null
+    }
+  ],
+  "rescored_at": "2026-07-14T13:48:43.658141+00:00",
+  "scoring_version": "claim-evidence-v2"
+}

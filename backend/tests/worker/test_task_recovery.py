@@ -1,12 +1,11 @@
 """Test background task idempotent replay and recovery."""
 
-import asyncio
 import uuid
 
 import pytest
 from sqlalchemy import text as sa_text
 
-from models.database import async_session
+from models.database import session_scope
 
 
 @pytest.fixture(autouse=True)
@@ -14,7 +13,7 @@ async def _cleanup():
     yield
     from worker.tasks import reset_task_manager
     reset_task_manager()
-    async with async_session() as session:
+    async with session_scope() as session:
         conn = await session.connection()
         await conn.execute(sa_text("DELETE FROM task_queue"))
         await session.commit()
@@ -58,12 +57,12 @@ class TestHandlerRegistry:
 
 class TestDeadLetter:
     async def test_max_attempts_moves_to_dead_letter(self):
-        from worker.tasks import BackgroundTaskManager, DEAD_LETTER_STATUS
+        from worker.tasks import DEAD_LETTER_STATUS, BackgroundTaskManager
 
         tm = BackgroundTaskManager()
         task_id = f"dl_test_{uuid.uuid4().hex[:8]}"
 
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             await conn.execute(sa_text(
                 "INSERT INTO task_queue (id, name, status, task_type, attempt, max_attempts, payload_json) "
@@ -74,7 +73,7 @@ class TestDeadLetter:
         moved = await tm._move_to_dead_letter(task_id)
         assert moved is True
 
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             row = (await conn.execute(
                 sa_text("SELECT status FROM task_queue WHERE id=:id"), {"id": task_id}
@@ -88,7 +87,7 @@ class TestRecoveryOnStartup:
         from worker.tasks import recover_tasks_on_startup
 
         task_id = f"recover_test_{uuid.uuid4().hex[:8]}"
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             await conn.execute(sa_text(
                 "INSERT INTO task_queue (id, name, status, task_type, payload_json, "
@@ -101,7 +100,7 @@ class TestRecoveryOnStartup:
         recovered = await recover_tasks_on_startup()
         assert recovered >= 1
 
-        async with async_session() as session:
+        async with session_scope() as session:
             conn = await session.connection()
             row = (await conn.execute(
                 sa_text("SELECT status, attempt FROM task_queue WHERE id=:id"), {"id": task_id}

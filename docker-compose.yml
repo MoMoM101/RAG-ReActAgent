@@ -19,10 +19,16 @@ services:
     environment:
       - SERVER_HOST=0.0.0.0
       - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6334
+      # QdrantVectorDB constructs QdrantClient(..., port=...), which expects
+      # the HTTP API port. Port 6334 is gRPC and makes dependency checks and
+      # indexing fail in Docker.
+      - QDRANT_PORT=6333
       - DATABASE_URL=sqlite+aiosqlite:///./data/rag_agent.db
       - QDRANT_PATH=./data/qdrant
       - UPLOAD_DIR=./data/uploads
+      - DOCUMENT_MAX_UPLOAD_MB=${DOCUMENT_MAX_UPLOAD_MB:-200}
+      - DOCUMENT_BATCH_MAX_FILES=${DOCUMENT_BATCH_MAX_FILES:-50}
+      - DOCUMENT_BATCH_MAX_TOTAL_MB=${DOCUMENT_BATCH_MAX_TOTAL_MB:-1024}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o}
@@ -31,6 +37,12 @@ services:
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      # The base image installs requirements.txt only; OCR dependencies live in
+      # requirements-ocr.txt. Keep the optional component off unless a custom
+      # OCR-capable image explicitly opts in via DOCKER_OCR_ENABLED.
+      - OCR_ENABLED=${DOCKER_OCR_ENABLED:-false}
+      # Forward the key used to encrypt ENC: credentials in the env file.
+      - SECRET_KEY=${SECRET_KEY:-}
       - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
       - ALLOW_REMOTE_ACCESS=${ALLOW_REMOTE_ACCESS:-false}
     volumes:

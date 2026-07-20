@@ -7,6 +7,8 @@ from pathlib import Path
 
 from config import settings
 
+_MANAGED_HANDLER_ATTR = "_rag_agent_managed"
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -34,6 +36,13 @@ def setup_logging() -> None:
     root = logging.getLogger()
     root.setLevel(level)
 
+    # Lifespan can run more than once in tests or embedded deployments. Replace
+    # only handlers owned by this module so third-party logging stays intact.
+    for handler in list(root.handlers):
+        if getattr(handler, _MANAGED_HANDLER_ATTR, False):
+            root.removeHandler(handler)
+            handler.close()
+
     # Console — human readable
     console = logging.StreamHandler()
     console.setLevel(level)
@@ -41,6 +50,7 @@ def setup_logging() -> None:
         "%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
         datefmt="%H:%M:%S",
     ))
+    setattr(console, _MANAGED_HANDLER_ATTR, True)
     root.addHandler(console)
 
     # File — JSON lines with rotation (10 MB × 5)
@@ -52,6 +62,7 @@ def setup_logging() -> None:
     )
     file_handler.setLevel(level)
     file_handler.setFormatter(JsonFormatter())
+    setattr(file_handler, _MANAGED_HANDLER_ATTR, True)
     root.addHandler(file_handler)
 
     logging.getLogger(__name__).info(

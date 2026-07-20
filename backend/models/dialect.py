@@ -7,8 +7,8 @@ UnsupportedDialectError immediately — no silent fallback.
 """
 from typing import Protocol
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class UnsupportedDialectError(RuntimeError):
@@ -38,18 +38,49 @@ class SqliteAdapter:
             )
 
     async def rebuild_fts(self, session: AsyncSession) -> None:
-        """Rebuild the FTS5 index from the bm25_docs table."""
-        await session.execute(text("DROP TABLE IF EXISTS bm25_docs"))
-        await session.execute(text("""
-            CREATE VIRTUAL TABLE bm25_docs
-            USING fts5(
-                doc_id,
-                document_id,
-                chunk_id,
-                text,
-                tokenize='porter unicode61'
+        """Recreate the current BM25 schema and the separate legacy FTS table.
+
+        ``bm25_docs`` is a relational document table used by ``BM25Search``.
+        It must never share a name with an FTS5 virtual table.
+        """
+        for table in ("bm25_index", "bm25_stats", "bm25_docs", "chunks_fts"):
+            await session.execute(text(f"DROP TABLE IF EXISTS {table}"))
+
+        statements = (
+            """
+            CREATE TABLE bm25_docs (
+                chunk_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                document_key TEXT NOT NULL DEFAULT '',
+                section_key TEXT NOT NULL DEFAULT '',
+                chunk_index INTEGER NOT NULL DEFAULT 0,
+                text TEXT NOT NULL,
+                token_count INTEGER NOT NULL DEFAULT 0
             )
-        """))
+            """,
+            """
+            CREATE TABLE bm25_index (
+                term TEXT NOT NULL,
+                chunk_id TEXT NOT NULL,
+                tf INTEGER NOT NULL,
+                PRIMARY KEY (term, chunk_id)
+            )
+            """,
+            """
+            CREATE TABLE bm25_stats (
+                term TEXT PRIMARY KEY,
+                df INTEGER NOT NULL DEFAULT 0
+            )
+            """,
+            """
+            CREATE VIRTUAL TABLE chunks_fts
+            USING fts5(chunk_id, document_id, content, tokenize='trigram')
+            """,
+            "CREATE INDEX idx_bm25_docs_did ON bm25_docs(document_id)",
+            "CREATE INDEX idx_bm25_index_term ON bm25_index(term)",
+        )
+        for statement in statements:
+            await session.execute(text(statement))
         await session.commit()
 
 

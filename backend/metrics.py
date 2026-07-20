@@ -456,8 +456,9 @@ def export_prometheus() -> str:
         lines.append(f'rag_stream_events_total{{type="{event_type}"}} {count}')
 
     # System state gauges (query DB for live values)
-    from config import settings
     from pathlib import Path as _Path
+
+    from config import settings
     db_url = settings.database_url
     if db_url.startswith("sqlite+aiosqlite:///"):
         db_path = db_url[len("sqlite+aiosqlite:///"):]

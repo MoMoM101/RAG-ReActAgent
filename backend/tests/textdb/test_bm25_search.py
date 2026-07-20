@@ -3,7 +3,7 @@ import contextlib
 
 import pytest
 
-from textdb.bm25_search import BM25Search, tokenize
+from textdb.bm25_search import BM25Search, _closest_fuzzy_term, tokenize
 
 
 @pytest.fixture
@@ -39,6 +39,17 @@ async def test_insert_and_search(bm25):
 async def test_search_empty(bm25):
     results = await bm25.search("hello")
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_search_corrects_one_character_latin_typo(bm25):
+    await bm25.insert("c1", "d1", "Carbonara 意面使用 guanciale")
+    await bm25.insert("c2", "d2", "Paella 使用 Bomba 米")
+
+    results = await bm25.search("cabonara 意面", top_k=5)
+
+    assert results
+    assert results[0].chunk_id == "c1"
 
 
 @pytest.mark.asyncio
@@ -99,9 +110,9 @@ async def test_bm25_scoring_prefers_relevant(bm25):
 async def test_insert_batch_document(bm25):
     """insert_batch should work for multi-chunk document."""
     entries = [
-        ("c1", "d1", "python is great for data science"),
-        ("c2", "d1", "python supports machine learning"),
-        ("c3", "d1", "python runs on many platforms"),
+        ("c1", "d1", "doc-key", "s1", 0, "python is great for data science"),
+        ("c2", "d1", "doc-key", "s2", 1, "python supports machine learning"),
+        ("c3", "d1", "doc-key", "s3", 2, "python runs on many platforms"),
     ]
     await bm25.insert_batch(entries)
 
@@ -114,9 +125,9 @@ async def test_insert_batch_document(bm25):
 async def test_insert_batch_df_counts_chunks(bm25):
     """df should count the number of chunks containing a term, not +1 per batch."""
     entries = [
-        ("c1", "d1", "python is great for data science"),
-        ("c2", "d1", "python supports machine learning"),
-        ("c3", "d1", "python runs on many platforms"),
+        ("c1", "d1", "doc-key", "s1", 0, "python is great for data science"),
+        ("c2", "d1", "doc-key", "s2", 1, "python supports machine learning"),
+        ("c3", "d1", "doc-key", "s3", 2, "python runs on many platforms"),
     ]
     await bm25.insert_batch(entries)
 
@@ -131,9 +142,9 @@ async def test_insert_batch_df_counts_chunks(bm25):
 async def test_insert_batch_df_shared_term(bm25):
     """When only some chunks share a term, df reflects actual count."""
     entries = [
-        ("c1", "d1", "python is great for scripting"),
-        ("c2", "d1", "python for data analysis"),
-        ("c3", "d1", "only machine learning and deep learning"),
+        ("c1", "d1", "doc-key", "s1", 0, "python is great for scripting"),
+        ("c2", "d1", "doc-key", "s2", 1, "python for data analysis"),
+        ("c3", "d1", "doc-key", "s3", 2, "only machine learning and deep learning"),
     ]
     await bm25.insert_batch(entries)
 
@@ -148,9 +159,9 @@ async def test_insert_batch_df_shared_term(bm25):
 async def test_delete_document_decrements_df(bm25):
     """After delete_by_document, df should decrease for terms in deleted chunks."""
     entries = [
-        ("c1", "d1", "python sklearn"),
-        ("c2", "d1", "python tensorflow"),
-        ("c3", "d2", "java spring"),
+        ("c1", "d1", "doc-key", "s1", 0, "python sklearn"),
+        ("c2", "d1", "doc-key", "s2", 1, "python tensorflow"),
+        ("c3", "d2", "doc-key2", "s1", 0, "java spring"),
     ]
     await bm25.insert_batch(entries)
 
@@ -171,10 +182,10 @@ async def test_delete_document_decrements_df(bm25):
 
 @pytest.mark.asyncio
 async def test_insert_batch_df_no_inflation_on_reinsert(bm25):
-    """Re-inserting same chunk_ids should not inflate df (INSERT OR REPLACE)."""
+    """Re-inserting same chunk_ids must not inflate df (correct upsert)."""
     entries = [
-        ("c1", "d1", "hello world"),
-        ("c2", "d1", "hello again"),
+        ("c1", "d1", "doc-key", "s1", 0, "hello world"),
+        ("c2", "d1", "doc-key", "s2", 1, "hello again"),
     ]
     await bm25.insert_batch(entries)
 
@@ -182,19 +193,44 @@ async def test_insert_batch_df_no_inflation_on_reinsert(bm25):
         f"SELECT term, df FROM {bm25._stats} WHERE term = 'hello'"
     )
     df1 = rows1[0][1] if rows1 else 0
+    assert df1 == 2, f"Initial df should be 2, got {df1}"
 
-    # Re-insert same chunks
+    # Re-insert same chunks — df must NOT inflate
     await bm25.insert_batch(entries)
 
     rows2 = await bm25._query(
         f"SELECT term, df FROM {bm25._stats} WHERE term = 'hello'"
     )
-    _ = rows2[0][1] if rows2 else 0
+    df2 = rows2[0][1] if rows2 else 0
+    assert df2 == 2, f"Re-insert must not inflate df, expected 2 got {df2}"
 
-    # For now, we accept that re-insert inflates df (INSERT OR REPLACE doesn't
-    # track old state). The important thing is batch df = chunk count initially.
-    # A full fix requires checking old state before insert, which is Phase 3 scope.
-    assert df1 == 2, f"Initial df should be 2, got {df1}"
+
+@pytest.mark.asyncio
+async def test_insert_reinsert_no_df_inflation(bm25):
+    """Single insert re-insert must not inflate df."""
+    await bm25.insert("c1", "d1", "hello world", document_key="dk", section_key="s1")
+    rows = await bm25._query(
+        f"SELECT term, df FROM {bm25._stats} WHERE term = 'hello'"
+    )
+    assert rows[0][1] == 1
+
+    # Re-insert same chunk with different text
+    await bm25.insert("c1", "d1", "hello universe", document_key="dk", section_key="s1")
+    rows = await bm25._query(
+        f"SELECT term, df FROM {bm25._stats} WHERE term = 'hello'"
+    )
+    assert rows[0][1] == 1, "df must not inflate on re-insert"
+
+    # Old term 'world' should be gone
+    world_rows = await bm25._query(
+        f"SELECT term, df FROM {bm25._stats} WHERE term = 'world'"
+    )
+    assert len(world_rows) == 0, "old term 'world' should be removed"
+
+
+@pytest.mark.asyncio
+async def test_text_changed_old_term_not_found(bm25):
+    """After text change, old terms must not match in search."""
     await bm25.insert("c1", "d1", "Python 机器学习使用 scikit-learn 框架")
     await bm25.insert("c2", "d1", "深度学习使用 TensorFlow 和 PyTorch")
 
@@ -254,3 +290,32 @@ def test_tokenize_filters_punctuation():
         assert "," not in t
         assert "!" not in t
         assert "(" not in t
+
+
+def test_fuzzy_correction_is_conservative():
+    assert _closest_fuzzy_term("cabonara", ["carbonara", "climate"]) == "carbonara"
+    assert _closest_fuzzy_term("api", ["app"]) is None
+    assert _closest_fuzzy_term("err40003", ["err40005"]) is None
+
+
+@pytest.mark.asyncio
+async def test_search_returns_document_key_and_section_key(bm25):
+    """Keyword results must carry document_key and section_key (Gate 8)."""
+    await bm25.insert("c1", "d1", "Python 机器学习入门", document_key="ml-guide", section_key="intro")
+    results = await bm25.search("Python 机器学习", top_k=5)
+    assert len(results) >= 1
+    assert results[0].document_key == "ml-guide"
+    assert results[0].section_key == "intro"
+
+
+@pytest.mark.asyncio
+async def test_insert_batch_returns_document_key(bm25):
+    """Batch-inserted keyword results must carry stable keys."""
+    entries = [
+        ("c1", "d1", "ml-guide", "s1", 0, "Python machine learning"),
+        ("c2", "d1", "ml-guide", "s2", 1, "deep learning"),
+    ]
+    await bm25.insert_batch(entries)
+    results = await bm25.search("machine learning", top_k=5)
+    assert len(results) >= 1
+    assert results[0].document_key == "ml-guide"

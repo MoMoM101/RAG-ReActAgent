@@ -105,3 +105,44 @@ def test_find_table_boundary_no_table():
     text = "普通文本，没有表格。\n只有一些换行。\n"
     result = _find_table_boundary(text, len(text) - 1)
     assert result is None
+
+
+def test_section_key_uses_character_offset_for_chinese_text():
+    """Later CJK chunks must bind to their nearest heading, not an earlier one."""
+    first = "第一章节的中文填充内容，用于扩大字符和 token 下标的差异。" * 30
+    second = "第二章节唯一事实：校准编号 BETA-9000。" * 20
+    text = f"# 总标题\n\n## 第一章节\n\n{first}\n\n## 第二章节\n\n{second}"
+
+    chunks = split_text(text, chunk_size=80, chunk_overlap=10)
+    second_section_chunks = [c for c in chunks if "BETA-9000" in c.text]
+
+    assert second_section_chunks
+    assert all(c.section_key == "第二章节" for c in second_section_chunks)
+
+
+def test_section_key_prefers_heading_inside_overlapping_chunk():
+    text = (
+        "# 文档标题\n\n简短前言。\n\n"
+        "## 温室气体\n\n二氧化碳浓度达到 420 ppm。" * 12
+    )
+
+    chunks = split_text(text, chunk_size=80, chunk_overlap=20)
+    fact_chunks = [c for c in chunks if "420 ppm" in c.text]
+
+    assert fact_chunks
+    assert fact_chunks[0].section_key == "温室气体"
+
+
+def test_child_sections_inherit_searchable_parent_heading_context():
+    text = (
+        "# 地中海美食烹饪指南\n\n"
+        "## 希腊沙拉\n\n番茄、黄瓜和 feta。\n\n"
+        "## 西班牙海鲜饭\n\nBomba 米和藏红花。"
+    )
+
+    chunks = split_text(text, chunk_size=100, chunk_overlap=10)
+    child_chunks = [chunk for chunk in chunks if chunk.section_key != "地中海美食烹饪指南"]
+
+    assert child_chunks
+    assert all("文档上下文：地中海美食烹饪指南" in chunk.text for chunk in child_chunks)
+    assert {chunk.section_key for chunk in child_chunks} == {"希腊沙拉", "西班牙海鲜饭"}

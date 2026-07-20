@@ -15,12 +15,12 @@ class RaisingFakeLLM(FakeLLM):
         super().__init__(response_queues)
         self.raise_on_call = raise_on_call or {}
 
-    async def chat_stream(self, messages=None, tools=None):
+    async def chat_stream(self, messages=None, tools=None, max_tokens=None):
         if self.call_index in self.raise_on_call:
             idx = self.call_index
             self.call_index += 1
             raise self.raise_on_call[idx]
-        async for resp in super().chat_stream(messages, tools):
+        async for resp in super().chat_stream(messages, tools, max_tokens=max_tokens):
             yield resp
 
 

@@ -89,10 +89,11 @@ def _bootstrap_admin_token() -> None:
 
 async def _bootstrap_user() -> None:
     """Create a default system_admin user if no users exist."""
+    from auth.jwt import hash_password
     from sqlalchemy import select
+
     from models.database import session_scope
     from models.orm import User
-    from auth.jwt import hash_password
 
     async with session_scope() as session:
         result = await session.execute(select(User).limit(1))

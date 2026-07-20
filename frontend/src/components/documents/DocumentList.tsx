@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDocumentStore } from "../../stores/documentStore";
 import { UploadZone } from "./UploadZone";
 import { ChunkViewer } from "./ChunkViewer";
@@ -6,17 +6,19 @@ import { useConfirm } from "../shared/useConfirm";
 import { useToastStore } from "../../stores/toastStore";
 import { TrashIcon, RefreshIcon } from "../shared/Icons";
 import { Skeleton } from "../shared/Skeleton";
-import { clearAllDocuments } from "../../api/documents";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  ready:     { label: "ready", cls: "ready" },
-  failed:    { label: "failed", cls: "failed" },
+  ready:     { label: "已完成", cls: "ready" },
+  failed:    { label: "失败", cls: "failed" },
   uploaded:  { label: "排队中", cls: "processing" },
   parsing:   { label: "解析中", cls: "processing" },
   chunking:  { label: "切块中", cls: "processing" },
   embedding: { label: "向量化", cls: "processing" },
   indexing:  { label: "索引中", cls: "processing" },
 };
+
+const TERMINAL_STATUSES = new Set(["ready", "failed"]);
+const POLL_INTERVAL_MS = 3000;
 
 function formatSize(bytes: number) {
   return bytes > 1048576
@@ -29,17 +31,50 @@ function formatDate(iso: string) {
 }
 
 export function DocumentList() {
-  const { documents, load, remove, reprocess, uploading } = useDocumentStore();
+  const { documents, load, remove, clearAll, reprocess, reprocessing } = useDocumentStore();
   const [viewChunksId, setViewChunksId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [clearing, setClearing] = useState(false);
   const confirm = useConfirm();
   const addToast = useToastStore((s) => s.addToast);
+  const hasPending = documents.some((doc) => !TERMINAL_STATUSES.has(doc.status));
 
   useEffect(() => {
     load().finally(() => setLoading(false));
   }, [load]);
+
+  // 轮询兜底：当列表中有处理中的文档时，定时刷新状态
+  // SSE 是主推送通道，此轮询作为 SSE 断开或丢事件时的后备
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const hasPending = documents.some((d) => !TERMINAL_STATUSES.has(d.status));
+    if (hasPending && !pollRef.current) {
+      pollRef.current = setInterval(() => {
+        const currentDocs = useDocumentStore.getState().documents;
+        const stillPending = currentDocs.some(
+          (d) => !TERMINAL_STATUSES.has(d.status),
+        );
+        if (!stillPending) {
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+          return;
+        }
+        load();
+      }, POLL_INTERVAL_MS);
+    } else if (!hasPending && pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [documents, load]);
 
   const handleDelete = async (id: string, filename: string) => {
     const ok = await confirm({
@@ -55,9 +90,13 @@ export function DocumentList() {
   };
 
   const handleReprocess = async (id: string) => {
-    await reprocess(id);
-    addToast({ type: "success", message: "已提交重新处理" });
-    load();
+    try {
+      await reprocess(id);
+      addToast({ type: "success", message: "已提交重新处理" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "重试失败";
+      addToast({ type: "error", message });
+    }
   };
 
   const handleClearAll = async () => {
@@ -71,9 +110,8 @@ export function DocumentList() {
 
     setClearing(true);
     try {
-      const res = await clearAllDocuments();
-      addToast({ type: "success", message: `已清空 ${res.count} 个文档` });
-      await load();
+      const count = await clearAll();
+      addToast({ type: "success", message: `已清空 ${count} 个文档` });
     } catch {
       addToast({ type: "error", message: "清空失败，请检查后端服务" });
     } finally {
@@ -84,7 +122,7 @@ export function DocumentList() {
   return (
     <div className="chat-main">
       <div className="chat-header">
-        <span className="chat-header-title">文档库</span>
+        <span className="chat-header-title">知识库</span>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="status-badge ready">
             {documents.length} 个文档
@@ -93,7 +131,8 @@ export function DocumentList() {
             <button
               className="doc-btn danger"
               onClick={handleClearAll}
-              disabled={clearing}
+              disabled={clearing || hasPending}
+              title={hasPending ? "存在处理中的文档，完成或失败后才能清空" : undefined}
             >
               {clearing ? "清空中..." : "清空全部"}
             </button>
@@ -110,7 +149,7 @@ export function DocumentList() {
           </div>
         ) : documents.length === 0 ? (
           <div className="chat-empty" style={{ minHeight: 200 }}>
-            <p>暂无文档，上传第一个吧</p>
+            <p>知识库暂无文件，可以批量上传文档</p>
           </div>
         ) : (
           <>
@@ -118,7 +157,7 @@ export function DocumentList() {
               <div style={{ marginBottom: 10 }}>
                 <input
                   type="text"
-                  placeholder="搜索文档..."
+                  placeholder="搜索知识库文件..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   style={{
@@ -172,14 +211,22 @@ export function DocumentList() {
                           </button>
                         )}
                         {doc.status === "failed" && (
-                          <button className="doc-btn" onClick={() => handleReprocess(doc.id)}>
-                            <RefreshIcon size={11} /> 重试
+                          <button
+                            className="doc-btn"
+                            onClick={() => handleReprocess(doc.id)}
+                            disabled={Boolean(reprocessing[doc.id])}
+                          >
+                            <RefreshIcon size={11} />
+                            {reprocessing[doc.id] ? "提交中..." : "重试"}
                           </button>
                         )}
                         <button
                           className="doc-btn danger"
                           onClick={() => handleDelete(doc.id, doc.filename)}
-                          disabled={uploading}
+                          disabled={
+                            Boolean(reprocessing[doc.id])
+                            || !TERMINAL_STATUSES.has(doc.status)
+                          }
                         >
                           <TrashIcon size={11} />
                         </button>

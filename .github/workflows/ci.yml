@@ -46,9 +46,11 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Run tests with coverage
         run: |
-          pytest tests/ -v \
+          pytest tests/ -v -m "not docker" \
             --cov=. \
+            --cov-config=.coveragerc \
             --cov-report=term-missing \
+            --cov-report=xml \
             --cov-fail-under=60
 
   security:
@@ -157,7 +159,13 @@ jobs:
         run: docker compose down -v
 
   docker-push:
-    needs: [backend-tests, frontend-quality]
+    needs:
+      - backend-static
+      - backend-tests
+      - security
+      - frontend-quality
+      - docker-smoke
+      - compose-smoke
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     permissions:

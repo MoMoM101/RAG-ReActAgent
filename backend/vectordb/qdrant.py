@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 from contextlib import suppress
 
 from qdrant_client import QdrantClient
@@ -66,18 +67,49 @@ def reset_client_for_test() -> None:
     _client_healthy = False
 
 
+# Local-mode QdrantClient persists to a single sqlite3 connection that is not
+# thread-safe; concurrent asyncio.to_thread calls raise SQLITE_MISUSE.
+_local_lock = threading.Lock()
+
+
+def _locked(fn, *args, **kwargs):
+    with _local_lock:
+        return fn(*args, **kwargs)
+
+
+async def _call(fn, *args, **kwargs):
+    """Run a client call in a worker thread, serialized in local mode."""
+    if settings.qdrant_host:
+        return await asyncio.to_thread(fn, *args, **kwargs)
+    return await asyncio.to_thread(_locked, fn, *args, **kwargs)
+
+
+def _is_retryable_write_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "500 (internal server error)",
+            "failed to apply operation",
+            "temporarily unavailable",
+            "service unavailable",
+            "timeout",
+        )
+    )
+
+
 class QdrantVectorDB(BaseVectorDB):
     def __init__(self, collection_name: str | None = None):
         self.client = _get_client()
         self.collection = collection_name or (settings.qdrant_active_collection or settings.qdrant_collection)
 
     async def collection_exists(self) -> bool:
-        collections = await asyncio.to_thread(self.client.get_collections)
+        collections = await _call(self.client.get_collections)
         return any(c.name == self.collection for c in collections.collections)
 
     async def get_collection_dim(self) -> int | None:
         try:
-            info = await asyncio.to_thread(self.client.get_collection, self.collection)
+            info = await _call(self.client.get_collection, self.collection)
             if info and info.config and info.config.params:
                 vp = info.config.params.vectors
                 if vp is not None and hasattr(vp, "size"):
@@ -87,7 +119,7 @@ class QdrantVectorDB(BaseVectorDB):
         return None
 
     async def create_collection(self, vector_size: int) -> None:
-        await asyncio.to_thread(
+        await _call(
             self.client.create_collection,
             collection_name=self.collection,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
@@ -111,20 +143,33 @@ class QdrantVectorDB(BaseVectorDB):
             )
             for p in points
         ]
-        try:
-            await asyncio.to_thread(
-                self.client.upsert,
-                collection_name=self.collection,
-                points=qdrant_points,
-            )
-        except Exception:
-            global _client_healthy
-            _client_healthy = False
-            raise
+        global _client_healthy
+        for attempt in range(3):
+            try:
+                await _call(
+                    self.client.upsert,
+                    collection_name=self.collection,
+                    points=qdrant_points,
+                )
+                return
+            except Exception as error:
+                if attempt < 2 and _is_retryable_write_error(error):
+                    delay = 0.25 * (2**attempt)
+                    logger.warning(
+                        "retrying transient Qdrant upsert collection=%s attempt=%d delay=%.2fs: %s",
+                        self.collection,
+                        attempt + 1,
+                        delay,
+                        str(error)[:200],
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                _client_healthy = False
+                raise
 
     async def search(self, vector: list[float], top_k: int = 10) -> list[VectorSearchResult]:
         try:
-            response = await asyncio.to_thread(
+            response = await _call(
                 self.client.query_points,
                 collection_name=self.collection,
                 query=vector,
@@ -152,7 +197,7 @@ class QdrantVectorDB(BaseVectorDB):
         ids: list[str] = []
         offset = None
         while True:
-            points, next_offset = await asyncio.to_thread(
+            points, next_offset = await _call(
                 self.client.scroll,
                 collection_name=self.collection,
                 scroll_filter=Filter(
@@ -173,7 +218,7 @@ class QdrantVectorDB(BaseVectorDB):
 
     async def delete_by_document(self, document_id: str) -> None:
         try:
-            await asyncio.to_thread(
+            await _call(
                 self.client.delete,
                 collection_name=self.collection,
                 points_selector=Filter(
@@ -188,7 +233,7 @@ class QdrantVectorDB(BaseVectorDB):
     async def delete_by_chunks(self, chunk_ids: list[str]) -> None:
         if not chunk_ids:
             return
-        await asyncio.to_thread(
+        await _call(
             self.client.delete,
             collection_name=self.collection,
             points_selector=chunk_ids,
@@ -197,7 +242,7 @@ class QdrantVectorDB(BaseVectorDB):
     async def delete_by_ids(self, ids: list[str]) -> None:
         if not ids:
             return
-        await asyncio.to_thread(
+        await _call(
             self.client.delete,
             collection_name=self.collection,
             points_selector=ids,

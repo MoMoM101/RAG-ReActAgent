@@ -128,6 +128,7 @@ npm install && npm run dev
 | `QUERY_REWRITE_ENABLED` | 启用查询改写（多路并行搜索） | `false` |
 | `MEMORY_ENABLED` | 启用用户记忆 | `true` |
 | `INGESTION_MAX_CONCURRENCY` | 入库并发数 | `3` |
+| `DOCUMENT_MAX_UPLOAD_MB` | 单个知识库文件上限（范围 1–512 MB） | `200` |
 | `RATE_LIMIT` | 聊天/上传 分别限流 | 30/min, 10/min |
 
 API Key 支持 AES-256 加密存储（`ENC:` 前缀），首次启动自动生成随机 `SECRET_KEY`，防止泄露。

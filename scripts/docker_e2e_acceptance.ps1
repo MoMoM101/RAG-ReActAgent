@@ -41,11 +41,11 @@ $ErrorActionPreference = "Stop"
 # ─── Paths ───────────────────────────────────────────────────────────────────
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$ArtifactsBase = Join-Path $RepoRoot "artifacts" "docker-e2e"
-$FixturesDir = Join-Path $RepoRoot "backend" "tests" "e2e" "fixtures"
+$ArtifactsBase = Join-Path (Join-Path $RepoRoot "artifacts") "docker-e2e"
+$FixturesDir = Join-Path (Join-Path (Join-Path (Join-Path $RepoRoot "backend") "tests") "e2e") "fixtures"
 $ManifestPath = Join-Path $FixturesDir "manifest.json"
-$SmokeTestPath = Join-Path $RepoRoot "backend" "tests" "e2e" "test_docker_smoke.py"
-$ConsistencyTestPath = Join-Path $RepoRoot "backend" "tests" "e2e" "test_live_index_consistency.py"
+$SmokeTestPath = Join-Path (Join-Path (Join-Path (Join-Path $RepoRoot "backend") "tests") "e2e") "test_docker_smoke.py"
+$ConsistencyScriptPath = Join-Path (Join-Path (Join-Path (Join-Path $RepoRoot "backend") "tests") "e2e") "live_index_consistency_check.py"
 $BackendDir = Join-Path $RepoRoot "backend"
 
 # ─── Run identity ─────────────────────────────────────────────────────────────
@@ -74,7 +74,14 @@ if (-not $Token) {
 
 $ComposeBaseFile = Join-Path $RepoRoot "docker-compose.yml"
 $ComposeE2EFile = Join-Path $RepoRoot "docker-compose.e2e.yml"
-$ComposeArgs = @("-p", $RunId, "-f", $ComposeBaseFile, "-f", $ComposeE2EFile)
+$BackendEnvFile = Join-Path $BackendDir ".env"
+$ComposeArgs = @()
+if (Test-Path $BackendEnvFile) {
+    # Compose reads only the values referenced by the compose files. The env
+    # file itself is never copied into the image or mounted into a container.
+    $ComposeArgs += @("--env-file", $BackendEnvFile)
+}
+$ComposeArgs += @("-p", $RunId, "-f", $ComposeBaseFile, "-f", $ComposeE2EFile)
 
 $ComposeEnv = @{
     E2E_BACKEND_PORT     = "$BackendPort"
@@ -155,6 +162,36 @@ function Get-GitCommit {
     return "unknown"
 }
 
+function Get-FirstNonNull {
+    param([object[]]$Values)
+    foreach ($value in $Values) {
+        if ($null -ne $value) { return $value }
+    }
+    return $null
+}
+
+function Invoke-NativeLogged {
+    param(
+        [scriptblock]$Command,
+        [string]$FailureMessage
+    )
+    $previousPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell wraps native stderr as ErrorRecord. Docker emits
+        # normal progress on stderr, so capture it without treating it as a
+        # terminating PowerShell error and rely on the native exit code.
+        $ErrorActionPreference = "Continue"
+        $output = & $Command 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    $output | ForEach-Object { Write-Host "    $_" }
+    if ($exitCode -ne 0) {
+        throw "$FailureMessage (exit code $exitCode)"
+    }
+}
+
 function Set-ComposeEnvironment {
     foreach ($key in $ComposeEnv.Keys) {
         Set-Item -Path "env:$key" -Value $ComposeEnv[$key]
@@ -163,7 +200,7 @@ function Set-ComposeEnvironment {
 
 function Get-HashSafe {
     param([string]$EnvVarName)
-    $val = [Environment]::GetEnvironmentVariable($EnvVarName) ?? $null
+    $val = [Environment]::GetEnvironmentVariable($EnvVarName)
     if (-not $val) { return "missing" }
     try {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($val)
@@ -201,8 +238,8 @@ function Wait-Healthy {
         # Check frontend health
         if (-not $frontendOk) {
             try {
-                $resp = Invoke-WebRequest -Uri $frontendUrl -Method Get -TimeoutSec 5 -ErrorAction SilentlyContinue
-                $content = $resp.Content ?? ""
+                $resp = Invoke-WebRequest -Uri $frontendUrl -Method Get -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue
+                $content = Get-FirstNonNull -Values @($resp.Content, "")
                 if ($content -match "<html" -or $content -match "<!DOCTYPE") {
                     $frontendOk = $true
                     Write-Host "    Frontend healthy"
@@ -248,12 +285,58 @@ function Invoke-Pytest {
     $xmlPath = Join-Path $OutputDir "pytest_${Description}.xml"
     if (Test-Path $xmlPath) {
         [xml]$xml = Get-Content $xmlPath
-        $skipped = [int]($xml.testsuite.skipped ?? $xml.testsuite.GetAttribute("skipped") ?? "0")
+        $suites = if ($xml.testsuite) {
+            @($xml.testsuite)
+        } elseif ($xml.testsuites -and $xml.testsuites.testsuite) {
+            @($xml.testsuites.testsuite)
+        } else {
+            throw "Invalid JUnit XML: no testsuite node in $xmlPath"
+        }
+        $skipped = 0
+        foreach ($suite in $suites) {
+            $skipped += [int](Get-FirstNonNull -Values @(
+                $suite.skipped,
+                $suite.GetAttribute("skipped"),
+                "0"
+            ))
+        }
         if ($skipped -gt 0) {
             throw "Pytest had $skipped skipped tests in strict mode for: $TestPath"
         }
     }
     Write-Host "  [PASS] Pytest: $Description" -ForegroundColor Green
+}
+
+function Invoke-ContainerConsistency {
+    param([string]$Description = "consistency")
+    Write-Host "  Running live consistency check inside backend container"
+    Set-ComposeEnvironment
+    $containerId = (& docker compose @ComposeArgs ps -q backend 2>$null | Select-Object -First 1)
+    if (-not $containerId) {
+        throw "Backend container is not running"
+    }
+    $containerId = "$containerId".Trim()
+    $containerScript = "/tmp/live_index_consistency_check.py"
+    $copyOutput = & docker cp $ConsistencyScriptPath "${containerId}:${containerScript}" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to copy consistency script into backend container: $copyOutput"
+    }
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = & docker compose @ComposeArgs exec -T backend `
+            env RAG_AGENT_APP_ROOT=/app python $containerScript 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    $logPath = Join-Path $OutputDir "container_${Description}.log"
+    $output | ForEach-Object { "$_" } | Set-Content -Path $logPath -Encoding UTF8
+    $output | ForEach-Object { Write-Host "    $_" }
+    if ($exitCode -ne 0) {
+        throw "Container consistency check failed with exit code $exitCode"
+    }
+    Write-Host "  Container consistency check passed"
 }
 
 function Write-Reports {
@@ -325,7 +408,7 @@ function Write-Reports {
         $stage = $Result.stages[$stageName]
         $status = $stage.status.ToUpper()
         $elapsed = $stage.elapsed_s
-        $error = ($stage.error ?? "") -replace '\|', '\|'
+        $error = (Get-FirstNonNull -Values @($stage.error, "")) -replace '\|', '\|'
         if ($error.Length -gt 80) { $error = $error.Substring(0, 77) + "..." }
         [void]$sb.AppendLine("| $stageName | $status | $elapsed | $error |")
     }
@@ -334,28 +417,28 @@ function Write-Reports {
     # Config snapshot
     [void]$sb.AppendLine("## Config Snapshot")
     [void]$sb.AppendLine("")
-    [void]$sb.AppendLine("```json")
+    [void]$sb.AppendLine('```json')
     $Result.config_snapshot | ConvertTo-Json -Depth 3 | ForEach-Object { [void]$sb.AppendLine($_) }
-    [void]$sb.AppendLine("```")
+    [void]$sb.AppendLine('```')
     [void]$sb.AppendLine("")
 
     # Retention commands
     [void]$sb.AppendLine("## Retention / Cleanup")
     [void]$sb.AppendLine("")
     [void]$sb.AppendLine("To view logs:")
-    [void]$sb.AppendLine("```bash")
+    [void]$sb.AppendLine('```bash')
     [void]$sb.AppendLine("docker compose -p $RunId logs")
-    [void]$sb.AppendLine("```")
+    [void]$sb.AppendLine('```')
     [void]$sb.AppendLine("")
     [void]$sb.AppendLine("To tear down:")
-    [void]$sb.AppendLine("```bash")
+    [void]$sb.AppendLine('```bash')
     [void]$sb.AppendLine("docker compose -p $RunId down -v")
-    [void]$sb.AppendLine("```")
+    [void]$sb.AppendLine('```')
     [void]$sb.AppendLine("")
     [void]$sb.AppendLine("Artifacts directory:")
-    [void]$sb.AppendLine("```")
+    [void]$sb.AppendLine('```')
     [void]$sb.AppendLine($OutputDir)
-    [void]$sb.AppendLine("```")
+    [void]$sb.AppendLine('```')
 
     $sb.ToString() | Set-Content -Path $reportPath -Encoding UTF8
     Write-Host "  Wrote: $reportPath"
@@ -433,7 +516,10 @@ try {
         # Check port conflicts
         $portsToCheck = @($BackendPort, $FrontendPort)
         foreach ($port in $portsToCheck) {
-            $connections = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+            # TIME_WAIT entries do not prevent a new listener from binding and
+            # commonly remain after a previous acceptance run. Only an active
+            # listener is a real port conflict.
+            $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
             if ($connections) {
                 $owners = ($connections | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique) -join ", "
                 throw "Port $port is already in use (PID(s): $owners)"
@@ -452,10 +538,7 @@ try {
         Set-ComposeEnvironment
         $buildArgs = $ComposeArgs + @("build", "--quiet")
         Write-Host "  docker compose build --quiet ..."
-        & docker compose @buildArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
-        if ($LASTEXITCODE -ne 0) {
-            throw "docker compose build failed with exit code $LASTEXITCODE"
-        }
+        Invoke-NativeLogged -Command { docker compose @buildArgs } -FailureMessage "docker compose build failed"
         Write-Host "  Build complete"
     }
 
@@ -465,18 +548,15 @@ try {
         Set-ComposeEnvironment
         $upArgs = $ComposeArgs + @("up", "-d", "--wait")
         Write-Host "  docker compose up -d --wait ..."
-        & docker compose @upArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
-        if ($LASTEXITCODE -ne 0) {
-            throw "docker compose up failed with exit code $LASTEXITCODE"
-        }
+        Invoke-NativeLogged -Command { docker compose @upArgs } -FailureMessage "docker compose up failed"
 
         Wait-Healthy
 
         # Verify frontend / returns HTML
         $frontendUrl = "http://127.0.0.1:${FrontendPort}/"
         try {
-            $frontResp = Invoke-WebRequest -Uri $frontendUrl -Method Get -TimeoutSec 10
-            $content = $frontResp.Content ?? ""
+        $frontResp = Invoke-WebRequest -Uri $frontendUrl -Method Get -TimeoutSec 10 -UseBasicParsing
+            $content = Get-FirstNonNull -Values @($frontResp.Content, "")
             if ($content -notmatch "<html" -and $content -notmatch "<!DOCTYPE") {
                 throw "Frontend response does not look like HTML"
             }
@@ -561,13 +641,14 @@ try {
 
         # Verify /api/documents without token returns 401/403
         try {
-            $resp = Invoke-WebRequest -Uri $docsUrl -Method Get -TimeoutSec 10 -SkipHttpErrorCheck
+            $resp = Invoke-WebRequest -Uri $docsUrl -Method Get -TimeoutSec 10 -UseBasicParsing
             if ($resp.StatusCode -notin @(401, 403)) {
                 throw "Expected 401/403 without token, got $($resp.StatusCode)"
             }
             Write-Host "  /api/documents without token: $($resp.StatusCode) (expected)"
-        } catch [System.Net.WebException] {
-            $statusCode = $_.Exception.Response.StatusCode.value__
+        } catch {
+            if (-not $_.Exception.Response) { throw }
+            $statusCode = [int]$_.Exception.Response.StatusCode
             if ($statusCode -notin @(401, 403)) {
                 throw "Expected 401/403 without token, got $statusCode"
             }
@@ -584,13 +665,14 @@ try {
 
         # Verify /api/metrics without token returns 401/403
         try {
-            $resp = Invoke-WebRequest -Uri $metricsUrl -Method Get -TimeoutSec 10 -SkipHttpErrorCheck
+            $resp = Invoke-WebRequest -Uri $metricsUrl -Method Get -TimeoutSec 10 -UseBasicParsing
             if ($resp.StatusCode -notin @(401, 403)) {
                 throw "Expected 401/403 for metrics without token, got $($resp.StatusCode)"
             }
             Write-Host "  /api/metrics without token: $($resp.StatusCode) (expected)"
-        } catch [System.Net.WebException] {
-            $statusCode = $_.Exception.Response.StatusCode.value__
+        } catch {
+            if (-not $_.Exception.Response) { throw }
+            $statusCode = [int]$_.Exception.Response.StatusCode
             if ($statusCode -notin @(401, 403)) {
                 throw "Expected 401/403 for metrics without token, got $statusCode"
             }
@@ -607,18 +689,36 @@ try {
         # Read manifest
         $manifest = Get-Content $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-        # Build multipart form upload
-        $form = @{}
+        # Build a curl multipart upload. Invoke-RestMethod -Form is only
+        # available in PowerShell 7, while curl.exe is present on supported
+        # Windows hosts and in CI images.
+        $curlArgs = @(
+            "-sS",
+            "--fail-with-body",
+            "--max-time", "30",
+            "-H", "X-Admin-Token: $Token"
+        )
         foreach ($doc in $manifest.documents) {
             $fixturePath = Join-Path $FixturesDir $doc.path
-            $fileInfo = Get-Item $fixturePath
-            $form[$doc.path] = $fileInfo
+            $curlArgs += @("-F", "files=@$fixturePath")
         }
 
         Write-Host "  Uploading $($manifest.documents.Count) documents..."
         $uploadUrl = "$baseUrl/api/documents/upload-batch"
         try {
-            $uploadResult = Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $adminHeaders -Form $form -TimeoutSec 30
+            $curlArgs += $uploadUrl
+            $previousPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $uploadOutput = & curl.exe @curlArgs 2>&1
+                $uploadExitCode = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousPreference
+            }
+            if ($uploadExitCode -ne 0) {
+                throw "curl upload failed (exit code $uploadExitCode): $($uploadOutput -join ' ')"
+            }
+            $uploadResult = ($uploadOutput -join "`n") | ConvertFrom-Json
             Write-Host "  Upload response: $($uploadResult | ConvertTo-Json -Compress)"
         } catch {
             throw "Upload failed: $_"
@@ -674,7 +774,7 @@ try {
     # ── Stage 7: consistency ──────────────────────────────────────────────────
 
     Invoke-Stage -Name "consistency" -Description "Run live index consistency test" -ScriptBlock {
-        Invoke-Pytest -TestPath $ConsistencyTestPath -Description "consistency"
+        Invoke-ContainerConsistency -Description "consistency"
     }
 
     # ── Stage 8: sse_qa ───────────────────────────────────────────────────────
@@ -692,10 +792,10 @@ try {
             [System.IO.File]::WriteAllBytes($tmpFile, [System.Text.Encoding]::UTF8.GetBytes($body))
 
             try {
-                $output = & curl -sS -N -H "X-Admin-Token: $Token" -H "Content-Type: application/json" -d "@$tmpFile" --max-time $SseTimeoutSec "http://127.0.0.1:${BackendPort}/api/chat" 2>&1
+                $output = & curl.exe -sS -N -H "X-Admin-Token: $Token" -H "Content-Type: application/json" -d "@$tmpFile" --max-time $SseTimeoutSec "http://127.0.0.1:${BackendPort}/api/chat" 2>&1
                 $exitCode = $LASTEXITCODE
                 if ($exitCode -ne 0) {
-                    throw "curl failed with exit code $exitCode: $output"
+                    throw "curl failed with exit code ${exitCode}: $output"
                 }
 
                 Write-Host "    SSE output length: $($output.Length) chars"
@@ -733,7 +833,7 @@ try {
                 foreach ($dataJson in $events["answer_chunk"]) {
                     try {
                         $chunkData = $dataJson | ConvertFrom-Json
-                        $allAnswerText += $chunkData.delta ?? ""
+                        $allAnswerText += Get-FirstNonNull -Values @($chunkData.delta, "")
                     } catch {}
                 }
 
@@ -775,9 +875,9 @@ try {
                 foreach ($dataJson in $events["verification"]) {
                     try {
                         $verif = $dataJson | ConvertFrom-Json
-                        $faithfulness = $verif.faithfulness ?? $verif.overall_score ?? -1
-                        $citationPrecision = $verif.citation_precision ?? $verif.precision ?? -1
-                        $citationRecall = $verif.citation_recall ?? $verif.recall ?? -1
+                        $faithfulness = Get-FirstNonNull -Values @($verif.faithfulness, $verif.overall_score, -1)
+                        $citationPrecision = Get-FirstNonNull -Values @($verif.citation_precision, $verif.precision, -1)
+                        $citationRecall = Get-FirstNonNull -Values @($verif.citation_recall, $verif.recall, -1)
 
                         Write-Host "    Verification: faithfulness=$faithfulness citation_precision=$citationPrecision citation_recall=$citationRecall"
 
@@ -809,10 +909,9 @@ try {
     Invoke-Stage -Name "restart_persistence" -Description "Verify data persists across container restart" -ScriptBlock {
         Set-ComposeEnvironment
         Write-Host "  Restarting backend and qdrant..."
-        & docker compose @ComposeArgs restart backend qdrant 2>&1 | ForEach-Object { Write-Host "    $_" }
-        if ($LASTEXITCODE -ne 0) {
-            throw "docker compose restart failed"
-        }
+        Invoke-NativeLogged -Command {
+            docker compose @ComposeArgs restart backend qdrant
+        } -FailureMessage "docker compose restart failed"
 
         Wait-Healthy
 
@@ -855,7 +954,7 @@ try {
         }
         $backupFile = Join-Path $backupDir "restore-test.tar.gz"
         Write-Host "  Downloading backup..."
-        & curl -sS -H "X-Admin-Token: $Token" -o "$backupFile" "http://127.0.0.1:${BackendPort}/api/backup" 2>&1
+        & curl.exe -sS -H "X-Admin-Token: $Token" -o "$backupFile" "http://127.0.0.1:${BackendPort}/api/backup" 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "Backup download failed"
         }
@@ -892,7 +991,7 @@ try {
 
         # Restore via curl -F
         Write-Host "  Restoring from backup..."
-        $restoreOutput = & curl -sS -H "X-Admin-Token: $Token" -F "file=@$backupFile" "http://127.0.0.1:${BackendPort}/api/backup/restore" 2>&1
+        $restoreOutput = & curl.exe -sS -H "X-Admin-Token: $Token" -F "file=@$backupFile" "http://127.0.0.1:${BackendPort}/api/backup/restore" 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "Restore failed: $restoreOutput"
         }
@@ -901,7 +1000,7 @@ try {
         # Parse restore response
         try {
             $restoreData = $restoreOutput | ConvertFrom-Json
-            $restoredCount = $restoreData.documents_restored ?? 0
+            $restoredCount = Get-FirstNonNull -Values @($restoreData.documents_restored, 0)
             if ($restoredCount -ne $manifest.documents.Count) {
                 throw "documents_restored mismatch: expected=$($manifest.documents.Count) actual=$restoredCount"
             }
@@ -946,7 +1045,7 @@ try {
 
         # Re-run consistency test
         Write-Host "  Re-running consistency test after restore..."
-        Invoke-Pytest -TestPath $ConsistencyTestPath -Description "consistency_post_restore"
+        Invoke-ContainerConsistency -Description "consistency_post_restore"
 
         # Re-run one SSE QA question
         Write-Host "  Re-running SSE QA after restore..."
@@ -956,18 +1055,20 @@ try {
         $tmpFile = Join-Path ([System.IO.Path]::GetTempPath()) "e2e_restore_qa_$(New-Guid).json"
         [System.IO.File]::WriteAllBytes($tmpFile, [System.Text.Encoding]::UTF8.GetBytes($body))
         try {
-            $output = & curl -sS -N -H "X-Admin-Token: $Token" -H "Content-Type: application/json" -d "@$tmpFile" --max-time $SseTimeoutSec "http://127.0.0.1:${BackendPort}/api/chat" 2>&1
+                $output = & curl.exe -sS -N -H "X-Admin-Token: $Token" -H "Content-Type: application/json" -d "@$tmpFile" --max-time $SseTimeoutSec "http://127.0.0.1:${BackendPort}/api/chat" 2>&1
             if ($LASTEXITCODE -ne 0) {
                 throw "Post-restore curl failed: $output"
             }
+            $outputText = $output -join "`n"
+            $outputText | Set-Content -Path (Join-Path $OutputDir "post_restore_sse.log") -Encoding UTF8
             # Verify sources and done events present
-            if ($output -notmatch "event:\s*sources") {
+            if ($outputText -notmatch "event:\s*sources") {
                 throw "Post-restore QA missing 'sources' event"
             }
-            if ($output -notmatch "event:\s*done") {
+            if ($outputText -notmatch "event:\s*done") {
                 throw "Post-restore QA missing 'done' event"
             }
-            if ($output -notmatch "event:\s*verification") {
+            if ($outputText -notmatch "event:\s*verification") {
                 throw "Post-restore QA missing 'verification' event"
             }
             Write-Host "  Post-restore SSE QA: sources/verification/done confirmed"
@@ -987,17 +1088,16 @@ try {
 
         # Stop qdrant
         Write-Host "  Stopping qdrant..."
-        & docker compose @ComposeArgs stop qdrant 2>&1 | ForEach-Object { Write-Host "    $_" }
-        if ($LASTEXITCODE -ne 0) {
-            throw "docker compose stop qdrant failed"
-        }
+        Invoke-NativeLogged -Command {
+            docker compose @ComposeArgs stop qdrant
+        } -FailureMessage "docker compose stop qdrant failed"
         Start-Sleep -Seconds 3
 
         # Verify /api/health/dependencies shows qdrant=error, sqlite=ok
         try {
             $deps = Invoke-RestMethod -Uri $depsUrl -Method Get -Headers $adminHeaders -TimeoutSec 10
-            $qdrantStatus = $deps.dependencies.qdrant ?? ""
-            $sqliteStatus = $deps.dependencies.sqlite ?? ""
+            $qdrantStatus = Get-FirstNonNull -Values @($deps.dependencies.qdrant, "")
+            $sqliteStatus = Get-FirstNonNull -Values @($deps.dependencies.sqlite, "")
             Write-Host "  Dependencies: qdrant=$qdrantStatus sqlite=$sqliteStatus"
             if ($qdrantStatus -ne "error") {
                 throw "Expected qdrant=error, got qdrant=$qdrantStatus"
@@ -1012,17 +1112,16 @@ try {
 
         # Start qdrant
         Write-Host "  Starting qdrant..."
-        & docker compose @ComposeArgs start qdrant 2>&1 | ForEach-Object { Write-Host "    $_" }
-        if ($LASTEXITCODE -ne 0) {
-            throw "docker compose start qdrant failed"
-        }
+        Invoke-NativeLogged -Command {
+            docker compose @ComposeArgs start qdrant
+        } -FailureMessage "docker compose start qdrant failed"
         Start-Sleep -Seconds 5
 
         # Verify health returns ok, qdrant=ok
         $healthUrl = "http://127.0.0.1:${BackendPort}/api/health"
         $depsRecovered = Invoke-RestMethod -Uri $depsUrl -Method Get -Headers $adminHeaders -TimeoutSec 10
         $healthOk = Invoke-RestMethod -Uri $healthUrl -Method Get -TimeoutSec 10
-        $qdrantRecovered = $depsRecovered.dependencies.qdrant ?? ""
+        $qdrantRecovered = Get-FirstNonNull -Values @($depsRecovered.dependencies.qdrant, "")
         Write-Host "  Recovered: health=$($healthOk.status) qdrant=$qdrantRecovered"
         if ($healthOk.status -ne "ok") {
             throw "Health did not return ok after qdrant restart"
@@ -1075,8 +1174,14 @@ finally {
         Write-Host ""
         Write-Host "  Cleaning up compose project (passed + -Clean)..."
         Set-ComposeEnvironment
-        & docker compose @ComposeArgs down -v 2>&1 | ForEach-Object { Write-Host "    $_" }
-        Write-Host "  Cleanup complete."
+        try {
+            Invoke-NativeLogged -Command {
+                docker compose @ComposeArgs down -v
+            } -FailureMessage "docker compose cleanup failed"
+            Write-Host "  Cleanup complete."
+        } catch {
+            Write-Warning "Cleanup failed: $_"
+        }
     } else {
         Write-Host ""
         Write-Host "  ── Retention ──────────────────────────────────────────────"

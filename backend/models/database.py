@@ -1,7 +1,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import event, text as sa_text
+from sqlalchemy import event
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -75,8 +76,8 @@ async def _current_revision(conn) -> str | None:
 
 def _head_revision() -> str:
     """Return the head revision from Alembic config."""
-    from pathlib import Path as _Path
     import os as _os
+    from pathlib import Path as _Path
 
     from alembic.config import Config as AlembicConfig
     from alembic.script import ScriptDirectory
@@ -102,8 +103,8 @@ async def check_revision_gate() -> None:
     Raises RuntimeError with a descriptive message when the database
     is not at the expected revision.
     """
-    from pathlib import Path as _Path
     import os as _os
+    from pathlib import Path as _Path
 
     gate_engine = create_async_engine(settings.database_url, echo=False)
     try:
@@ -122,8 +123,8 @@ async def check_revision_gate() -> None:
             if db_exists:
                 if _auto_migrate_enabled():
                     # Dev/test: existing DB without revision — stamp at head
-                    from alembic.config import Config as AlcCfg
                     from alembic import command as alc_cmd
+                    from alembic.config import Config as AlcCfg
 
                     backend_dir = str(_Path(__file__).resolve().parent.parent)
                     cfg = AlcCfg(str(_Path(backend_dir) / "alembic.ini"))
@@ -136,9 +137,9 @@ async def check_revision_gate() -> None:
                 )
             elif _auto_migrate_enabled():
                 # Dev/test: auto-migrate empty DB
-                from alembic.config import Config as AlcCfg
+
                 from alembic import command as alc_cmd
-                import os as _os2
+                from alembic.config import Config as AlcCfg
 
                 backend_dir = str(_Path(__file__).resolve().parent.parent)
                 cfg = AlcCfg(str(_Path(backend_dir) / "alembic.ini"))

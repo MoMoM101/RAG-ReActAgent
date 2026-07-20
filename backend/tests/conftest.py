@@ -28,7 +28,7 @@ from sqlalchemy import text as sa_text
 # Ensure ORM models are registered with Base.metadata BEFORE init_db()
 import models.orm  # noqa: F401
 from llm.base import BaseLLM, LLMResponse
-from models.database import check_revision_gate, engine, init_db
+from models.database import Base, check_revision_gate, engine, init_db
 
 
 def pytest_configure(config):
@@ -86,20 +86,22 @@ def enable_admin_token(monkeypatch):
 
 @pytest.fixture
 def mock_embedding(monkeypatch):
-    """Replace embedding factory with a mock that returns random 1536-dim vectors.
+    """Replace embedding factory with vectors matching the configured dimension.
 
     Avoids real API calls for restore/fault injection tests.
-    The 1536 dimension matches the default embedding_dim config so that
-    any Qdrant collections created during mocked tests are compatible
-    with subsequent real-embedding tests.
+    Matching the active configuration keeps collections compatible when a
+    local .env overrides the default embedding model or dimension.
     """
     import random as _random
     from unittest.mock import AsyncMock
 
+    from config import settings
+
     mock = AsyncMock()
+    dimension = settings.embedding_dim
 
     def _random_vec():
-        return [_random.uniform(-1, 1) for _ in range(1536)]
+        return [_random.uniform(-1, 1) for _ in range(dimension)]
 
     mock.embed = AsyncMock(return_value=[_random_vec() for _ in range(100)])
     mock.embed_query = AsyncMock(return_value=_random_vec())
@@ -127,18 +129,26 @@ def make_fake_llm():
 @pytest_asyncio.fixture
 async def setup_db():
     # 重置模块级单例，避免测试间状态污染
+    from storage import reset_storage
+
     from embedding.factory import reset_embedding
     from llm.factory import reset_llm
     from vectordb.qdrant import reset_client_for_test
     reset_embedding()
     reset_llm()
+    reset_storage()
     reset_client_for_test()
 
     await check_revision_gate()
     await init_db()
-    # Clean FTS data before each test
+    # Keep database and storage state isolated across tests.  Recovery tests in
+    # particular must not reschedule unfinished rows created by earlier cases.
     async with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
         await conn.execute(sa_text("DELETE FROM chunks_fts"))
+    from storage import get_storage
+    await get_storage().clear()
     yield
 
 

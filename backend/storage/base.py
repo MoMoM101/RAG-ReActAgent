@@ -1,12 +1,9 @@
 """File storage interface with streaming I/O and atomic commit."""
-import hashlib
-import os
 import uuid
 from abc import abstractmethod
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import AsyncIterator, Protocol
+from typing import Protocol
 
 
 @dataclass
@@ -57,7 +54,7 @@ class FileStorage(Protocol):
         """Discard a staged upload and clean up temp files."""
         ...
 
-    async def open_read(self, storage_key: str) -> AsyncIterator[bytes]:
+    def open_read(self, storage_key: str) -> AsyncIterator[bytes]:
         """Open a stored file for streaming read. Yields chunks."""
         ...
 
@@ -69,4 +66,9 @@ class FileStorage(Protocol):
     @abstractmethod
     async def exists(self, storage_key: str) -> bool:
         """Check if a storage key exists."""
+        ...
+
+    @abstractmethod
+    async def clear(self) -> None:
+        """Delete committed objects, staging data, and legacy root files."""
         ...

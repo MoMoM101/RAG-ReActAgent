@@ -1,0 +1,202 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-07-14T11:39:17.531131+00:00",
+  "dataset": {
+    "name": "rag-agent-eval-v2",
+    "version": "2.0"
+  },
+  "methodology": {
+    "control": "legacy source-only prompt without mandatory citations",
+    "optimized": "V2 partial-answer-first claim-level citations plus abstention",
+    "retrieval": "same production splitter + BM25 top-5 sources for both groups",
+    "scoring": "deterministic claim-to-evidence verifier; answerability is labeled independently from retrieval relevance",
+    "latency": "timer starts after acquiring the local concurrency slot"
+  },
+  "aggregate": {
+    "control": {
+      "queries_completed": 1,
+      "answerable_queries": 1,
+      "unanswerable_queries": 0,
+      "partially_answerable_queries": 0,
+      "faithfulness": 0.8571428571428571,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "abstention_accuracy": null,
+      "expected_fact_recall": 0.4,
+      "answer_completion_accuracy": 1.0,
+      "avg_latency_ms": 4360.861000001023,
+      "errors": 0
+    },
+    "optimized": {
+      "queries_completed": 1,
+      "answerable_queries": 1,
+      "unanswerable_queries": 0,
+      "partially_answerable_queries": 0,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "abstention_accuracy": null,
+      "expected_fact_recall": 0.4,
+      "answer_completion_accuracy": 1.0,
+      "avg_latency_ms": 2281.94860000076,
+      "errors": 0
+    }
+  },
+  "quality_gate": {
+    "passed": false,
+    "violations": [
+      "abstention_accuracy=None below 0.95"
+    ],
+    "floors": {
+      "citation_precision": 0.85,
+      "citation_recall": 0.9,
+      "abstention_accuracy": 0.95,
+      "max_faithfulness_regression": 0.0,
+      "max_fact_recall_regression": 0.02
+    }
+  },
+  "records": [
+    {
+      "query_id": "long-002",
+      "query": "如果我想在家里做一顿传统的地中海风味的完整晚餐，包括前菜和主菜，有什么推荐的菜谱和做法",
+      "mode": "control",
+      "answerable": true,
+      "answer": "根据检索资料，推荐以下地中海风味完整晚餐：\n\n**前菜：传统希腊沙拉（Horiatiki）**\n- 食材：新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪、卡拉马塔橄榄。\n- 调味：特级初榨橄榄油、红酒醋、干牛至和盐。\n- 注意：不使用生菜叶作为基底。\n\n**主菜：西班牙海鲜饭（Paella）**\n可选传统瓦伦西亚风格（鸡肉、兔肉、扁豆、蜗牛）或海鲜版本（虾、贻贝、鱿鱼等），使用Bomba圆粒米和藏红花调味。\n\n这两道菜均来自《地中海美食烹饪指南》，可以组成一顿完整的地中海晚餐。如需更详细步骤，资料未提供具体烹饪时长和火候。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 5.329022314865314,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 4.136231935856705,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 4.058959656073455,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 4.028380548465268,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 3.5213227314561912,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 4360.861000001023,
+      "faithfulness": 0.8571428571428571,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 0.4,
+      "verification_status": "partial",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    },
+    {
+      "query_id": "long-002",
+      "query": "如果我想在家里做一顿传统的地中海风味的完整晚餐，包括前菜和主菜，有什么推荐的菜谱和做法",
+      "mode": "optimized",
+      "answerable": true,
+      "answer": "前菜推荐：希腊沙拉（Horiatiki），由番茄、黄瓜、红洋葱、菲达奶酪、卡拉马塔橄榄组成，用橄榄油、红酒醋、干牛至和盐调味，不使用生菜叶 [S5]。主菜推荐：西班牙海鲜饭（Paella de Marisco），使用虾、贻贝、鱿鱼等海鲜 [S3]。做法未在资料中提及。",
+      "sources": [
+        {
+          "citation_id": "S1",
+          "chunk_id": "grounded-1-1",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温度变化",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温度变化\n\n自工业革命以来，全球平均气温已上升约 1.1°C。\n2023 年是有记录以来最热的一年，全球多地出现极端高温天气。\n如果温室气体排放继续以当前速度增长，预计到 2100 年气温将上升 2.5-4.5°C。\n这将导致海平面上升、冰川融化和生态系统崩溃。",
+          "score": 5.329022314865314,
+          "rank": 1
+        },
+        {
+          "citation_id": "S2",
+          "chunk_id": "grounded-1-2",
+          "document_id": "grounded-doc-1",
+          "document_key": "climate-report",
+          "section_key": "温室气体",
+          "text": "文档上下文：全球气候变化报告 2024\n\n## 温室气体\n\n大气中的二氧化碳浓度在 2023 年达到 420 ppm（百万分之一），\n是过去 200 万年来的最高水平。甲烷浓度也在持续上升。\n主要排放源包括：化石燃料燃烧（占 75%）、工业生产（占 15%）和农业活动（占 10%）。",
+          "score": 4.136231935856705,
+          "rank": 2
+        },
+        {
+          "citation_id": "S3",
+          "chunk_id": "grounded-2-4",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "西班牙海鲜饭",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 西班牙海鲜饭\n\n瓦伦西亚风格的西班牙海鲜饭（Paella Valenciana）使用：\nBomba 圆粒米、藏红花（saffron）、鸡肉、兔肉、扁豆和蜗牛（传统版本）。\n海鲜版本（Paella de Marisco）则用虾、贻贝、鱿鱼等代替肉类。",
+          "score": 4.058959656073455,
+          "rank": 3
+        },
+        {
+          "citation_id": "S4",
+          "chunk_id": "grounded-0-0",
+          "document_id": "grounded-doc-0",
+          "document_key": "ml-guide",
+          "section_key": "python-机器学习完全指南",
+          "text": "# Python 机器学习完全指南\n\nPython 是机器学习和数据科学领域最流行的编程语言。\n它拥有丰富的生态系统，包括 scikit-learn、TensorFlow、PyTorch 等框架。\nscikit-learn 提供了简单易用的 API，适合传统的分类、回归和聚类任务。\nTensorFlow 和 PyTorch 则专注于深度学习，支持 GPU 加速训练。",
+          "score": 4.028380548465268,
+          "rank": 4
+        },
+        {
+          "citation_id": "S5",
+          "chunk_id": "grounded-2-3",
+          "document_id": "grounded-doc-2",
+          "document_key": "mediterranean-cooking",
+          "section_key": "希腊沙拉",
+          "text": "文档上下文：地中海美食烹饪指南\n\n## 希腊沙拉\n\n传统希腊沙拉（Horiatiki）由以下食材组成：\n新鲜番茄切块、黄瓜切片、红洋葱圈、大块菲达奶酪（feta）、卡拉马塔橄榄（Kalamata olives）。\n用特级初榨橄榄油、红酒醋、干牛至和盐调味。\n与普通沙拉不同的是，希腊沙拉不使用生菜叶作为基底。",
+          "score": 3.5213227314561912,
+          "rank": 5
+        }
+      ],
+      "latency_ms": 2281.94860000076,
+      "faithfulness": 1.0,
+      "citation_precision": 1.0,
+      "citation_recall": 1.0,
+      "refused": false,
+      "abstention_correct": null,
+      "expected_fact_recall": 0.4,
+      "verification_status": "verified",
+      "answerability": "full",
+      "answer_completion_correct": true,
+      "error": null
+    }
+  ],
+  "rescored_at": "2026-07-14T11:40:26.856851+00:00",
+  "scoring_version": "claim-evidence-v2"
+}

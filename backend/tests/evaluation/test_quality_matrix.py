@@ -4,10 +4,15 @@ Modes: keyword-only, semantic-only, hybrid, hybrid+rewrite, full.
 Records: P50/P95/P99 latency, empty rate, source counts.
 """
 
+import os
 import time
-from typing import Any
 
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_LIVE_RAG_EVAL") != "1",
+    reason="live RAG matrix requires explicit RUN_LIVE_RAG_EVAL=1 authorization",
+)
 
 
 def _percentile(sorted_vals: list[float], p: float) -> float:
@@ -49,16 +54,13 @@ async def _run_retrieval_for_queries(
 
         for query in queries:
             t0 = time.time()
-            try:
-                results = await hybrid_search(query, top_k=top_k, use_rerank=rerank_enabled)
-                elapsed = (time.time() - t0) * 1000
-                latencies.append(elapsed)
-                if not results:
-                    empty_count += 1
-                semantic_total += sum(1 for r in results if r.source in ("semantic", "hybrid"))
-                keyword_total += sum(1 for r in results if r.source in ("keyword", "hybrid"))
-            except Exception:
-                pass
+            results = await hybrid_search(query, top_k=top_k, use_rerank=rerank_enabled)
+            elapsed = (time.time() - t0) * 1000
+            latencies.append(elapsed)
+            if not results:
+                empty_count += 1
+            semantic_total += sum(1 for r in results if r.source in ("semantic", "hybrid"))
+            keyword_total += sum(1 for r in results if r.source in ("keyword", "hybrid"))
 
         sorted_lat = sorted(latencies)
         return {
@@ -68,6 +70,7 @@ async def _run_retrieval_for_queries(
             "empty_rate": empty_count / max(len(queries), 1),
             "semantic_avg": semantic_total / max(len(queries), 1),
             "keyword_avg": keyword_total / max(len(queries), 1),
+            "queries_evaluated": len(latencies),
         }
     finally:
         settings.query_rewrite_enabled = old_rewrite
@@ -105,16 +108,17 @@ class TestQualityMatrix:
             queries, semantic_enabled=sem, keyword_enabled=kw,
             rewrite_enabled=rw, rerank_enabled=rr,
         )
+        assert result["queries_evaluated"] == len(queries)
         print(f"\n{mode}: P50={result['p50_ms']:.0f}ms "
               f"sem={result['semantic_avg']:.1f} kw={result['keyword_avg']:.1f} "
               f"empty={result['empty_rate']:.1%}")
 
     async def test_keyword_only_not_empty(self, queries):
         """Keyword-only mode must return results."""
-        await _run_retrieval_for_queries(
+        result = await _run_retrieval_for_queries(
             queries, semantic_enabled=False, keyword_enabled=True,
         )
-        # keyword_avg may be 0 if no docs indexed; that's OK structurally
+        assert result["queries_evaluated"] == len(queries)
 
     async def test_full_mode_runs_without_error(self, queries):
         """Full mode must complete without errors."""

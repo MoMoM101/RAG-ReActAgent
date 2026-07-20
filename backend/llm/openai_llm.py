@@ -1,8 +1,10 @@
 import asyncio
+import inspect
 import json
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from openai import AsyncOpenAI
@@ -25,13 +27,25 @@ class OpenAILLM(BaseLLM):
             pool=10.0,
         )
         http_client = httpx.AsyncClient(proxy=None, trust_env=False, timeout=timeout)
+        self.base_url = base_url or settings.llm_base_url
         self.client = AsyncOpenAI(
             api_key=api_key or settings.llm_api_key,
-            base_url=base_url or settings.llm_base_url,
+            base_url=self.base_url,
             http_client=http_client,
             max_retries=0,  # we handle retries ourselves for streaming
         )
         self.model = model or settings.llm_model
+
+    def _thinking_extra_body(self) -> dict[str, Any] | None:
+        """Return DeepSeek V4's explicit thinking-mode switch when applicable."""
+        host = (urlparse(self.base_url).hostname or "").lower()
+        if host != "api.deepseek.com" or not self.model.lower().startswith("deepseek-v4"):
+            return None
+        return {
+            "thinking": {
+                "type": "enabled" if settings.llm_thinking_enabled else "disabled",
+            },
+        }
 
     def _build_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
@@ -59,12 +73,18 @@ class OpenAILLM(BaseLLM):
         return result
 
     async def chat_stream(
-        self, messages: list[ChatMessage], tools: list[dict[str, Any]] | None = None
+        self, messages: list[ChatMessage], tools: list[dict[str, Any]] | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncGenerator[LLMResponse, None]:
         kwargs: dict[str, Any] = {"model": self.model, "messages": self._build_messages(messages), "stream": True}
+        extra_body = self._thinking_extra_body()
+        if extra_body is not None:
+            kwargs["extra_body"] = extra_body
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
 
         last_exception: Exception | None = None
         for attempt in range(settings.llm_max_retries):
@@ -99,10 +119,14 @@ class OpenAILLM(BaseLLM):
         tool_call_buf: dict[int, dict] = {}  # index → {id, name, args_str}
         has_tool_calls = False
         token_count = 0
+        finish_reason: str | None = None
 
         try:
             async for chunk in stream:
-                delta = chunk.choices[0].delta if chunk.choices and chunk.choices[0] else None
+                choice = chunk.choices[0] if chunk.choices and chunk.choices[0] else None
+                if choice is not None and choice.finish_reason:
+                    finish_reason = str(choice.finish_reason)
+                delta = choice.delta if choice is not None else None
                 if delta is None:
                     continue
 
@@ -132,7 +156,7 @@ class OpenAILLM(BaseLLM):
                                 tool_call_buf[idx]["args_str"] += tc.function.arguments
         except asyncio.CancelledError:
             logger.info("llm stream cancelled, closing stream")
-            await stream.aclose()
+            await _close_stream_safely(stream)
             raise
 
         # Stream ended — yield final with aggregated tool_calls (if any)
@@ -149,12 +173,34 @@ class OpenAILLM(BaseLLM):
                     name=buf["name"],
                     arguments=args,
                 ))
-            yield LLMResponse(tool_calls=tool_calls, is_final=True)
+            yield LLMResponse(
+                tool_calls=tool_calls,
+                is_final=True,
+                finish_reason=finish_reason,
+            )
         else:
-            yield LLMResponse(content="", is_final=True)
+            yield LLMResponse(
+                content="",
+                is_final=True,
+                finish_reason=finish_reason,
+            )
 
         try:
             from metrics import get_metrics
             get_metrics().record_llm_usage(max(token_count, 1))
         except Exception:
             pass
+
+
+async def _close_stream_safely(stream: Any) -> None:
+    """Close OpenAI-compatible streams across SDK/provider variants."""
+    close = getattr(stream, "aclose", None) or getattr(stream, "close", None)
+    if close is None:
+        logger.debug("llm stream exposes no close method")
+        return
+    try:
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+    except Exception:
+        logger.warning("failed to close cancelled llm stream", exc_info=True)

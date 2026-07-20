@@ -29,12 +29,18 @@ def test_runtime_requirements_contains_core():
 
     required = [
         "fastapi", "uvicorn", "qdrant-client", "pymupdf",
-        "python-docx", "openpyxl", "pandas", "tiktoken", "openai",
+        "python-docx", "openpyxl", "tiktoken", "openai",
         "sqlalchemy", "aiosqlite", "sse-starlette", "slowapi",
         "jieba", "cryptography",
     ]
     missing = [p for p in required if p not in pkgs]
     assert not missing, f"requirements.txt 缺少核心依赖: {missing}"
+
+
+def test_runtime_requirements_excludes_pandas():
+    """Tabular loaders use csv/openpyxl and must not pull pandas/numpy into runtime."""
+    pkgs = _parse_requirements("requirements.txt")
+    assert "pandas" not in pkgs
 
 
 def test_runtime_requirements_excludes_dev_deps():

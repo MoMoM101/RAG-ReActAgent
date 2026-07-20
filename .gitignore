@@ -1,6 +1,9 @@
 # Local tool data
 .codegraph/
 .superpowers/
+.claude/
+.eval-tmp/
+.playwright-mcp/
 
 # Environment
 .env

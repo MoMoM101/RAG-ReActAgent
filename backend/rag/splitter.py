@@ -12,6 +12,40 @@ class Chunk:
     section_key: str = ""  # stable section identifier from nearest markdown header
 
 
+def _normalize_section_key(title: str) -> str:
+    key = re.sub(r"[^a-zA-Z0-9一-鿿_-]", "-", title.strip()).strip("-")
+    return key[:30].lower()
+
+
+def _markdown_sections(text: str) -> list[tuple[str, str]]:
+    """Split Markdown while carrying ancestor headings into child sections.
+
+    Child chunks need their document/parent topic for long natural-language
+    queries. The inherited context is plain text so recursive splitting does
+    not treat it as another Markdown section boundary.
+    """
+    headers = list(re.finditer(r"^#{1,6}\s+(.+)$", text, re.MULTILINE))
+    if len(headers) <= 1:
+        return [(text, _normalize_section_key(headers[0].group(1)) if headers else "")]
+
+    sections: list[tuple[str, str]] = []
+    if headers[0].start() > 0 and text[:headers[0].start()].strip():
+        sections.append((text[:headers[0].start()].strip(), ""))
+    ancestors: list[tuple[int, str]] = []
+    for index, header in enumerate(headers):
+        level = len(header.group(0)) - len(header.group(0).lstrip("#"))
+        ancestors = [(depth, title) for depth, title in ancestors if depth < level]
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+        section_text = text[header.start():end].strip()
+        if section_text:
+            if ancestors:
+                path = " > ".join(title for _, title in ancestors)
+                section_text = f"文档上下文：{path}\n\n{section_text}"
+            sections.append((section_text, _normalize_section_key(header.group(1))))
+        ancestors.append((level, header.group(1).strip()))
+    return sections
+
+
 def _find_table_boundary(text: str, cut: int) -> int | None:
     """If `cut` falls inside a markdown table, return the row boundary above it.
     A table is defined by a `|---|` separator line followed by data rows.
@@ -58,17 +92,24 @@ def _choose_cut(chunk_text: str) -> int:
     return -1
 
 
-def _section_key_for_position(text: str, pos: int) -> str:
-    """Return the nearest preceding markdown header before byte position *pos*."""
+def _section_key_for_range(text: str, start: int, end: int) -> str:
+    """Return the most specific heading governing a chunk range.
+
+    Overlap means a chunk often starts in the previous section and then
+    contains a new heading plus most of the next section. In that case the
+    last heading inside the chunk is a better stable identifier than the
+    heading immediately preceding its start.
+    """
     headers = list(re.finditer(r"^#{1,6}\s+(.+)$", text, re.MULTILINE))
-    best = ""
-    for h in headers:
-        if h.start() <= pos:
-            key = re.sub(r"[^a-zA-Z0-9一-鿿_-]", "-", h.group(1).strip()).strip("-")
-            best = key[:30].lower()
-        else:
+    selected = None
+    for header in headers:
+        if header.start() >= end:
             break
-    return best
+        if header.start() <= start or start < header.start() < end:
+            selected = header
+    if selected is None:
+        return ""
+    return _normalize_section_key(selected.group(1))
 
 
 def split_text(
@@ -77,6 +118,22 @@ def split_text(
     chunk_overlap: int = 40,
     encoding_name: str = "cl100k_base",
 ) -> list[Chunk]:
+    sections = _markdown_sections(text)
+    if len(sections) > 1:
+        section_chunks: list[Chunk] = []
+        for section_text, section_key in sections:
+            current_chunks = split_text(
+                section_text,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                encoding_name=encoding_name,
+            )
+            for chunk in current_chunks:
+                chunk.chunk_index = len(section_chunks)
+                chunk.section_key = section_key
+                section_chunks.append(chunk)
+        return section_chunks
+
     enc = tiktoken.get_encoding(encoding_name)
     tokens = enc.encode(text)
 
@@ -100,7 +157,11 @@ def split_text(
                 trimmed = len(chunk_tokens) - actual_tokens
                 end = end - trimmed
 
-        sk = _section_key_for_position(text, start) if "##" in text else ""
+        # Convert token offsets to character offsets before assigning stable
+        # section metadata; CJK characters can span multiple tokens.
+        start_char = len(enc.decode(tokens[:start]))
+        end_char = len(enc.decode(tokens[:end]))
+        sk = _section_key_for_range(text, start_char, end_char)
         chunks.append(Chunk(text=chunk_text.strip(), chunk_index=idx, section_key=sk))
         idx += 1
         start = end - chunk_overlap if end < len(tokens) else end

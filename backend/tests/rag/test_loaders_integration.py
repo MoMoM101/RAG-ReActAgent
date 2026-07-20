@@ -40,6 +40,30 @@ class TestLoadXlsx:
         assert "李四" in text
         assert "姓名" in text
 
+    def test_empty(self, tmp_path):
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        f = tmp_path / "empty.xlsx"
+        wb.save(str(f))
+
+        assert load_xlsx(str(f)) == ""
+
+    def test_escapes_markdown_cells(self, tmp_path):
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["名称", "说明"])
+        ws.append(["项目|甲", "第一行\n第二行"])
+        f = tmp_path / "escaped.xlsx"
+        wb.save(str(f))
+
+        text = load_xlsx(str(f))
+
+        assert r"项目\|甲" in text
+        assert "第一行<br>第二行" in text
+
 
 class TestLoadPdf:
     def test_text_pdf(self, tmp_path):

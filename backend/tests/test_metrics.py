@@ -1,6 +1,6 @@
 # backend/tests/test_metrics.py
 import pytest
-from metrics import get_metrics, export_prometheus, MetricsCollector
+from metrics import MetricsCollector, export_prometheus
 
 
 @pytest.fixture

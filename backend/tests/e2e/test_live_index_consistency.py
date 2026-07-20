@@ -14,8 +14,8 @@ import os
 import pytest
 from sqlalchemy import select
 
-from models.database import async_session
-from models.orm import Document, DocStatus, GenerationStatus, IndexGeneration
+from models.database import session_scope
+from models.orm import DocStatus, Document, GenerationStatus, IndexGeneration
 from textdb.bm25_search import BM25Search
 
 IS_STRICT = os.environ.get("DOCKER_E2E_REQUIRED", "") == "1"
@@ -32,7 +32,7 @@ def _require(condition: bool, message: str) -> None:
 
 async def _get_ready_documents() -> list[dict]:
     """Return all ready documents with active_generation_id."""
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(Document).where(Document.status == DocStatus.ready)
         )
@@ -51,7 +51,7 @@ async def _get_ready_documents() -> list[dict]:
 
 async def _get_generation(gen_id: str) -> dict | None:
     """Return generation record or None."""
-    async with async_session() as session:
+    async with session_scope() as session:
         result = await session.execute(
             select(IndexGeneration).where(IndexGeneration.id == gen_id)
         )

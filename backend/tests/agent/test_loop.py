@@ -57,7 +57,7 @@ class TestAgentLoopBasic:
                 ),
             ],
             # 主循环第 2 轮：返回最终回答
-            [LLMResponse(content="根据检索结果，这是回答内容。")],
+            [LLMResponse(content="测试内容 [S1]。")],
         ])
 
         with patch("agent.loop.registry") as mock_registry:
@@ -160,6 +160,39 @@ class TestAgentLoopSources:
             assert len(sources) == 1
             assert sources[0]["data"][0]["filename"] == "readme.txt"
             assert sources[0]["data"][0]["rank"] == 1
+            assert sources[0]["data"][0]["citation_id"] == "S1"
+
+    @pytest.mark.asyncio
+    async def test_multiple_searches_get_unique_aggregated_citations(self, make_fake_llm):
+        """多次 search_docs 的来源应整轮聚合，并保持唯一引用编号。"""
+        make_fake_llm([
+            [LLMResponse(tool_calls=[_make_tool_call("search_docs", {"query": "A"}, "c1")])],
+            [LLMResponse(tool_calls=[_make_tool_call("search_docs", {"query": "B"}, "c2")])],
+            [LLMResponse(content="结论分别来自 [S1] 和 [S2]。")],
+        ])
+        first = ToolResult(success=True, data={
+            "results": [{"chunk_id": "ch-1", "document_id": "d1", "text": "A", "score": 0.9}],
+            "count": 1,
+        })
+        second = ToolResult(success=True, data={
+            "results": [{"chunk_id": "ch-2", "document_id": "d2", "text": "B", "score": 0.8}],
+            "count": 1,
+        })
+
+        with patch("agent.loop.registry") as mock_registry:
+            mock_registry.get_schemas.return_value = []
+            mock_registry.execute_parallel = AsyncMock(side_effect=[
+                _make_parallel_result("search_docs", first),
+                _make_parallel_result("search_docs", second),
+            ])
+
+            from agent.loop import run_agent_loop
+
+            events = [event async for event in run_agent_loop("有哪些文档", [])]
+
+        sources = _events_by_type(events, "sources")[0]["data"]
+        assert [source["citation_id"] for source in sources] == ["S1", "S2"]
+        assert [source["chunk_id"] for source in sources] == ["ch-1", "ch-2"]
 
 
 class TestAgentLoopLimits:

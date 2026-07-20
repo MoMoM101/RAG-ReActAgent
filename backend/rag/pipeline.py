@@ -6,11 +6,9 @@ import time
 import uuid
 
 from sqlalchemy import select
-# TODO(D3): migrate save_upload / finalize_upload / find_upload / delete_file
-# to use get_storage() once the full ingestion pipeline can pass storage_key
-# through from document creation to file I/O. The existing functions remain
-# available as backward-compatible wrappers.
-from storage.files import delete_file, finalize_upload, find_upload, save_upload
+from storage import get_storage, materialize, stage_path
+from storage.base import StagedObject
+from storage.files import delete_file, find_upload
 
 from config import settings
 from embedding.factory import create_embedding
@@ -33,7 +31,19 @@ def _classify_error(error: Exception) -> str:
         return "rate_limit"
     if isinstance(error, (TimeoutError, ConnectionError)):
         return "transient"
-    if any(kw in msg for kw in ("timeout", "connection", "reset", "refused")):
+    if any(
+        keyword in msg
+        for keyword in (
+            "timeout",
+            "connection",
+            "reset",
+            "refused",
+            "500 (internal server error)",
+            "failed to apply operation",
+            "temporarily unavailable",
+            "service unavailable",
+        )
+    ):
         return "transient"
     return "permanent"
 
@@ -214,36 +224,83 @@ async def ingest_document(
 
     If background=True, processing runs asynchronously and the function returns immediately.
     """
-    doc_id = str(uuid.uuid4())
     file_hash = hashlib.sha256(file_content).hexdigest()
-    file_size = len(file_content)
+    storage = get_storage()
+    staged = await storage.create_staging(filename)
+    try:
+        await storage.append(staged, file_content)
+        return await ingest_document_from_staged(
+            filename=filename,
+            staged=staged,
+            file_hash=file_hash,
+            file_size=len(file_content),
+            file_type=file_type,
+            background=background,
+        )
+    except BaseException:
+        await storage.abort(staged)
+        raise
 
-    # 1. Check for duplicates
+
+async def _delete_storage_if_unreferenced(storage_key: str) -> None:
+    """Clean a failed commit without deleting an object referenced by another row."""
+    async with session_scope() as session:
+        existing = await session.execute(
+            select(Document.id).where(Document.storage_key == storage_key).limit(1)
+        )
+        if existing.scalar_one_or_none() is not None:
+            return
+    await get_storage().delete(storage_key)
+
+
+async def ingest_document_from_staged(
+    filename: str,
+    staged: StagedObject,
+    file_hash: str,
+    file_size: int,
+    file_type: str,
+    background: bool = False,
+) -> str:
+    """Commit a backend-managed staging object, register it, and start ingestion."""
+    from sqlalchemy.exc import IntegrityError
+
+    storage = get_storage()
     async with session_scope() as session:
         result = await session.execute(
             select(Document).where(Document.file_hash == file_hash)
         )
         if result.scalar_one_or_none():
+            await storage.abort(staged)
             raise ValueError(f"File '{filename}' already exists (hash matched)")
 
-    # 2. Save file
-    file_path = save_upload(file_content, filename)
+    try:
+        stored = await storage.commit(staged, expected_sha256=file_hash)
+    except BaseException:
+        await storage.abort(staged)
+        raise
 
-    # 3. Create document record
-    async with session_scope() as session:
-        doc = Document(
-            id=doc_id,
-            filename=filename,
-            file_hash=file_hash,
-            file_size=file_size,
-            file_type=file_type,
-            status=DocStatus.uploaded,
-        )
-        session.add(doc)
-        await session.commit()
+    doc_id = str(uuid.uuid4())
+    try:
+        async with session_scope() as session:
+            session.add(Document(
+                id=doc_id,
+                filename=filename,
+                file_hash=file_hash,
+                file_size=file_size,
+                file_type=file_type,
+                storage_key=stored.storage_key,
+                status=DocStatus.uploaded,
+            ))
+            await session.commit()
+    except IntegrityError as exc:
+        await _delete_storage_if_unreferenced(stored.storage_key)
+        raise ValueError(f"File '{filename}' already exists (hash matched)") from exc
+    except Exception:
+        await _delete_storage_if_unreferenced(stored.storage_key)
+        raise
 
     return await _run_document_ingestion(
-        doc_id, filename, file_path, file_type, background
+        doc_id, filename, stored.storage_key, file_type, background
     )
 
 
@@ -255,50 +312,26 @@ async def ingest_document_from_path(
     file_type: str,
     background: bool = False,
 ) -> str:
-    """Register and ingest a file that has already been streamed to disk."""
-    from sqlalchemy.exc import IntegrityError
-
-    async with session_scope() as session:
-        result = await session.execute(
-            select(Document).where(Document.file_hash == file_hash)
+    """Backward-compatible adapter from a legacy temporary path."""
+    storage = get_storage()
+    try:
+        staged = await stage_path(storage, temp_path, filename)
+        return await ingest_document_from_staged(
+            filename=filename,
+            staged=staged,
+            file_hash=file_hash,
+            file_size=file_size,
+            file_type=file_type,
+            background=background,
         )
-        if result.scalar_one_or_none():
-            delete_file(temp_path)
-            raise ValueError(f"File '{filename}' already exists (hash matched)")
-
-    try:
-        file_path = finalize_upload(temp_path, filename)
-    except Exception:
+    finally:
         delete_file(temp_path)
-        raise
-    doc_id = str(uuid.uuid4())
-    try:
-        async with session_scope() as session:
-            session.add(Document(
-                id=doc_id,
-                filename=filename,
-                file_hash=file_hash,
-                file_size=file_size,
-                file_type=file_type,
-                status=DocStatus.uploaded,
-            ))
-            await session.commit()
-    except IntegrityError as exc:
-        delete_file(file_path)
-        raise ValueError(f"File '{filename}' already exists (hash matched)") from exc
-    except Exception:
-        delete_file(file_path)
-        raise
-
-    return await _run_document_ingestion(
-        doc_id, filename, file_path, file_type, background
-    )
 
 
 async def _run_document_ingestion(
     doc_id: str,
     filename: str,
-    file_path: str,
+    storage_key: str,
     file_type: str,
     background: bool,
 ) -> str:
@@ -310,7 +343,7 @@ async def _run_document_ingestion(
                 started = time.time()
                 logger.info("ingestion started doc_id=%s filename=%s", doc_id, filename)
                 # ── Idempotency guard: skip if already committed ──
-                from models.orm import IndexGeneration, GenerationStatus
+                from models.orm import GenerationStatus, IndexGeneration
                 async with session_scope() as session:
                     doc = (await session.execute(
                         select(Document).where(Document.id == doc_id)
@@ -334,7 +367,10 @@ async def _run_document_ingestion(
                 from rag.progress import progress
                 for attempt in range(settings.ingestion_max_retries):
                     try:
-                        await _process_document(doc_id, file_path, file_type)
+                        async with materialize(
+                            get_storage(), storage_key, suffix=file_type
+                        ) as file_path:
+                            await _process_document(doc_id, file_path, file_type)
                         elapsed = (time.time() - started) * 1000
                         logger.info(
                             "ingestion complete doc_id=%s elapsed_ms=%d attempt=%d",
@@ -357,6 +393,7 @@ async def _run_document_ingestion(
                             logger.error(
                                 "ingestion failed doc_id=%s type=%s error=%s",
                                 doc_id, error_type, str(e)[:200],
+                                exc_info=True,
                             )
                             from metrics import get_metrics
                             get_metrics().record_ingestion(
@@ -382,7 +419,10 @@ async def _run_document_ingestion(
         return doc_id
 
     try:
-        await _process_document(doc_id, file_path, file_type)
+        async with materialize(
+            get_storage(), storage_key, suffix=file_type
+        ) as file_path:
+            await _process_document(doc_id, file_path, file_type)
     except Exception as e:
         async with session_scope() as session:
             result = await session.execute(select(Document).where(Document.id == doc_id))
@@ -411,22 +451,40 @@ async def recover_incomplete_documents() -> int:
         documents = list(result.scalars().all())
 
         recoverable: list[tuple[str, str, str, str]] = []
+        storage = get_storage()
         for doc in documents:
-            file_path = find_upload(doc.filename, doc.file_type)
-            if file_path is None:
-                doc.status = DocStatus.failed
-                doc.error_message = "服务重启后无法恢复：原始文件不存在"
-                continue
+            storage_key = doc.storage_key
+            if not storage_key or not await storage.exists(storage_key):
+                legacy_path = find_upload(
+                    doc.filename,
+                    doc.file_type,
+                    expected_sha256=doc.file_hash,
+                    root_dir=settings.upload_dir,
+                )
+                if legacy_path is None:
+                    doc.status = DocStatus.failed
+                    doc.error_message = "服务重启后无法恢复：原始文件不存在"
+                    continue
+                staged = await stage_path(storage, legacy_path, doc.filename)
+                expected_hash = (
+                    doc.file_hash
+                    if len(doc.file_hash) == 64
+                    and all(char in "0123456789abcdefABCDEF" for char in doc.file_hash)
+                    else None
+                )
+                stored = await storage.commit(staged, expected_sha256=expected_hash)
+                storage_key = stored.storage_key
+                doc.storage_key = storage_key
             doc.status = DocStatus.uploaded
             doc.error_message = None
-            recoverable.append((doc.id, doc.filename, file_path, doc.file_type))
+            recoverable.append((doc.id, doc.filename, storage_key, doc.file_type))
         await session.commit()
 
     scheduled = 0
-    for doc_id, filename, file_path, file_type in recoverable:
+    for doc_id, filename, storage_key, file_type in recoverable:
         try:
             await _run_document_ingestion(
-                doc_id, filename, file_path, file_type, background=True
+                doc_id, filename, storage_key, file_type, background=True
             )
             scheduled += 1
         except Exception as exc:

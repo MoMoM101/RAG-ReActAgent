@@ -3,7 +3,7 @@ import contextlib
 import pytest
 from sqlalchemy import select
 
-from models.database import async_session
+from models.database import session_scope
 from models.orm import Document
 from rag.pipeline import ingest_document
 
@@ -21,7 +21,7 @@ async def test_ingest_txt_file(tmp_path, monkeypatch):
     try:
         doc_id = await ingest_document("test.txt", file_content, ".txt")
         # Verify record created
-        async with async_session() as session:
+        async with session_scope() as session:
             result = await session.execute(select(Document).where(Document.id == doc_id))
             doc = result.scalar_one()
             assert doc.filename == "test.txt"
