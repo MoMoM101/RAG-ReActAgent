@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from agent.context import ContextManager
 from agent.context_window import get_window, is_context_error
-from agent.loop_setup import apply_memory_context, classify_turn
+from agent.loop_setup import apply_memory_context, classify_turn, resolve_followup_query
 from agent.loop_support import (
     build_answer_cache_key as _build_answer_cache_key,
 )
@@ -25,7 +25,7 @@ from agent.loop_support import (
 )
 from agent.loop_tools import ToolTurnState, execute_tool_turn
 from agent.tools import registry
-from agent.verifier import Evidence, verify_answer
+from agent.verifier import Evidence, is_comparison_query, verify_answer
 from config import settings
 from llm.base import ChatMessage
 from llm.factory import create_llm
@@ -62,6 +62,7 @@ async def run_agent_loop(
     start_time = time.time()
     turn_sources: list[dict] = []
     citation_by_source: dict[str, str] = {}
+    search_groups_by_source: dict[str, set[str]] = {}
     iteration = 0
     grounding_guard_enabled = settings.grounding_verification_enabled and settings.grounding_enforcement != "off"
     # ── V4 timing instrumentation ──
@@ -83,6 +84,9 @@ async def run_agent_loop(
 
     # 1. Intent classification: 规则优先 + LLM 兜底
     hint = await classify_turn(user_message, conversation_history)
+    grounding_query = resolve_followup_query(user_message, conversation_history)
+    if grounding_query != user_message:
+        hint.hint_text += f"\n[系统] 已将当前追问解析为：{grounding_query}"
     _record_phase("rag_intent")
     yield {"event": "status", "data": {"message": "正在分析问题..."}}
 
@@ -219,7 +223,12 @@ async def run_agent_loop(
             _reasoning_seen = False
             _first_token_recorded = False
             # ── V4 Phase 3: Stream verify state ──
-            _stream_verify_active = turn_sources and grounding_guard_enabled and settings.grounding_stream_verify_enabled
+            _stream_verify_active = (
+                turn_sources
+                and grounding_guard_enabled
+                and settings.grounding_stream_verify_enabled
+                and not is_comparison_query(grounding_query)
+            )
             _unit_buffer: AtomicUnitBuffer | None = None
             _committed_units: list[AtomicUnit] = []
             _stream_emitted_parts: list[str] = []
@@ -302,7 +311,7 @@ async def run_agent_loop(
                                         result = _verify_stream_unit(
                                             unit,
                                             _stream_evidence,
-                                            user_message,
+                                            grounding_query,
                                         )
                                         if result.verdict in (UnitVerdict.VERIFIED, UnitVerdict.FORMAT_ONLY):
                                             emit_text = unit.text
@@ -439,6 +448,7 @@ async def run_agent_loop(
                 messages=messages,
                 sources=turn_sources,
                 citation_by_source=citation_by_source,
+                search_groups_by_source=search_groups_by_source,
                 timing=_timing,
             )
             outcome = await execute_tool_turn(
@@ -480,7 +490,7 @@ async def run_agent_loop(
                     result = _verify_stream_unit(
                         remaining_unit,
                         _stream_evidence,
-                        user_message,
+                        grounding_query,
                     )
                     emit_text = remaining_unit.text
                     sendable = result.verdict == UnitVerdict.VERIFIED
@@ -517,7 +527,7 @@ async def run_agent_loop(
                         if committed_text and assistant_content.startswith(committed_text):
                             remaining_draft = assistant_content[len(committed_text) :]
                     repair_prompt = build_repair_prompt(
-                        user_message,
+                        grounding_query,
                         sources,
                         _committed_units,
                         remaining_draft,
@@ -550,7 +560,7 @@ async def run_agent_loop(
                                             result = _verify_stream_unit(
                                                 unit,
                                                 _stream_evidence,
-                                                user_message,
+                                                grounding_query,
                                             )
                                             emit_text = unit.text
                                             sendable = result.verdict == UnitVerdict.VERIFIED
@@ -579,7 +589,7 @@ async def run_agent_loop(
                             result = _verify_stream_unit(
                                 rem,
                                 _stream_evidence,
-                                user_message,
+                                grounding_query,
                             )
                             emit_text = rem.text
                             sendable = result.verdict == UnitVerdict.VERIFIED
@@ -616,7 +626,7 @@ async def run_agent_loop(
                         result = _verify_stream_unit(
                             rem,
                             _stream_evidence,
-                            user_message,
+                            grounding_query,
                         )
                         emit_text = rem.text
                         sendable = result.verdict == UnitVerdict.VERIFIED
@@ -640,7 +650,7 @@ async def run_agent_loop(
                     result = _verify_stream_unit(
                         rem,
                         _stream_evidence,
-                        user_message,
+                        grounding_query,
                     )
                     emit_text = rem.text
                     sendable = result.verdict == UnitVerdict.VERIFIED
@@ -764,7 +774,7 @@ async def run_agent_loop(
             )
 
             final_content = apply_query_safety_guard(
-                user_message,
+                grounding_query,
                 assistant_content,
                 has_context=bool(conversation_history),
             )
@@ -779,7 +789,7 @@ async def run_agent_loop(
                             needs_grounding_repair,
                             final_content,
                             sources,
-                            query=user_message,
+                            query=grounding_query,
                             coverage_recheck=False,
                         ),
                         timeout=settings.rag_timeout_verification,
@@ -805,7 +815,7 @@ async def run_agent_loop(
                     _get_m().record_repair_trigger(r)
                 if "topical_false_refusal" in decision.reasons:
                     partial_fallback = build_partial_comparison_fallback(
-                        user_message,
+                        grounding_query,
                         sources,
                     )
                     if partial_fallback:
@@ -937,6 +947,20 @@ async def run_agent_loop(
                     repair_reasons = decision.reasons + [
                         "llm_repair_disabled_by_config",
                     ]
+
+            query_guarded_content = apply_query_safety_guard(
+                grounding_query,
+                final_content,
+                has_context=bool(conversation_history),
+            )
+            if query_guarded_content != final_content:
+                comparison_fallback = build_partial_comparison_fallback(
+                    grounding_query,
+                    sources,
+                )
+                final_content = comparison_fallback or query_guarded_content
+                repair_used = "deterministic_partial" if comparison_fallback else "safe_refusal"
+                repair_reasons = list(repair_reasons) + ["incomplete_query_relation"]
 
             guarded_content = apply_zero_support_guard(final_content, sources)
             if guarded_content != final_content:

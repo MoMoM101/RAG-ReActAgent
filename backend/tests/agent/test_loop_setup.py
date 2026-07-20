@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agent.classifier import IntentHint
-from agent.loop_setup import apply_memory_context, classify_turn
+from agent.loop_setup import apply_memory_context, classify_turn, resolve_followup_query
+from llm.base import ChatMessage
 
 
 def _hint(intent: str = "knowledge_qa") -> IntentHint:
@@ -13,6 +14,24 @@ def _hint(intent: str = "knowledge_qa") -> IntentHint:
         suggested_tools=[],
         hint_text="base hint",
     )
+
+
+def test_resolve_followup_query_uses_latest_simple_topic():
+    history = [
+        ChatMessage(role="user", content="skill是什么"),
+        ChatMessage(role="assistant", content="Skill 是能力模块。"),
+    ]
+
+    assert resolve_followup_query("mcp和它有什么区别", history) == ("mcp和skill有什么区别")
+
+
+def test_resolve_followup_query_keeps_unresolved_complex_history():
+    history = [
+        ChatMessage(role="user", content="请详细说明昨天讨论的整个部署方案"),
+        ChatMessage(role="assistant", content="好的。"),
+    ]
+
+    assert resolve_followup_query("它有什么区别", history) == "它有什么区别"
 
 
 @pytest.mark.asyncio

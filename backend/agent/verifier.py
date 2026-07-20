@@ -103,6 +103,11 @@ _CALCULATION_ANSWER_RE = re.compile(
 )
 
 
+def is_comparison_query(query: str) -> bool:
+    """Return whether a query requires whole-answer comparison validation."""
+    return bool(_COMPARISON_QUERY_RE.search(query))
+
+
 @dataclass(frozen=True)
 class Evidence:
     """Normalized source evidence used by the verifier."""

@@ -2,12 +2,39 @@
 
 import asyncio
 import logging
+import re
 
 from agent.classifier import IntentHint, classify_intent, llm_classify
 from config import settings
 from llm.base import ChatMessage
 
 logger = logging.getLogger(__name__)
+
+_FOLLOWUP_REFERENCE_RE = re.compile(r"它|这个|那个")
+_SIMPLE_TOPIC_QUESTION_RE = re.compile(
+    r"^\s*(?P<topic>[A-Za-z][A-Za-z0-9_.+\- ]{0,30}|[\u4e00-\u9fffA-Za-z0-9_.+\-]{2,24})"
+    r"(?:是什么|指什么|是啥|的定义|有哪些功能)[？?]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def resolve_followup_query(
+    user_message: str,
+    conversation_history: list[ChatMessage],
+) -> str:
+    """Resolve a simple pronoun follow-up from the latest explicit topic."""
+    if not _FOLLOWUP_REFERENCE_RE.search(user_message):
+        return user_message
+    for message in reversed(conversation_history):
+        if message.role != "user" or not message.content:
+            continue
+        match = _SIMPLE_TOPIC_QUESTION_RE.match(message.content)
+        if not match:
+            continue
+        topic = match.group("topic").strip()
+        if topic and not _FOLLOWUP_REFERENCE_RE.search(topic):
+            return _FOLLOWUP_REFERENCE_RE.sub(topic, user_message)
+    return user_message
 
 
 async def classify_turn(
@@ -16,18 +43,14 @@ async def classify_turn(
 ) -> IntentHint:
     """Classify intent with the existing rule-first, LLM-fallback policy."""
     hint = classify_intent(user_message, conversation_history)
-    if hint.intent == "_llm_needed" or (
-        hint.intent == "personal_memory" and not hint.save_to_profile
-    ):
+    if hint.intent == "_llm_needed" or (hint.intent == "personal_memory" and not hint.save_to_profile):
         try:
             hint = await asyncio.wait_for(
                 llm_classify(user_message, conversation_history),
                 timeout=settings.rag_timeout_intent,
             )
         except TimeoutError:
-            logger.warning(
-                "intent classification timed out, defaulting to knowledge_qa"
-            )
+            logger.warning("intent classification timed out, defaulting to knowledge_qa")
             hint = classify_intent(user_message, conversation_history)
             hint.intent = "knowledge_qa"
     return hint
@@ -53,16 +76,11 @@ async def apply_memory_context(
         content = item.get("content", "")
         memory_type = item.get("type", "fact")
         candidate_pair = (content, memory_type)
-        if (
-            content
-            and candidate_pair not in identity_direct
-            and candidate_pair not in needs_confirmation
-        ):
+        if content and candidate_pair not in identity_direct and candidate_pair not in needs_confirmation:
             identity_direct.append(candidate_pair)
 
     logger.info(
-        "memory intercept: regex=%d (identity=%d need_confirm=%d) "
-        "classifier_save=%d user_msg=%.60s",
+        "memory intercept: regex=%d (identity=%d need_confirm=%d) classifier_save=%d user_msg=%.60s",
         len(regex_candidates),
         len(identity_direct),
         len(needs_confirmation),
