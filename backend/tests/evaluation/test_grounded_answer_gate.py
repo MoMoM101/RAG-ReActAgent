@@ -1,14 +1,49 @@
 """Release gate tests for grounded-answer online evaluation."""
 
+import asyncio
 from types import SimpleNamespace
+
+import pytest
 
 from tests.qrels_schema import QrelQuery
 from tests.run_grounded_answer_eval import (
+    ModelCallBudget,
+    ModelCallBudgetExceededError,
     _fact_recall,
     _is_full_refusal,
     _is_safe_abstention,
     evaluate_quality_gate,
 )
+
+
+def test_model_call_budget_refuses_call_past_hard_limit():
+    async def exercise() -> ModelCallBudget:
+        budget = ModelCallBudget(2)
+        await budget.reserve()
+        await budget.reserve()
+        with pytest.raises(ModelCallBudgetExceededError):
+            await budget.reserve()
+        return budget
+
+    budget = asyncio.run(exercise())
+
+    assert budget.used == 2
+
+
+def test_model_call_budget_is_concurrency_safe():
+    async def exercise() -> tuple[ModelCallBudget, list[object]]:
+        budget = ModelCallBudget(3)
+        results = await asyncio.gather(
+            *(budget.reserve() for _ in range(8)),
+            return_exceptions=True,
+        )
+        return budget, results
+
+    budget, results = asyncio.run(exercise())
+
+    assert budget.used == 3
+    assert sum(result is None for result in results) == 3
+    assert sum(isinstance(result, ModelCallBudgetExceededError) for result in results) == 5
 
 
 def _aggregate(**optimized_overrides):
@@ -62,30 +97,41 @@ def test_grounded_answer_gate_rejects_low_completion_accuracy():
 
 
 def test_qrel_answerability_is_independent_from_retrieval_relevance():
-    query = QrelQuery.from_dict({
-        "query_id": "relation-missing",
-        "query": "两个实体有什么区别",
-        "relevant": [{
-            "document_key": "doc",
-            "section_key": "entities",
-            "grade": 2,
-        }],
-        "answerability": "none",
-        "answerability_rationale": "实体出现，但所问关系缺失。",
-    })
+    query = QrelQuery.from_dict(
+        {
+            "query_id": "relation-missing",
+            "query": "两个实体有什么区别",
+            "relevant": [
+                {
+                    "document_key": "doc",
+                    "section_key": "entities",
+                    "grade": 2,
+                }
+            ],
+            "answerability": "none",
+            "answerability_rationale": "实体出现，但所问关系缺失。",
+        }
+    )
 
     assert query.relevant
     assert query.answerability == "none"
 
 
 def test_legacy_qrel_answerability_is_inferred():
-    answerable = QrelQuery.from_dict({
-        "query_id": "old-positive", "query": "q",
-        "relevant": [{"document_key": "doc", "section_key": "s"}],
-    })
-    unanswerable = QrelQuery.from_dict({
-        "query_id": "old-negative", "query": "q", "relevant": [],
-    })
+    answerable = QrelQuery.from_dict(
+        {
+            "query_id": "old-positive",
+            "query": "q",
+            "relevant": [{"document_key": "doc", "section_key": "s"}],
+        }
+    )
+    unanswerable = QrelQuery.from_dict(
+        {
+            "query_id": "old-negative",
+            "query": "q",
+            "relevant": [],
+        }
+    )
 
     assert answerable.answerability == "full"
     assert unanswerable.answerability == "none"
@@ -94,25 +140,31 @@ def test_legacy_qrel_answerability_is_inferred():
 def test_supported_partial_answer_is_not_misclassified_as_full_refusal():
     verification = SimpleNamespace(facts_supported=1)
 
-    assert _is_full_refusal(
-        "光伏成本下降了 90% [S1]。现有资料不足以比较风电成本。",
-        verification,
-    ) is False
-    assert _is_full_refusal(
-        "现有资料不足以回答该问题。",
-        SimpleNamespace(facts_supported=0),
-    ) is True
-    assert _is_full_refusal(
-        "无法确认两者存在相似之处。",
-        SimpleNamespace(facts_supported=0),
-    ) is True
+    assert (
+        _is_full_refusal(
+            "光伏成本下降了 90% [S1]。现有资料不足以比较风电成本。",
+            verification,
+        )
+        is False
+    )
+    assert (
+        _is_full_refusal(
+            "现有资料不足以回答该问题。",
+            SimpleNamespace(facts_supported=0),
+        )
+        is True
+    )
+    assert (
+        _is_full_refusal(
+            "无法确认两者存在相似之处。",
+            SimpleNamespace(facts_supported=0),
+        )
+        is True
+    )
 
 
 def test_supported_context_with_explicit_relation_limit_is_safe_abstention():
-    answer = (
-        "One-Hot 和 Label Encoding 都属于类别变量编码 [S1]。"
-        "两者的区别无法从现有资料确认。"
-    )
+    answer = "One-Hot 和 Label Encoding 都属于类别变量编码 [S1]。两者的区别无法从现有资料确认。"
 
     assert _is_full_refusal(answer, SimpleNamespace(facts_supported=1)) is False
     assert _is_safe_abstention(answer) is True

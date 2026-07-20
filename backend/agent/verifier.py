@@ -20,8 +20,15 @@ _POST_SENTENCE_CITATION_RE = re.compile(
 _NUMBER_RE = re.compile(r"(?<![A-Za-z])\d+(?:\.\d+)*(?:%|℃|°C|ms|s|MB|GB|mg|V)?", re.IGNORECASE)
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.+-]*|\d+(?:\.\d+)*|[\u4e00-\u9fff]+")
 _META_PREFIXES = (
-    "以下是", "总结", "注意", "抱歉", "无法从", "未找到",
-    "现有资料", "无法确认", "如需",
+    "以下是",
+    "总结",
+    "注意",
+    "抱歉",
+    "无法从",
+    "未找到",
+    "现有资料",
+    "无法确认",
+    "如需",
 )
 _LIMITATION_RE = re.compile(
     r"^(?:但)?(?:现有)?资料(?:中)?(?:不足|未|没有)"
@@ -34,9 +41,7 @@ _EVIDENCE_LEAD_RE = re.compile(
     re.IGNORECASE,
 )
 _CONFIRMED_LEAD_RE = re.compile(r"^已确认[：:]\s*")
-_LIMITATION_ANYWHERE_RE = re.compile(
-    r"(?:现有)?资料(?:中)?不足以|无法(?:直接)?(?:确认|确定|比较|回答)"
-)
+_LIMITATION_ANYWHERE_RE = re.compile(r"(?:现有)?资料(?:中)?不足以|无法(?:直接)?(?:确认|确定|比较|回答)")
 _REFUSAL_RE = re.compile(
     r"现有资料不足|资料不足|无法从现有资料|无法回答|无法确认|无法确定|未找到相关"
     r"|没有明确(?:指定|的)?|请(?:您)?(?:提供|说明|明确|指定)|具体指的是什么"
@@ -60,12 +65,28 @@ _CLARIFICATION_RE = re.compile(
     r"|指代不清|无法理解.{0,6}问题|请问您想(?:询问|了解|问)(?:什么|哪方面)"
 )
 _QUERY_TOKEN_STOPWORDS = {
-    "什么", "怎么", "如何", "哪个", "哪些", "可以", "是否", "有什么",
-    "不同", "共同", "比较", "资料", "问题", "使用", "进行",
+    "什么",
+    "怎么",
+    "如何",
+    "哪个",
+    "哪些",
+    "可以",
+    "是否",
+    "有什么",
+    "不同",
+    "共同",
+    "比较",
+    "资料",
+    "问题",
+    "使用",
+    "进行",
 }
 _COVERAGE_QUERY_RE = re.compile(r"^(?:什么是|有哪些|概览|详细说明|介绍一下)")
 _COMPARISON_QUERY_RE = re.compile(
     r"不同|区别|差异|相似|比较|对比|共同点|优缺点|哪个更|各自|各适用",
+)
+_COMPARISON_ANSWER_RE = re.compile(
+    r"不同|区别|差异|相比|相较|共同|相似|优于|劣于|各自|分别|选择|适合|更(?:好|优|适合)",
 )
 _UNRESOLVED_REFERENCE_RE = re.compile(
     r"(?:这个|那个|该|上述)(?:框架|方法|模型|工具|方案|系统|技术|对象)",
@@ -176,9 +197,7 @@ class VerificationResult:
             "unsupported_claims": unsupported_claims,
             "display_status": display_status,
             "citation_status": (
-                "complete" if self.citation_recall >= 1.0
-                else "partial" if self.citation_recall > 0.0
-                else "missing"
+                "complete" if self.citation_recall >= 1.0 else "partial" if self.citation_recall > 0.0 else "missing"
             ),
         }
         if include_claims:
@@ -205,10 +224,8 @@ def _extract_facts(text: str) -> list[str]:
         lead_match = _EVIDENCE_LEAD_RE.match(claim)
         if lead_match:
             lead = lead_match.group(0)
-            lead_citations = " ".join(
-                f"[{group}]" for group in _CITATION_RE.findall(lead)
-            )
-            claim = f"{claim[lead_match.end():].strip()} {lead_citations}".strip()
+            lead_citations = " ".join(f"[{group}]" for group in _CITATION_RE.findall(lead))
+            claim = f"{claim[lead_match.end() :].strip()} {lead_citations}".strip()
         plain = _CITATION_RE.sub("", claim)
         plain = re.sub(r"[*_`]+", "", plain).strip(" ：:。；;，,")
         if len(plain) < _MIN_CLAIM_LENGTH or plain.endswith(("?", "？")):
@@ -232,7 +249,7 @@ def _content_tokens(text: str) -> set[str]:
             if len(raw) == 1:
                 tokens.add(raw)
             else:
-                tokens.update(raw[i:i + 2] for i in range(len(raw) - 1))
+                tokens.update(raw[i : i + 2] for i in range(len(raw) - 1))
         else:
             tokens.add(raw)
     return tokens
@@ -266,13 +283,15 @@ def _normalize_evidence(sources: Sequence[EvidenceSource]) -> list[Evidence]:
             evidence.append(Evidence(citation_id=f"S{index}", text=source))
             continue
         citation_id = str(source.get("citation_id") or f"S{index}").upper()
-        evidence.append(Evidence(
-            citation_id=citation_id,
-            text=str(source.get("text", "")),
-            document_key=str(source.get("document_key", "")),
-            section_key=str(source.get("section_key", "")),
-            filename=str(source.get("filename", "")),
-        ))
+        evidence.append(
+            Evidence(
+                citation_id=citation_id,
+                text=str(source.get("text", "")),
+                document_key=str(source.get("document_key", "")),
+                section_key=str(source.get("section_key", "")),
+                filename=str(source.get("filename", "")),
+            )
+        )
     return evidence
 
 
@@ -347,8 +366,7 @@ def verify_answer(
                 supporting = [
                     candidate.citation_id
                     for candidate in candidates
-                    if fact_tokens & _content_tokens(candidate.text)
-                    or fact_numbers & _numbers(candidate.text)
+                    if fact_tokens & _content_tokens(candidate.text) or fact_numbers & _numbers(candidate.text)
                 ]
                 supporting_citation_count += len(supporting)
             missing_numbers = union_missing
@@ -364,22 +382,22 @@ def verify_answer(
             reason = "内容有证据支持，但声明缺少引用"
         else:
             reason = "已由引用证据支持"
-        claim_results.append(ClaimVerification(
-            claim=fact,
-            citations=citations,
-            supported=supported,
-            support_score=round(best_score, 4),
-            supporting_citations=supporting,
-            missing_numbers=sorted(missing_numbers),
-            reason=reason,
-        ))
+        claim_results.append(
+            ClaimVerification(
+                claim=fact,
+                citations=citations,
+                supported=supported,
+                support_score=round(best_score, 4),
+                supporting_citations=supporting,
+                missing_numbers=sorted(missing_numbers),
+                reason=reason,
+            )
+        )
 
     supported_count = sum(1 for claim in claim_results if claim.supported)
     coverage = supported_count / len(claim_results)
     citation_recall = cited_claims / len(claim_results)
-    citation_precision = (
-        supporting_citation_count / valid_citation_count if valid_citation_count else 0.0
-    )
+    citation_precision = supporting_citation_count / valid_citation_count if valid_citation_count else 0.0
     if coverage >= min_coverage and citation_recall >= min_coverage:
         status = "verified"
     elif supported_count:
@@ -399,7 +417,11 @@ def verify_answer(
     )
     logger.info(
         "answer verification status=%s faithfulness=%.0f%% citation_recall=%.0f%% claims=%d/%d",
-        status, coverage * 100, citation_recall * 100, supported_count, len(claim_results),
+        status,
+        coverage * 100,
+        citation_recall * 100,
+        supported_count,
+        len(claim_results),
     )
     return result
 
@@ -407,10 +429,7 @@ def verify_answer(
 def _has_topical_evidence(query: str, sources: Sequence[EvidenceSource]) -> bool:
     """Conservatively detect whether retrieved evidence is on the query topic."""
     evidence_text = "\n".join(item.text for item in _normalize_evidence(sources))
-    query_tokens = {
-        token for token in _content_tokens(query)
-        if token not in _QUERY_TOKEN_STOPWORDS and len(token) >= 2
-    }
+    query_tokens = {token for token in _content_tokens(query) if token not in _QUERY_TOKEN_STOPWORDS and len(token) >= 2}
     if not query_tokens:
         return False
     overlap = query_tokens & _content_tokens(evidence_text)
@@ -430,11 +449,7 @@ def _should_retry_topical_refusal(
     safe response can still enumerate directly supported facts for each side
     before declaring the comparison dimension unavailable.
     """
-    return bool(
-        query
-        and not _TOPICAL_RETRY_BLOCK_RE.search(query)
-        and _has_topical_evidence(query, sources)
-    )
+    return bool(query and not _TOPICAL_RETRY_BLOCK_RE.search(query) and _has_topical_evidence(query, sources))
 
 
 def apply_query_safety_guard(
@@ -450,14 +465,20 @@ def apply_query_safety_guard(
     the generated answer failed to resolve the requested relation; it does not
     replace a model answer that already contains an explicit supported choice.
     """
+    query_chars = [char.casefold() for char in query if char.isalnum()]
+    is_low_information = len(query_chars) <= 1 or (len(query_chars) >= 8 and len(set(query_chars)) / len(query_chars) <= 0.25)
     if _REFUSAL_RE.search(answer):
         return answer
+    if is_low_information:
+        return "无法确认：问题缺少可识别的有效信息，请提供具体问题后再提问。"
     if not has_context and _UNRESOLVED_REFERENCE_RE.search(query):
         return "无法确认：问题中的指代对象不明确，请说明具体对象后再提问。"
     if _SUPERLATIVE_QUERY_RE.search(query) and not _SUPERLATIVE_ANSWER_RE.search(answer):
         return "无法确认：现有资料没有给出所问对象之间的最高级比较结论。"
     if _CALCULATION_QUERY_RE.search(query) and not _CALCULATION_ANSWER_RE.search(answer):
         return "无法确认：现有资料没有给出该指标的计算公式或计算方法。"
+    if _COMPARISON_QUERY_RE.search(query) and not _COMPARISON_ANSWER_RE.search(answer):
+        return "无法确认：现有资料没有直接给出问题所要求的比较结论。"
     return answer
 
 
@@ -486,10 +507,7 @@ def build_partial_comparison_fallback(
         return None
 
     evidence = _normalize_evidence(sources)
-    query_tokens = {
-        token for token in _content_tokens(query)
-        if token not in _QUERY_TOKEN_STOPWORDS and len(token) >= 2
-    }
+    query_tokens = {token for token in _content_tokens(query) if token not in _QUERY_TOKEN_STOPWORDS and len(token) >= 2}
     if not query_tokens:
         return None
 
@@ -532,14 +550,8 @@ def build_partial_comparison_fallback(
         return None
 
     selected = sorted(candidates, key=lambda item: item[:3], reverse=True)[:2]
-    fact_lines = "\n".join(
-        f"- {sentence} [{source.citation_id}]。"
-        for _, _, _, sentence, source in selected
-    )
-    fallback = (
-        f"已确认：\n{fact_lines}\n"
-        "无法确认：现有资料没有直接给出问题所要求的比较结论。"
-    )
+    fact_lines = "\n".join(f"- {sentence} [{source.citation_id}]。" for _, _, _, sentence, source in selected)
+    fallback = f"已确认：\n{fact_lines}\n无法确认：现有资料没有直接给出问题所要求的比较结论。"
     verification = verify_answer(fallback, evidence)
     if (
         verification.facts_supported < 1
@@ -577,10 +589,7 @@ def needs_grounding_repair(
         )
 
     if _FULL_REFUSAL_START_RE.search(answer):
-        if (
-            not _CLARIFICATION_RE.search(answer)
-            and _should_retry_topical_refusal(query, sources)
-        ):
+        if not _CLARIFICATION_RE.search(answer) and _should_retry_topical_refusal(query, sources):
             return GroundingDecision(
                 action="llm_repair",
                 reasons=["topical_false_refusal"],
@@ -623,13 +632,10 @@ def needs_grounding_repair(
         # Coverage recheck: fully-grounded one-line answers may still
         # omit directly relevant categories/examples in substantive evidence.
         # Let the LLM try to expand, but acceptance is decided by verifier.
-        evidence_length = sum(
-            len(item.text) for item in _normalize_evidence(sources)
-        )
+        evidence_length = sum(len(item.text) for item in _normalize_evidence(sources))
         if (
             coverage_recheck
-            and
-            query
+            and query
             and _COVERAGE_QUERY_RE.search(query.strip())
             and verification.facts_supported < 2
             and evidence_length >= 100

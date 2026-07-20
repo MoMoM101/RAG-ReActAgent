@@ -24,6 +24,27 @@ from typing import Any
 from tests.qrels_schema import QrelDataset, QrelQuery, document_key_from_filename
 
 
+class ModelCallBudgetExceededError(RuntimeError):
+    """Raised before an evaluation would exceed its paid model-call budget."""
+
+
+class ModelCallBudget:
+    """Concurrency-safe hard limit for external model call attempts."""
+
+    def __init__(self, limit: int) -> None:
+        if limit < 1:
+            raise ValueError("model call budget must be at least 1")
+        self.limit = limit
+        self.used = 0
+        self._lock = asyncio.Lock()
+
+    async def reserve(self) -> None:
+        async with self._lock:
+            if self.used >= self.limit:
+                raise ModelCallBudgetExceededError(f"model call budget exhausted ({self.used}/{self.limit})")
+            self.used += 1
+
+
 def _load_isolated_verifier() -> Any:
     """Load the dependency-free verifier without importing agent package side effects."""
     path = Path(__file__).parents[1] / "agent" / "verifier.py"
@@ -100,26 +121,64 @@ REFUSAL_MARKERS = (
 )
 
 DEV_QUERY_IDS = {
-    "exact-002", "exact-007", "numeric-004", "comparison-001",
-    "comparison-004", "cross-001", "cross-005", "detail-001",
-    "detail-003", "instruct-001", "instruct-003", "long-001",
-    "long-002", "multi-hop-001", "multi-hop-004", "paraphrase-003",
-    "negation-002", "typo-001", "followup-002", "unanswerable-001",
-    "unanswerable-003", "prompt-inject-003",
+    "exact-002",
+    "exact-007",
+    "numeric-004",
+    "comparison-001",
+    "comparison-004",
+    "cross-001",
+    "cross-005",
+    "detail-001",
+    "detail-003",
+    "instruct-001",
+    "instruct-003",
+    "long-001",
+    "long-002",
+    "multi-hop-001",
+    "multi-hop-004",
+    "paraphrase-003",
+    "negation-002",
+    "typo-001",
+    "followup-002",
+    "unanswerable-001",
+    "unanswerable-003",
+    "prompt-inject-003",
 }
 
 V3_DEV_QUERY_IDS = {
-    "cn-en-mix-001", "cn-en-mix-005", "multi-hop-003", "multi-hop-004",
-    "comparison-002", "comparison-003", "comparison-005", "detail-002",
-    "detail-005", "exact-003", "exact-007", "exact-009", "short-003",
-    "long-002", "long-004", "ambiguous-001", "unanswerable-001",
+    "cn-en-mix-001",
+    "cn-en-mix-005",
+    "multi-hop-003",
+    "multi-hop-004",
+    "comparison-002",
+    "comparison-003",
+    "comparison-005",
+    "detail-002",
+    "detail-005",
+    "exact-003",
+    "exact-007",
+    "exact-009",
+    "short-003",
+    "long-002",
+    "long-004",
+    "ambiguous-001",
+    "unanswerable-001",
     "prompt-inject-003",
 }
 
 V31_DEV_QUERY_IDS = {
-    "comparison-003", "comparison-005", "multi-hop-003", "multi-hop-004",
-    "long-002", "long-004", "cn-en-mix-005", "short-003", "exact-003",
-    "comparison-002", "ambiguous-001", "unanswerable-001",
+    "comparison-003",
+    "comparison-005",
+    "multi-hop-003",
+    "multi-hop-004",
+    "long-002",
+    "long-004",
+    "cn-en-mix-005",
+    "short-003",
+    "exact-003",
+    "comparison-002",
+    "ambiguous-001",
+    "unanswerable-001",
 }
 
 QUALITY_FLOORS = {
@@ -154,6 +213,7 @@ def _evaluation_provenance() -> dict[str, str]:
             OPTIMIZED_PROMPT.encode("utf-8"),
         ).hexdigest(),
     }
+
 
 PERFORMANCE_TARGETS = {
     "ttft_p50_ms": 1000.0,
@@ -210,22 +270,28 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default="grounded_answer_eval_results.json")
     parser.add_argument("--limit", type=int, default=0, help="0 evaluates all queries")
     parser.add_argument("--concurrency", type=int, default=2)
+    parser.add_argument(
+        "--max-model-calls",
+        type=int,
+        default=0,
+        help="hard cap for all model attempts, including retries and repair (0 = unlimited)",
+    )
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--dev", action="store_true", help="run the fixed failure-focused dev split")
     parser.add_argument("--v3-dev", action="store_true", help="run the V3 coverage/refusal split")
     parser.add_argument("--v31-dev", action="store_true", help="run the V3.1 synthesis rollback split")
     parser.add_argument("--query-id", action="append", default=[], help="evaluate only this query id")
-    parser.add_argument(
-        "--rescore", action="store_true", help="rescore an existing output without LLM calls"
-    )
+    parser.add_argument("--rescore", action="store_true", help="rescore an existing output without LLM calls")
     parser.add_argument(
         "--enforce-gate",
         action="store_true",
         help="return a non-zero exit code when quality or performance gates fail",
     )
     parser.add_argument(
-        "--env-override", action="append", default=[],
+        "--env-override",
+        action="append",
+        default=[],
         help="Override config via env var, e.g. KEY=VALUE",
     )
     return parser.parse_args()
@@ -281,7 +347,12 @@ def _context(sources: list[dict[str, Any]]) -> str:
     )
 
 
-async def _generate(system_prompt: str, query: str, sources: list[dict[str, Any]]) -> dict:
+async def _generate(
+    system_prompt: str,
+    query: str,
+    sources: list[dict[str, Any]],
+    model_call_budget: ModelCallBudget | None = None,
+) -> dict:
     """Generate answer with V4 metadata: timing phases, repair tracking."""
     from llm.base import ChatMessage
     from llm.factory import create_llm
@@ -294,10 +365,13 @@ async def _generate(system_prompt: str, query: str, sources: list[dict[str, Any]
             content=(f"<UNTRUSTED_RETRIEVED_CONTENT>\n{_context(sources)}\n</UNTRUSTED_RETRIEVED_CONTENT>\n\n用户问题：{query}"),
         ),
     ]
+
     async def collect(call_messages: list[ChatMessage]) -> tuple[str, float | None]:
         chunks: list[str] = []
         started = time.perf_counter()
         ttft_ms: float | None = None
+        if model_call_budget is not None:
+            await model_call_budget.reserve()
         async for response in llm.chat_stream(call_messages, tools=None):
             if response.content:
                 if ttft_ms is None:
@@ -370,13 +444,16 @@ async def _generate(system_prompt: str, query: str, sources: list[dict[str, Any]
 
                 try:
                     async with asyncio.timeout(settings.grounding_repair_timeout):
-                        repaired, _ = await collect(messages + [
-                            ChatMessage(role="assistant", content=answer),
-                            ChatMessage(
-                                role="user",
-                                content=grounding_repair_instruction(answer),
-                            ),
-                        ])
+                        repaired, _ = await collect(
+                            messages
+                            + [
+                                ChatMessage(role="assistant", content=answer),
+                                ChatMessage(
+                                    role="user",
+                                    content=grounding_repair_instruction(answer),
+                                ),
+                            ]
+                        )
                 except TimeoutError:
                     repaired = ""
                     repair_used = "llm_timeout"
@@ -425,11 +502,7 @@ def _fact_recall(answer: str, query: QrelQuery) -> float | None:
         return None
     normalized_answer = _normalize_fact_text(answer)
     return sum(
-        any(
-            _normalize_fact_text(alternative) in normalized_answer
-            for alternative in fact.split("|")
-        )
-        for fact in facts
+        any(_normalize_fact_text(alternative) in normalized_answer for alternative in fact.split("|")) for fact in facts
     ) / len(facts)
 
 
@@ -461,9 +534,7 @@ def _score(
     elif query.answerability == "partial":
         completion_correct = bool(verification and verification.facts_supported)
     else:
-        completion_correct = bool(
-            verification and verification.facts_supported and not refused
-        )
+        completion_correct = bool(verification and verification.facts_supported and not refused)
     return EvalRecord(
         query_id=query.query_id,
         query=query.query,
@@ -495,11 +566,7 @@ def _aggregate(records: list[EvalRecord], mode: str) -> dict[str, Any]:
         return sum(values) / len(values) if values else None
 
     def percentile(field: str, q: float) -> float | None:
-        values = sorted(
-            float(value)
-            for item in selected
-            if (value := getattr(item, field)) is not None
-        )
+        values = sorted(float(value) for item in selected if (value := getattr(item, field)) is not None)
         if not values:
             return None
         index = (len(values) - 1) * q
@@ -511,18 +578,24 @@ def _aggregate(records: list[EvalRecord], mode: str) -> dict[str, Any]:
     # ── V4: Repair stats ──
     repair_triggered = [r for r in selected if r.repair_triggered]
     llm_repair_triggered = [
-        r for r in selected
-        if r.repair_used in {
-            "llm", "llm_rejected", "llm_empty", "llm_timeout", "llm_error",
+        r
+        for r in selected
+        if r.repair_used
+        in {
+            "llm",
+            "llm_rejected",
+            "llm_empty",
+            "llm_timeout",
+            "llm_error",
         }
     ]
     repair_by_reason: dict[str, int] = {}
     for r in repair_triggered:
-        for reason in (r.repair_reasons or []):
+        for reason in r.repair_reasons or []:
             repair_by_reason[reason] = repair_by_reason.get(reason, 0) + 1
     diagnostic_by_reason: dict[str, int] = {}
     for r in selected:
-        for reason in (r.repair_reasons or []):
+        for reason in r.repair_reasons or []:
             diagnostic_by_reason[reason] = diagnostic_by_reason.get(reason, 0) + 1
 
     return {
@@ -552,15 +625,11 @@ def _aggregate(records: list[EvalRecord], mode: str) -> dict[str, Any]:
         "repair_by_reason": repair_by_reason,
         "diagnostic_by_reason": diagnostic_by_reason,
         "repair_accepted_count": len([r for r in selected if r.repair_used == "llm"]),
-        "repair_accept_rate": (
-            len([r for r in selected if r.repair_used == "llm"])
-            / max(len(repair_triggered), 1)
-        ),
+        "repair_accept_rate": (len([r for r in selected if r.repair_used == "llm"]) / max(len(repair_triggered), 1)),
         "llm_repair_triggered_count": len(llm_repair_triggered),
         "llm_repair_rate": len(llm_repair_triggered) / max(len(selected), 1),
         "llm_repair_accept_rate": (
-            len([r for r in llm_repair_triggered if r.repair_used == "llm"])
-            / max(len(llm_repair_triggered), 1)
+            len([r for r in llm_repair_triggered if r.repair_used == "llm"]) / max(len(llm_repair_triggered), 1)
         ),
     }
 
@@ -586,14 +655,10 @@ def evaluate_quality_gate(aggregate: dict[str, dict[str, Any]]) -> dict[str, Any
     below("expected_fact_recall", QUALITY_FLOORS["expected_fact_recall"])
     below("answer_completion_accuracy", QUALITY_FLOORS["answer_completion_accuracy"])
 
-    faith_delta = (optimized.get("faithfulness") or 0.0) - (
-        control.get("faithfulness") or 0.0
-    )
+    faith_delta = (optimized.get("faithfulness") or 0.0) - (control.get("faithfulness") or 0.0)
     if faith_delta < -QUALITY_FLOORS["max_faithfulness_regression"]:
         violations.append(f"faithfulness regression={faith_delta:.4f}")
-    fact_delta = (optimized.get("expected_fact_recall") or 0.0) - (
-        control.get("expected_fact_recall") or 0.0
-    )
+    fact_delta = (optimized.get("expected_fact_recall") or 0.0) - (control.get("expected_fact_recall") or 0.0)
     if fact_delta < -QUALITY_FLOORS["max_fact_recall_regression"]:
         violations.append(f"expected_fact_recall regression={fact_delta:.4f}")
     return {"passed": not violations, "violations": violations, "floors": QUALITY_FLOORS}
@@ -604,8 +669,12 @@ def evaluate_performance_gate(aggregate: dict[str, dict[str, Any]]) -> dict[str,
     optimized = aggregate["optimized"]
     violations: list[str] = []
     for metric in (
-        "ttft_p50_ms", "ttft_p95_ms", "latency_p50_ms",
-        "latency_p95_ms", "latency_p99_ms", "llm_repair_rate",
+        "ttft_p50_ms",
+        "ttft_p95_ms",
+        "latency_p50_ms",
+        "latency_p95_ms",
+        "latency_p99_ms",
+        "llm_repair_rate",
     ):
         value = optimized.get(metric)
         target = PERFORMANCE_TARGETS[metric]
@@ -613,13 +682,9 @@ def evaluate_performance_gate(aggregate: dict[str, dict[str, Any]]) -> dict[str,
             violations.append(f"{metric}={value} above {target}")
     accept_rate = optimized.get("llm_repair_accept_rate")
     if optimized.get("llm_repair_triggered_count", 0) and (
-        accept_rate is None
-        or accept_rate < PERFORMANCE_TARGETS["llm_repair_accept_rate"]
+        accept_rate is None or accept_rate < PERFORMANCE_TARGETS["llm_repair_accept_rate"]
     ):
-        violations.append(
-            "llm_repair_accept_rate="
-            f"{accept_rate} below {PERFORMANCE_TARGETS['llm_repair_accept_rate']}"
-        )
+        violations.append(f"llm_repair_accept_rate={accept_rate} below {PERFORMANCE_TARGETS['llm_repair_accept_rate']}")
     return {
         "passed": not violations,
         "violations": violations,
@@ -627,7 +692,12 @@ def evaluate_performance_gate(aggregate: dict[str, dict[str, Any]]) -> dict[str,
     }
 
 
-def _write_report(path: Path, records: list[EvalRecord], dataset: QrelDataset) -> None:
+def _write_report(
+    path: Path,
+    records: list[EvalRecord],
+    dataset: QrelDataset,
+    model_call_budget: ModelCallBudget | None = None,
+) -> None:
     aggregate = {
         "control": _aggregate(records, "control"),
         "optimized": _aggregate(records, "optimized"),
@@ -639,16 +709,19 @@ def _write_report(path: Path, records: list[EvalRecord], dataset: QrelDataset) -
         "timestamp": datetime.now(UTC).isoformat(),
         "provenance": _evaluation_provenance(),
         "dataset": {"name": dataset.name, "version": dataset.version},
+        "model_calls": (
+            {"used": model_call_budget.used, "limit": model_call_budget.limit}
+            if model_call_budget is not None
+            else {"used": None, "limit": None}
+        ),
         "methodology": {
             "control": "legacy source-only prompt without mandatory citations",
             "optimized": (
-                "V4 selective false-refusal retry, deterministic claim-level "
-                "citation repair, and one timeout-bounded LLM repair"
+                "V4 selective false-refusal retry, deterministic claim-level citation repair, and one timeout-bounded LLM repair"
             ),
             "retrieval": "same production splitter + BM25 top-5 sources for both groups",
             "scoring": (
-                "deterministic claim-to-evidence verifier; answerability is labeled "
-                "independently from retrieval relevance"
+                "deterministic claim-to-evidence verifier; answerability is labeled independently from retrieval relevance"
             ),
             "latency": "timer starts after acquiring the local concurrency slot",
         },
@@ -697,18 +770,13 @@ def _rescore_report(path: Path, dataset: QrelDataset) -> None:
             record.expected_fact_recall = None
             record.verification_status = None
             record.answer_completion_correct = _is_safe_abstention(record.answer)
-        record.abstention_correct = (
-            _is_safe_abstention(record.answer)
-            if query.answerability == "none" else None
-        )
+        record.abstention_correct = _is_safe_abstention(record.answer) if query.answerability == "none" else None
         records.append(record)
 
     report["rescored_at"] = datetime.now(UTC).isoformat()
     report["scoring_version"] = SCORING_VERSION
-    report["rescored_provenance"] = {
-        "dataset_sha256": _evaluation_provenance()["dataset_sha256"],
-        "verifier_sha256": _evaluation_provenance()["verifier_sha256"],
-    }
+    report["provenance"] = _evaluation_provenance()
+    report["rescored_provenance"] = report["provenance"]
     report["aggregate"] = {
         "control": _aggregate(records, "control"),
         "optimized": _aggregate(records, "optimized"),
@@ -722,6 +790,8 @@ def _rescore_report(path: Path, dataset: QrelDataset) -> None:
 
 async def _main() -> int:
     args = _parse_args()
+    if args.max_model_calls < 0:
+        raise ValueError("--max-model-calls must be 0 or greater")
     output = Path(args.output).resolve()
     dataset = QrelDataset.load(str(Path(__file__).with_name("qrels_data_v2.json")))
     if args.rescore:
@@ -729,10 +799,7 @@ async def _main() -> int:
         if not args.enforce_gate:
             return 0
         rescored = json.loads(output.read_text(encoding="utf-8"))
-        return 0 if (
-            rescored["quality_gate"]["passed"]
-            and rescored["performance_gate"]["passed"]
-        ) else 1
+        return 0 if (rescored["quality_gate"]["passed"] and rescored["performance_gate"]["passed"]) else 1
     queries = dataset.queries
     if args.dev:
         queries = [query for query in queries if query.query_id in DEV_QUERY_IDS]
@@ -749,8 +816,7 @@ async def _main() -> int:
     if args.dry_run:
         retrieval_hits = {
             query.query_id: any(
-                source["document_key"] == relevant.document_key
-                and source["section_key"] == relevant.section_key
+                source["document_key"] == relevant.document_key and source["section_key"] == relevant.section_key
                 for source in retrieved[query.query_id]
                 for relevant in query.relevant
             )
@@ -760,8 +826,7 @@ async def _main() -> int:
         answerable_retrieval_hits = {
             query_id: hit
             for query_id, hit in retrieval_hits.items()
-            if next(query for query in queries if query.query_id == query_id).answerability
-            != "none"
+            if next(query for query in queries if query.query_id == query_id).answerability != "none"
         }
         print(
             json.dumps(
@@ -770,23 +835,14 @@ async def _main() -> int:
                     "answerable": sum(query.answerability != "none" for query in queries),
                     "unanswerable": sum(query.answerability == "none" for query in queries),
                     "queries_with_sources": sum(bool(retrieved[query.query_id]) for query in queries),
-                    "retrieval_hit_at_k": (
-                        sum(retrieval_hits.values()) / len(retrieval_hits)
-                        if retrieval_hits else None
-                    ),
-                    "retrieval_misses": [
-                        query_id for query_id, hit in retrieval_hits.items() if not hit
-                    ],
+                    "retrieval_hit_at_k": (sum(retrieval_hits.values()) / len(retrieval_hits) if retrieval_hits else None),
+                    "retrieval_misses": [query_id for query_id, hit in retrieval_hits.items() if not hit],
                     "answerable_retrieval_hit_at_k": (
-                        sum(answerable_retrieval_hits.values())
-                        / len(answerable_retrieval_hits)
-                        if answerable_retrieval_hits else None
+                        sum(answerable_retrieval_hits.values()) / len(answerable_retrieval_hits)
+                        if answerable_retrieval_hits
+                        else None
                     ),
-                    "answerable_retrieval_misses": [
-                        query_id
-                        for query_id, hit in answerable_retrieval_hits.items()
-                        if not hit
-                    ],
+                    "answerable_retrieval_misses": [query_id for query_id, hit in answerable_retrieval_hits.items() if not hit],
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -797,6 +853,7 @@ async def _main() -> int:
     records: list[EvalRecord] = []
     lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(max(args.concurrency, 1))
+    model_call_budget = ModelCallBudget(args.max_model_calls) if args.max_model_calls else None
 
     async def run_query(query: QrelQuery) -> None:
         sources = retrieved[query.query_id]
@@ -805,10 +862,18 @@ async def _main() -> int:
                 # Measure external model service time, not local semaphore queueing.
                 started = time.perf_counter()
                 try:
-                    gen_result = await _generate(prompt, query.query, sources)
+                    gen_result = await _generate(
+                        prompt,
+                        query.query,
+                        sources,
+                        model_call_budget,
+                    )
                     answer = gen_result["answer"]
                     record = _score(
-                        query, mode, answer, sources,
+                        query,
+                        mode,
+                        answer,
+                        sources,
                         (time.perf_counter() - started) * 1000,
                     )
                     # ── V4: Attach repair & timing metadata ──
@@ -840,7 +905,7 @@ async def _main() -> int:
                     )
             async with lock:
                 records.append(record)
-                _write_report(output, records, dataset)
+                _write_report(output, records, dataset, model_call_budget)
                 print(
                     f"[{len(records)}/{len(queries) * 2}] {query.query_id} {mode} "
                     f"error={bool(record.error)} latency={record.latency_ms:.0f}ms",
@@ -848,19 +913,28 @@ async def _main() -> int:
                 )
 
     await asyncio.gather(*(run_query(query) for query in queries))
-    _write_report(output, records, dataset)
-    quality_gate = evaluate_quality_gate({
-        "control": _aggregate(records, "control"),
-        "optimized": _aggregate(records, "optimized"),
-    })
-    performance_gate = evaluate_performance_gate({
-        "control": _aggregate(records, "control"),
-        "optimized": _aggregate(records, "optimized"),
-    })
+    _write_report(output, records, dataset, model_call_budget)
+    quality_gate = evaluate_quality_gate(
+        {
+            "control": _aggregate(records, "control"),
+            "optimized": _aggregate(records, "optimized"),
+        }
+    )
+    performance_gate = evaluate_performance_gate(
+        {
+            "control": _aggregate(records, "control"),
+            "optimized": _aggregate(records, "optimized"),
+        }
+    )
     print(
         json.dumps(
             {
                 "output": str(output),
+                "model_calls": (
+                    {"used": model_call_budget.used, "limit": model_call_budget.limit}
+                    if model_call_budget is not None
+                    else {"used": None, "limit": None}
+                ),
                 "control": _aggregate(records, "control"),
                 "optimized": _aggregate(records, "optimized"),
                 "quality_gate": quality_gate,
@@ -870,9 +944,7 @@ async def _main() -> int:
             indent=2,
         )
     )
-    if args.enforce_gate and not (
-        quality_gate["passed"] and performance_gate["passed"]
-    ):
+    if args.enforce_gate and not (quality_gate["passed"] and performance_gate["passed"]):
         return 1
     return 0
 

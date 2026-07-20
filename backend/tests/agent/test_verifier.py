@@ -11,13 +11,15 @@ from agent.verifier import (
 
 
 def _sources(text: str = "Python 3.10 is required for production deployment.") -> list[dict]:
-    return [{
-        "citation_id": "S1",
-        "document_key": "deploy-guide",
-        "section_key": "python-version",
-        "filename": "deployment.md",
-        "text": text,
-    }]
+    return [
+        {
+            "citation_id": "S1",
+            "document_key": "deploy-guide",
+            "section_key": "python-version",
+            "filename": "deployment.md",
+            "text": text,
+        }
+    ]
 
 
 def test_cited_claim_with_matching_evidence_is_verified():
@@ -180,18 +182,21 @@ def test_comparison_fallback_extracts_supported_side_without_inventing_relation(
     assert "Flask 可通过扩展添加 SQLAlchemy" in fallback
     assert "[S2]" in fallback
     assert "无法确认" in fallback
-    verification = verify_answer(fallback, [
-        {
-            "citation_id": "S1",
-            "section_key": "Django",
-            "text": "Django 是全栈框架。\n内置功能包括 ORM、后台管理和认证。",
-        },
-        {
-            "citation_id": "S2",
-            "section_key": "Flask",
-            "text": "Flask 可通过扩展添加 SQLAlchemy。",
-        },
-    ])
+    verification = verify_answer(
+        fallback,
+        [
+            {
+                "citation_id": "S1",
+                "section_key": "Django",
+                "text": "Django 是全栈框架。\n内置功能包括 ORM、后台管理和认证。",
+            },
+            {
+                "citation_id": "S2",
+                "section_key": "Flask",
+                "text": "Flask 可通过扩展添加 SQLAlchemy。",
+            },
+        ],
+    )
     assert verification.faithfulness == 1.0
     assert verification.citation_precision == 1.0
 
@@ -199,12 +204,8 @@ def test_comparison_fallback_extracts_supported_side_without_inventing_relation(
 def test_query_safety_guard_abstains_on_unresolved_reference_without_history():
     answer = "FastAPI 适合高性能 API [S1]。"
 
-    assert apply_query_safety_guard("这个框架适合什么项目", answer).startswith(
-        "无法确认"
-    )
-    assert apply_query_safety_guard(
-        "这个框架适合什么项目", answer, has_context=True
-    ) == answer
+    assert apply_query_safety_guard("这个框架适合什么项目", answer).startswith("无法确认")
+    assert apply_query_safety_guard("这个框架适合什么项目", answer, has_context=True) == answer
 
 
 def test_query_safety_guard_abstains_when_superlative_relation_is_missing():
@@ -239,6 +240,30 @@ def test_query_safety_guard_keeps_explicit_calculation_answer():
     assert apply_query_safety_guard("F1 分数怎么计算", answer) == answer
 
 
+def test_query_safety_guard_rejects_repetitive_low_information_query():
+    guarded = apply_query_safety_guard(
+        "的" * 20,
+        "Python 机器学习生态包括 scikit-learn [S1]。",
+    )
+
+    assert guarded.startswith("无法确认")
+
+
+def test_query_safety_guard_abstains_when_comparison_relation_is_missing():
+    guarded = apply_query_safety_guard(
+        "One-Hot 编码和 Label Encoding 的区别",
+        "类别变量编码包括 One-Hot 编码和 Label Encoding [S1]。",
+    )
+
+    assert guarded.startswith("无法确认")
+
+
+def test_query_safety_guard_keeps_explicit_comparison_answer():
+    answer = "Django 适合全栈项目，FastAPI 更适合异步 API [S1]。"
+
+    assert apply_query_safety_guard("Django 和 FastAPI 有什么不同", answer) == answer
+
+
 def test_zero_support_guard_refuses_fully_unsupported_factual_answer():
     guarded = apply_zero_support_guard(
         "Model 层负责数据库交互 [S1]。",
@@ -251,17 +276,23 @@ def test_zero_support_guard_refuses_fully_unsupported_factual_answer():
 def test_zero_support_guard_keeps_supported_answer():
     answer = "Django 遵循 MTV 架构模式 [S1]。"
 
-    assert apply_zero_support_guard(
-        answer,
-        [{"citation_id": "S1", "text": "Django 遵循 MTV 架构模式。"}],
-    ) == answer
+    assert (
+        apply_zero_support_guard(
+            answer,
+            [{"citation_id": "S1", "text": "Django 遵循 MTV 架构模式。"}],
+        )
+        == answer
+    )
 
 
 def test_comparison_fallback_returns_none_without_safe_topical_sentence():
-    assert build_partial_comparison_fallback(
-        "Django 和 FastAPI 有什么不同",
-        [{"citation_id": "S1", "text": "全球气温上升约 1.1°C。"}],
-    ) is None
+    assert (
+        build_partial_comparison_fallback(
+            "Django 和 FastAPI 有什么不同",
+            [{"citation_id": "S1", "text": "全球气温上升约 1.1°C。"}],
+        )
+        is None
+    )
 
 
 def test_direct_topical_full_refusal_gets_one_retry():
