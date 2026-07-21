@@ -27,6 +27,7 @@ UNDERSPECIFIED_QUERY_RE = re.compile(
 
 _SINGULAR_REFERENCE_RE = re.compile(r"这个|那个|它(?!们)")
 _PLURAL_REFERENCE_RE = re.compile(r"它们|两者|前者|后者")
+_LEADING_COMPARISON_RE = re.compile(r"^\s*(?:和|与|跟|同)\s*\S+")
 _SIMPLE_TOPIC_PATTERNS = (
     re.compile(
         r"^\s*(?P<topic>[A-Za-z][A-Za-z0-9_.+\- ]{0,30}|[\u4e00-\u9fffA-Za-z0-9_.+\-]{2,24})"
@@ -72,7 +73,12 @@ def is_underspecified_query(query: str) -> bool:
 
 def requires_whole_answer_validation(query: str) -> bool:
     """Return whether a query must be validated only after full generation."""
-    return bool(is_comparison_query(query) or has_unresolved_reference(query) or RELATION_SENSITIVE_QUERY_RE.search(query))
+    return bool(
+        is_comparison_query(query)
+        or is_coverage_query(query)
+        or has_unresolved_reference(query)
+        or RELATION_SENSITIVE_QUERY_RE.search(query)
+    )
 
 
 def extract_comparison_entities(query: str) -> tuple[str, str] | None:
@@ -107,7 +113,8 @@ def resolve_followup_query(
 ) -> str:
     """Resolve safe singular/plural references from recent explicit topics."""
     needs_topic = is_underspecified_query(user_message)
-    if not has_unresolved_reference(user_message) and not needs_topic:
+    needs_comparison_subject = bool(_LEADING_COMPARISON_RE.match(user_message))
+    if not has_unresolved_reference(user_message) and not needs_topic and not needs_comparison_subject:
         return user_message
 
     for message in reversed(conversation_history):
@@ -133,6 +140,8 @@ def resolve_followup_query(
                 user_message,
             )
         topic = _simple_topic(message.content)
+        if topic and needs_comparison_subject:
+            return f"{topic}{user_message.lstrip()}"
         if topic and needs_topic:
             return f"{topic}的详细说明"
         if topic and _SINGULAR_REFERENCE_RE.search(user_message):

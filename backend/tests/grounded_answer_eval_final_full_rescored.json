@@ -5,7 +5,7 @@
   "timestamp": "2026-07-20T14:24:27.142357+00:00",
   "provenance": {
     "dataset_sha256": "38e132bcadc5aab708b5b7dd209ad5c7d5b2a1c363a9904ab7024bf2fff263d6",
-    "verifier_sha256": "2ef423ff1c2149db1f73eef7284a5c2f00ee6cbf96144990a58974797bdadf79",
+    "verifier_sha256": "3cb03568d5469652cb693017916d10c11e3b6ef711d8d471148504409982e0f0",
     "evaluator_sha256": "86fee6d01748ad4e81453bdefa1371ed8bd28eabc4fb602fae16488f789da06f",
     "optimized_prompt_sha256": "96e9b3de433e50574f0be8b1848f11b1bab7ded49382fbd0f41ea083f586bd22"
   },
@@ -12758,10 +12758,10 @@
       "ttft_ms": 444.94550000308664
     }
   ],
-  "rescored_at": "2026-07-21T03:33:42.208379+00:00",
+  "rescored_at": "2026-07-21T03:46:23.422216+00:00",
   "rescored_provenance": {
     "dataset_sha256": "38e132bcadc5aab708b5b7dd209ad5c7d5b2a1c363a9904ab7024bf2fff263d6",
-    "verifier_sha256": "2ef423ff1c2149db1f73eef7284a5c2f00ee6cbf96144990a58974797bdadf79",
+    "verifier_sha256": "3cb03568d5469652cb693017916d10c11e3b6ef711d8d471148504409982e0f0",
     "evaluator_sha256": "86fee6d01748ad4e81453bdefa1371ed8bd28eabc4fb602fae16488f789da06f",
     "optimized_prompt_sha256": "96e9b3de433e50574f0be8b1848f11b1bab7ded49382fbd0f41ea083f586bd22"
   }

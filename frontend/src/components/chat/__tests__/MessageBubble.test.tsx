@@ -43,6 +43,14 @@ describe("MessageBubble", () => {
     expect(bold.tagName).toBe("STRONG");
   });
 
+  it("does not leak react-markdown node metadata into the DOM", () => {
+    const msg = makeMsg({ role: "assistant", content: "使用 `SKILL.md` 和 [文档](https://example.com)" });
+    const { container } = render(<MessageBubble message={msg} />);
+
+    expect(container.querySelector("code")).not.toHaveAttribute("node");
+    expect(screen.getByRole("link", { name: "文档" })).not.toHaveAttribute("node");
+  });
+
   it("renders headings and lists as structured markdown", () => {
     const msg = makeMsg({
       role: "assistant",

@@ -8,6 +8,7 @@ import time
 from functools import partial
 from typing import TYPE_CHECKING
 
+from agent.answer_format import normalize_answer_markdown
 from agent.context import ContextManager
 from agent.context_window import get_window, is_context_error
 from agent.loop_setup import (
@@ -978,6 +979,8 @@ async def run_agent_loop(
                 repair_used = "safe_refusal"
                 repair_reasons = list(repair_reasons) + ["zero_supported_claims"]
 
+            final_content = normalize_answer_markdown(final_content)
+
             # ── Yield final answer ──
             if final_content:
                 # Store in answer cache for future identical queries
@@ -1041,6 +1044,7 @@ async def run_agent_loop(
         elif sources and assistant_content:
             # Grounding may be disabled in controlled rollouts, but answer
             # caching and end-to-end timing must still work on the RAG path.
+            assistant_content = normalize_answer_markdown(assistant_content)
             if settings.rag_answer_cache_enabled:
                 try:
                     from rag.answer_cache import CacheEntry, get_answer_cache

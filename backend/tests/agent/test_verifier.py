@@ -123,6 +123,18 @@ def test_markdown_evidence_section_labels_are_not_factual_claims():
     assert result.citation_recall == 1.0
 
 
+def test_gfm_table_header_and_separator_are_not_factual_claims():
+    answer = "| 对比维度 | MCP | Skill | 来源 |\n| --- | --- | --- | --- |\n| 核心价值 | 外部连接 | 工作流封装 | [S1] |"
+    result = verify_answer(
+        answer,
+        [{"citation_id": "S1", "text": "核心价值：MCP 用于外部连接，Skill 用于工作流封装。"}],
+    )
+
+    assert result.facts_found == 1
+    assert result.facts_supported == 1
+    assert result.citation_recall == 1.0
+
+
 def test_limitation_with_not_covered_is_not_an_uncited_claim():
     result = verify_answer(
         "Django 内置 ORM [S1]。\n- FastAPI 的 SQLAlchemy 体验，现有资料未涉及。",

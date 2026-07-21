@@ -105,10 +105,10 @@ export function MessageBubble({ message }: Props) {
               remarkPlugins={[remarkGfm]}
               components={{
                 pre: ({ children }) => <>{children}</>,
-                code: ({ className, children, ...props }) => {
+                code: ({ className, children }) => {
                   const isInline = !className && !String(children).includes("\n");
                   if (isInline) {
-                    return <code className={className} {...props}>{children}</code>;
+                    return <code className={className}>{children}</code>;
                   }
                   return <CodeBlock className={className}>{children}</CodeBlock>;
                 },
@@ -117,8 +117,8 @@ export function MessageBubble({ message }: Props) {
                     <table>{children}</table>
                   </div>
                 ),
-                a: ({ href, children, ...props }) => (
-                  <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+                a: ({ href, children, title }) => (
+                  <a href={href} title={title} target="_blank" rel="noopener noreferrer">
                     {children}
                   </a>
                 ),

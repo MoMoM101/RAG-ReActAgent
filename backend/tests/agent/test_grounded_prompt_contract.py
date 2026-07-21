@@ -4,9 +4,7 @@ from pathlib import Path
 
 
 def _prompt() -> str:
-    return (
-        Path(__file__).parents[2] / "agent" / "prompts" / "system.txt"
-    ).read_text(encoding="utf-8")
+    return (Path(__file__).parents[2] / "agent" / "prompts" / "system.txt").read_text(encoding="utf-8")
 
 
 def test_prompt_answers_supported_parts_before_declaring_limits():
@@ -45,6 +43,8 @@ def test_prompt_requires_visible_markdown_structure_by_query_type():
     assert "定义、概览和详细说明使用 `### 主题` 后接要点列表" in prompt
     assert "步骤和操作方法使用有序列表" in prompt
     assert "不要输出空标题、空列表或只有标题没有正文" in prompt
+    assert "Markdown 表格行前禁止添加 `-`、`*` 或数字列表标记" in prompt
+    assert "不要再描述“正在搜索、先检索、让我查找”等过程" in prompt
 
 
 def test_prompt_allows_evidence_only_cross_source_synthesis():

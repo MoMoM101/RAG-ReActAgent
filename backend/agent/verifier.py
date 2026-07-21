@@ -237,6 +237,12 @@ def _extract_facts(text: str) -> list[str]:
     """Extract factual claims from prose and Markdown list items."""
     normalized = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
     normalized = re.sub(r"^\s{0,3}#{1,6}\s+.*$", " ", normalized, flags=re.MULTILINE)
+    normalized = re.sub(
+        r"^\s*\|.*\|\s*\n\s*\|\s*:?-{3,}.*\|\s*$",
+        " ",
+        normalized,
+        flags=re.MULTILINE,
+    )
     # Models sometimes emit "事实。 [S1]" despite the requested "事实 [S1]。".
     # Move that citation before sentence splitting so it remains claim-bound.
     normalized = _POST_SENTENCE_CITATION_RE.sub(r" \2\1", normalized)
@@ -244,6 +250,8 @@ def _extract_facts(text: str) -> list[str]:
     claims: list[str] = []
     for part in parts:
         claim = re.sub(r"^\s*(?:[-*+]\s+|\d+[.)、]\s*)", "", part).strip()
+        if claim.startswith("|") and claim.endswith("|"):
+            claim = "；".join(cell.strip() for cell in claim.strip("|").split("|") if cell.strip())
         # “已确认：”是回答结构标签，不是一个需要引用的事实。去掉标签，
         # 但保留同一行后面的真实声明供正常校验。
         claim = _CONFIRMED_LEAD_RE.sub("", claim).strip()
@@ -721,7 +729,8 @@ def grounding_repair_instruction(answer: str) -> str:
     return (
         "上一个回答草稿未通过知识库声明级校验。请仅依据已有检索内容重新输出完整最终答案，"
         "不要调用工具。若任何来源能直接支持问题的一部分，必须先输出单独一行“已确认：”，"
-        "再用可直接渲染的 Markdown 列表逐条回答，不能整体拒答；不要把答案包在代码围栏中。"
+        "再用可直接渲染的 Markdown 逐条回答，不能整体拒答；不要把答案包在代码围栏中。"
+        "比较题使用三级标题加列表；如果使用表格，表格行前禁止添加列表标记。"
         "其余部分最后写“无法确认：……”。每个列表项只写一个"
         "原子事实，只用一个完整支持该事实的最小来源编号，并把引用放在句号前。不要使用分号"
         "连接多个事实，也不要在引用后另起一行放句号。若确实没有任何可直接回答的事实，保持"

@@ -96,7 +96,7 @@ def build_answer_cache_key(
         retrieval_hash=AnswerCache.retrieval_hash(sources),
         collection_version=get_answer_cache().collection_version,
         model_name=settings.llm_model,
-        prompt_version="v6-relation-complete",
+        prompt_version="v7-markdown-normalized",
         context_hash=scoped_context,
         grounding_policy_version=AnswerCache.grounding_policy_version(),
     )

@@ -141,9 +141,7 @@ class AtomicUnitBuffer:
                 return None  # too short to be meaningful
 
             # Don't split structural lines alone
-            if _STRUCTURAL_LINE.match(unit_text) and not _SENTENCE_END.search(
-                _CITATION_RE.sub("", unit_text)
-            ):
+            if _STRUCTURAL_LINE.match(unit_text) and not _SENTENCE_END.search(_CITATION_RE.sub("", unit_text)):
                 return None
 
             self._buf = [remaining] if remaining else []
@@ -154,14 +152,12 @@ class AtomicUnitBuffer:
         pm = _PARAGRAPH_BREAK.search(text)
         if pm:
             unit_text = text[: pm.start()].strip()
-            remaining = text[pm.end():].lstrip()
+            remaining = text[pm.end() :].lstrip()
 
             if len(_CITATION_RE.sub("", unit_text).strip()) < _MIN_UNIT_CHARS:
                 return None
 
-            if _STRUCTURAL_LINE.match(unit_text) and not _SENTENCE_END.search(
-                _CITATION_RE.sub("", unit_text)
-            ):
+            if _STRUCTURAL_LINE.match(unit_text) and not _SENTENCE_END.search(_CITATION_RE.sub("", unit_text)):
                 return None
 
             self._buf = [remaining] if remaining else []
@@ -336,9 +332,8 @@ def build_repair_prompt(
         + "\n\n已发送的已验证内容：\n"
         + (committed_text or "（无）")
         + "\n\n未完成草稿（请基于来源重新生成后半部分，每个事实一句，"
-        "引用放在句号前）：\n"
-        + remaining_draft
-        + "\n\n请只输出尚未发送的后半部分内容。不要重复已发送的内容。"
+        "引用放在句号前）：\n" + remaining_draft + "\n\n请只输出尚未发送的后半部分内容。不要重复已发送的内容。"
         "不要调用工具。使用可直接渲染的 Markdown；每个列表项只写一个原子事实，"
-        "并引用唯一支持该事实的来源。不要把答案包在代码围栏中。"
+        "并引用唯一支持该事实的来源。不要把答案包在代码围栏中，"
+        "也不要在 Markdown 表格行前添加列表标记。"
     )

@@ -36,6 +36,10 @@ def test_underspecified_followup_inherits_simple_topic():
     assert resolve_followup_query("详细说说", _history("介绍一下 Skill")) == "Skill的详细说明"
 
 
+def test_resolves_leading_comparison_with_omitted_subject():
+    assert resolve_followup_query("和mcp有什么区别", _history("skill是什么")) == "skill和mcp有什么区别"
+
+
 @pytest.mark.parametrize(
     "query",
     [
@@ -53,6 +57,11 @@ def test_comparison_aliases_require_whole_answer_validation(query: str):
 
 @pytest.mark.parametrize("query", ["为什么失败", "它如何影响结果", "每层职责是什么", "F1 怎么计算"])
 def test_relation_queries_require_whole_answer_validation(query: str):
+    assert requires_whole_answer_validation(query)
+
+
+@pytest.mark.parametrize("query", ["什么是 Skill", "介绍一下 MCP", "详细说明 RAG"])
+def test_coverage_queries_require_whole_answer_validation(query: str):
     assert requires_whole_answer_validation(query)
 
 
