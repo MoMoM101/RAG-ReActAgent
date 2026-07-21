@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     grounding_verification_enabled: bool = True
     grounding_min_coverage: float = 0.70
     grounding_enforcement: str = "report"  # off | report | strict
+    grounding_coverage_recheck_enabled: bool = True
 
     # ── V4 Grounding repair ──
     # Stream verification: verify atomic units during generation and send immediately

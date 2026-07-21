@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING
 
 from agent.context import ContextManager
 from agent.context_window import get_window, is_context_error
-from agent.loop_setup import apply_memory_context, classify_turn, resolve_followup_query
+from agent.loop_setup import (
+    apply_memory_context,
+    classify_turn,
+)
 from agent.loop_support import (
     build_answer_cache_key as _build_answer_cache_key,
 )
@@ -24,8 +27,13 @@ from agent.loop_support import (
     verify_stream_unit as _verify_stream_unit,
 )
 from agent.loop_tools import ToolTurnState, execute_tool_turn
+from agent.query_semantics import (
+    requires_whole_answer_validation,
+    resolve_followup_query,
+    sanitize_conversation_history,
+)
 from agent.tools import registry
-from agent.verifier import Evidence, is_comparison_query, verify_answer
+from agent.verifier import Evidence, verify_answer
 from config import settings
 from llm.base import ChatMessage
 from llm.factory import create_llm
@@ -82,9 +90,11 @@ async def run_agent_loop(
     def _is_cancelled() -> bool:
         return cancelled is not None and cancelled.is_set()
 
+    prepared_history = sanitize_conversation_history(conversation_history)
+
     # 1. Intent classification: 规则优先 + LLM 兜底
-    hint = await classify_turn(user_message, conversation_history)
-    grounding_query = resolve_followup_query(user_message, conversation_history)
+    hint = await classify_turn(user_message, prepared_history)
+    grounding_query = resolve_followup_query(user_message, prepared_history)
     if grounding_query != user_message:
         hint.hint_text += f"\n[系统] 已将当前追问解析为：{grounding_query}"
     _record_phase("rag_intent")
@@ -106,7 +116,7 @@ async def run_agent_loop(
         content=ctx_manager.build_system_prompt(hint.hint_text, tools_desc, profile_text),
     )
 
-    messages = [system_msg] + list(conversation_history)
+    messages = [system_msg] + prepared_history
     messages.append(ChatMessage(role="user", content=user_message))
 
     # 3. ReAct Loop
@@ -160,7 +170,7 @@ async def run_agent_loop(
 
                     cache_key = _build_answer_cache_key(
                         user_message,
-                        conversation_history,
+                        prepared_history,
                         turn_sources,
                         profile_text,
                     )
@@ -227,7 +237,7 @@ async def run_agent_loop(
                 turn_sources
                 and grounding_guard_enabled
                 and settings.grounding_stream_verify_enabled
-                and not is_comparison_query(grounding_query)
+                and not requires_whole_answer_validation(grounding_query)
             )
             _unit_buffer: AtomicUnitBuffer | None = None
             _committed_units: list[AtomicUnit] = []
@@ -711,7 +721,7 @@ async def run_agent_loop(
                     cache.put(
                         _build_answer_cache_key(
                             user_message,
-                            conversation_history,
+                            prepared_history,
                             sources,
                             profile_text,
                         ),
@@ -776,7 +786,7 @@ async def run_agent_loop(
             final_content = apply_query_safety_guard(
                 grounding_query,
                 assistant_content,
-                has_context=bool(conversation_history),
+                has_context=bool(prepared_history),
             )
             # ── V4: Structured grounding decision ──
             from tracing import span as _span2
@@ -790,7 +800,7 @@ async def run_agent_loop(
                             final_content,
                             sources,
                             query=grounding_query,
-                            coverage_recheck=False,
+                            coverage_recheck=settings.grounding_coverage_recheck_enabled,
                         ),
                         timeout=settings.rag_timeout_verification,
                     )
@@ -951,7 +961,7 @@ async def run_agent_loop(
             query_guarded_content = apply_query_safety_guard(
                 grounding_query,
                 final_content,
-                has_context=bool(conversation_history),
+                has_context=bool(prepared_history),
             )
             if query_guarded_content != final_content:
                 comparison_fallback = build_partial_comparison_fallback(
@@ -978,7 +988,7 @@ async def run_agent_loop(
                         cv = get_answer_cache().collection_version
                         cache_key = _build_answer_cache_key(
                             user_message,
-                            conversation_history,
+                            prepared_history,
                             sources,
                             profile_text,
                         )
@@ -1039,7 +1049,7 @@ async def run_agent_loop(
                     cache.put(
                         _build_answer_cache_key(
                             user_message,
-                            conversation_history,
+                            prepared_history,
                             sources,
                             profile_text,
                         ),

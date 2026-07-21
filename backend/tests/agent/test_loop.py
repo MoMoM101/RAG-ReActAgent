@@ -171,6 +171,38 @@ class TestAgentLoopSources:
         latest_sources = extract_sources([messages[1]])
         assert {source["citation_id"] for source in latest_sources} == {source["citation_id"] for source in state.sources}
 
+    def test_source_normalization_runs_even_without_pruning(self):
+        source = {
+            "citation_id": "S1",
+            "chunk_id": "current-chunk",
+            "document_id": "current-doc",
+            "document_key": "current-doc",
+            "section_key": "current-section",
+            "text": "current evidence",
+            "score": 1.0,
+            "rank": 1,
+        }
+        messages = [
+            ChatMessage(
+                role="tool",
+                content='{"sources":[{"citation_id":"S9","text":"stale evidence"}]}',
+                tool_name="search_docs",
+            ),
+            ChatMessage(role="tool", content="{}", tool_name="search_docs"),
+        ]
+        state = ToolTurnState(
+            messages=messages,
+            sources=[source],
+            citation_by_source={"current-chunk": "S1"},
+            search_groups_by_source={"current-chunk": {"current"}},
+            timing={},
+        )
+
+        _prune_sources(state)
+
+        assert extract_sources([messages[0]]) == []
+        assert [item["citation_id"] for item in extract_sources([messages[1]])] == ["S1"]
+
     @pytest.mark.asyncio
     async def test_source_extraction(self, make_fake_llm):
         """search_docs 结果 → sources 事件包含文档信息。"""

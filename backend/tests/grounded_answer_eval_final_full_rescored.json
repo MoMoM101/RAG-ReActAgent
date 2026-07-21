@@ -5,7 +5,7 @@
   "timestamp": "2026-07-20T14:24:27.142357+00:00",
   "provenance": {
     "dataset_sha256": "38e132bcadc5aab708b5b7dd209ad5c7d5b2a1c363a9904ab7024bf2fff263d6",
-    "verifier_sha256": "1841d216cd99fc1dfce9bc7caeba36dd6f277f2a04a1473aa9422464e3c37534",
+    "verifier_sha256": "22a49cf09eba4cbf70ce0b38a577e8a215d420d5be0ccefbb94d58777ba29d4e",
     "evaluator_sha256": "86fee6d01748ad4e81453bdefa1371ed8bd28eabc4fb602fae16488f789da06f",
     "optimized_prompt_sha256": "96e9b3de433e50574f0be8b1848f11b1bab7ded49382fbd0f41ea083f586bd22"
   },
@@ -61,12 +61,12 @@
       "answerable_queries": 66,
       "unanswerable_queries": 27,
       "partially_answerable_queries": 5,
-      "faithfulness": 1.0,
-      "citation_precision": 1.0,
-      "citation_recall": 1.0,
+      "faithfulness": 0.9848484848484849,
+      "citation_precision": 0.9848484848484849,
+      "citation_recall": 0.9848484848484849,
       "abstention_accuracy": 1.0,
-      "expected_fact_recall": 0.88989898989899,
-      "answer_completion_accuracy": 1.0,
+      "expected_fact_recall": 0.8747474747474747,
+      "answer_completion_accuracy": 0.989247311827957,
       "avg_latency_ms": 1197.4775064514806,
       "latency_p50_ms": 1067.2660999989603,
       "latency_p95_ms": 2109.2559000004258,
@@ -8142,7 +8142,7 @@
       "query": "为什么说数据预处理比调参更重要，模型部署时需要哪些框架支持",
       "mode": "optimized",
       "answerable": true,
-      "answer": "已确认：\n- 良好的预处理可以显著提升模型性能，通常比调参更重要 [S1]。\n- 模型部署时，可用于支持高性能 API 或机器学习模型在线推理服务的框架包括 FastAPI，该框架基于 Starlette 和 Pydantic，支持类型提示驱动的参数验证和原生异步 [S4]。",
+      "answer": "无法确认：现有资料没有直接给出问题所要求的原因。",
       "sources": [
         {
           "citation_id": "S1",
@@ -8196,15 +8196,15 @@
         }
       ],
       "latency_ms": 1502.6088999984495,
-      "faithfulness": 1.0,
-      "citation_precision": 1.0,
-      "citation_recall": 1.0,
-      "refused": false,
+      "faithfulness": 0.0,
+      "citation_precision": 0.0,
+      "citation_recall": 0.0,
+      "refused": true,
       "abstention_correct": null,
-      "expected_fact_recall": 1.0,
-      "verification_status": "verified",
+      "expected_fact_recall": 0.0,
+      "verification_status": "unverified",
       "answerability": "full",
-      "answer_completion_correct": true,
+      "answer_completion_correct": false,
       "error": null,
       "repair_used": "none",
       "repair_reasons": null,
@@ -12758,10 +12758,10 @@
       "ttft_ms": 444.94550000308664
     }
   ],
-  "rescored_at": "2026-07-20T14:48:43.770245+00:00",
+  "rescored_at": "2026-07-21T02:03:20.573340+00:00",
   "rescored_provenance": {
     "dataset_sha256": "38e132bcadc5aab708b5b7dd209ad5c7d5b2a1c363a9904ab7024bf2fff263d6",
-    "verifier_sha256": "1841d216cd99fc1dfce9bc7caeba36dd6f277f2a04a1473aa9422464e3c37534",
+    "verifier_sha256": "22a49cf09eba4cbf70ce0b38a577e8a215d420d5be0ccefbb94d58777ba29d4e",
     "evaluator_sha256": "86fee6d01748ad4e81453bdefa1371ed8bd28eabc4fb602fae16488f789da06f",
     "optimized_prompt_sha256": "96e9b3de433e50574f0be8b1848f11b1bab7ded49382fbd0f41ea083f586bd22"
   }

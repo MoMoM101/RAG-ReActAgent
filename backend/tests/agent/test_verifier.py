@@ -4,6 +4,7 @@ from agent.verifier import (
     apply_query_safety_guard,
     apply_zero_support_guard,
     build_partial_comparison_fallback,
+    comparison_answer_complete,
     needs_grounding_repair,
     select_better_grounded_answer,
     verify_answer,
@@ -205,7 +206,11 @@ def test_query_safety_guard_abstains_on_unresolved_reference_without_history():
     answer = "FastAPI 适合高性能 API [S1]。"
 
     assert apply_query_safety_guard("这个框架适合什么项目", answer).startswith("无法确认")
-    assert apply_query_safety_guard("这个框架适合什么项目", answer, has_context=True) == answer
+    assert apply_query_safety_guard(
+        "这个框架适合什么项目",
+        answer,
+        has_context=True,
+    ).startswith("无法确认")
 
 
 def test_query_safety_guard_abstains_when_superlative_relation_is_missing():
@@ -262,6 +267,28 @@ def test_query_safety_guard_keeps_explicit_comparison_answer():
     answer = "Django 适合全栈项目，FastAPI 更适合异步 API [S1]。"
 
     assert apply_query_safety_guard("Django 和 FastAPI 有什么不同", answer) == answer
+
+
+def test_comparison_guard_requires_both_named_sides():
+    query = "MCP 和 Skill 怎么选"
+
+    assert not comparison_answer_complete(query, "MCP 适合连接外部工具 [S1]。")
+    assert apply_query_safety_guard(query, "MCP 适合连接外部工具 [S1]。").startswith("无法确认")
+    assert comparison_answer_complete(
+        query,
+        "MCP 适合连接外部工具，Skill 更适合封装工作流程 [S1, S2]。",
+    )
+
+
+def test_relation_guards_reject_topical_but_nonresponsive_answers():
+    assert apply_query_safety_guard(
+        "Django MTV 每层职责是什么",
+        "Django 使用 MTV 架构 [S1]。",
+    ).startswith("无法确认")
+    assert apply_query_safety_guard(
+        "为什么会发生缓存穿透",
+        "缓存穿透是一类缓存问题 [S1]。",
+    ).startswith("无法确认")
 
 
 def test_zero_support_guard_refuses_fully_unsupported_factual_answer():
@@ -372,6 +399,23 @@ def test_repair_is_kept_only_when_grounding_quality_improves():
 
     assert select_better_grounded_answer(original, repaired, sources) == repaired
     assert select_better_grounded_answer(repaired, original, sources) == repaired
+
+
+def test_repair_does_not_collapse_multiple_supported_facts():
+    sources = [
+        {"citation_id": "S1", "text": "Skill 用于封装可复用工作流程。"},
+        {"citation_id": "S2", "text": "MCP 用于连接模型和外部工具。"},
+    ]
+    original = "Skill 用于封装可复用工作流程 [S1]。MCP 用于连接模型和外部工具 [S2]。两者一定能互相替代 [S1]。"
+    collapsed = "MCP 用于连接模型和外部工具 [S2]。"
+
+    selected = select_better_grounded_answer(original, collapsed, sources)
+    verification = verify_answer(selected, sources)
+
+    assert "Skill" in selected and "MCP" in selected
+    assert verification.facts_supported == 2
+    assert verification.faithfulness == 1.0
+    assert verification.citation_recall == 1.0
 
 
 def test_number_not_present_in_evidence_blocks_claim():

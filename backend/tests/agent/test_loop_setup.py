@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agent.classifier import IntentHint
-from agent.loop_setup import apply_memory_context, classify_turn, resolve_followup_query
+from agent.loop_setup import apply_memory_context, classify_turn
+from agent.query_semantics import resolve_followup_query
 from llm.base import ChatMessage
 
 

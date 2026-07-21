@@ -169,9 +169,8 @@ def _prune_sources(state: ToolTurnState) -> None:
             selected.setdefault(_source_key(source), source)
         pruned = list(selected.values())[:8]
     pruned = merge_adjacent_chunks(pruned)
-    if len(pruned) >= original_count:
-        return
-    logger.info("source pruning: %d → %d chunks", original_count, len(pruned))
+    if len(pruned) < original_count:
+        logger.info("source pruning: %d → %d chunks", original_count, len(pruned))
     search_messages = [message for message in state.messages if message.role == "tool" and message.tool_name == "search_docs"]
     for message in search_messages[:-1]:
         message.content = _serialize_search_results([])
