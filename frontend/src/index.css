@@ -108,6 +108,18 @@ h3 { font-family: var(--font-sans); font-size: 15px; font-weight: 500; }
 .prose p { margin: 0.35em 0; }
 .prose p:first-child { margin-top: 0; }
 .prose p:last-child { margin-bottom: 0; }
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+  color: var(--fg);
+  font-family: var(--font-sans);
+  line-height: 1.35;
+  margin: 0.9em 0 0.35em;
+}
+.prose h1:first-child, .prose h2:first-child, .prose h3:first-child,
+.prose h4:first-child, .prose h5:first-child, .prose h6:first-child { margin-top: 0; }
+.prose h1 { font-size: 1.3em; font-weight: 650; }
+.prose h2 { font-size: 1.18em; font-weight: 650; }
+.prose h3 { font-size: 1.06em; font-weight: 650; }
+.prose h4, .prose h5, .prose h6 { font-size: 1em; font-weight: 650; }
 .prose code {
   font-family: var(--font-mono);
   font-size: 0.88em;
@@ -152,14 +164,25 @@ h3 { font-family: var(--font-sans); font-size: 15px; font-weight: 500; }
   padding: 0;
   font-size: inherit;
 }
-.prose ul, .prose ol { padding-left: 1.5em; margin: 0.35em 0; }
+.prose ul, .prose ol { padding-left: 1.5em; margin: 0.45em 0; }
 .prose li { margin: 0.2em 0; }
+.prose li::marker { color: var(--muted); }
+.prose li > p { margin: 0.15em 0; }
 .prose strong { color: var(--fg); }
 .prose a { color: var(--accent); text-decoration: underline; }
+.prose a:hover { text-decoration-thickness: 2px; }
+.markdown-table-wrap {
+  max-width: 100%;
+  margin: 0.6em 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
 .prose table {
   border-collapse: collapse;
-  margin: 0.5em 0;
+  margin: 0;
   width: 100%;
+  min-width: max-content;
   font-size: 0.92em;
 }
 .prose th {
@@ -176,11 +199,19 @@ h3 { font-family: var(--font-sans); font-size: 15px; font-weight: 500; }
   padding: 5px 8px;
   border-top: 1px solid var(--border);
 }
+.prose th + th, .prose td + td { border-left: 1px solid var(--border); }
 .prose blockquote {
   border-left: 2px solid var(--accent);
   padding-left: 12px;
   color: var(--muted);
   margin: 0.5em 0;
+}
+.prose blockquote > :first-child { margin-top: 0; }
+.prose blockquote > :last-child { margin-bottom: 0; }
+.prose hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0.8em 0;
 }
 
 /* ── Code block copy button ───────────────────── */

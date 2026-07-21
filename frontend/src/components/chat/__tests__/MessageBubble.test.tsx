@@ -43,6 +43,36 @@ describe("MessageBubble", () => {
     expect(bold.tagName).toBe("STRONG");
   });
 
+  it("renders headings and lists as structured markdown", () => {
+    const msg = makeMsg({
+      role: "assistant",
+      content: "### Skill\n\n- 可复用工作流\n- 按需加载",
+    });
+    const { container } = render(<MessageBubble message={msg} />);
+
+    expect(screen.getByRole("heading", { level: 3, name: "Skill" })).toBeInTheDocument();
+    expect(container.querySelectorAll("li")).toHaveLength(2);
+  });
+
+  it("wraps GFM tables for horizontal scrolling", () => {
+    const msg = makeMsg({
+      role: "assistant",
+      content: "| 项目 | 说明 |\n|---|---|\n| MCP | 外部连接 |",
+    });
+    const { container } = render(<MessageBubble message={msg} />);
+
+    expect(container.querySelector(".markdown-table-wrap > table")).toBeInTheDocument();
+  });
+
+  it("opens markdown links safely in a new tab", () => {
+    const msg = makeMsg({ role: "assistant", content: "[文档](https://example.com/docs)" });
+    render(<MessageBubble message={msg} />);
+
+    const link = screen.getByRole("link", { name: "文档" });
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
   it("shows feedback buttons when not streaming and has content", () => {
     const msg = makeMsg({ role: "assistant", content: "response", isStreaming: false });
     render(<MessageBubble message={msg} />);
@@ -125,5 +155,16 @@ describe("MessageBubble", () => {
     render(<MessageBubble message={msg} />);
     expect(screen.getByText("python")).toBeInTheDocument();
     expect(screen.getByText('print("hello")')).toBeInTheDocument();
+  });
+
+  it("renders fenced code without a language as a code block", () => {
+    const msg = makeMsg({
+      role: "assistant",
+      content: "```\nplain code\n```",
+    });
+    const { container } = render(<MessageBubble message={msg} />);
+
+    expect(screen.getByText("code")).toBeInTheDocument();
+    expect(container.querySelector(".code-block pre code")?.textContent).toBe("plain code\n");
   });
 });

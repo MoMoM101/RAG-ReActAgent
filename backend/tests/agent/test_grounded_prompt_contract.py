@@ -36,10 +36,21 @@ def test_prompt_prioritizes_coverage_without_unbounded_answers():
     assert "保留这些名称，不要只改写成泛称" in prompt
 
 
+def test_prompt_requires_visible_markdown_structure_by_query_type():
+    prompt = _prompt()
+
+    assert "GitHub Flavored Markdown" in prompt
+    assert "不要把整段答案包在 `markdown` 代码围栏中" in prompt
+    assert "单一事实使用 `**结论：**`" in prompt
+    assert "定义、概览和详细说明使用 `### 主题` 后接要点列表" in prompt
+    assert "步骤和操作方法使用有序列表" in prompt
+    assert "不要输出空标题、空列表或只有标题没有正文" in prompt
+
+
 def test_prompt_allows_evidence_only_cross_source_synthesis():
     prompt = _prompt()
 
     assert "可以把不同来源的明确事实并列展示" in prompt
     assert "不能从并列事实推导新的共同点、差异、因果、优劣" in prompt
-    assert "A 的资料事实 / B 的资料事实 / 无法确认的比较维度" in prompt
+    assert "`### A`、`### B`、必要时 `### 无法确认`" in prompt
     assert "每个列表项只写一个来源能完整支持的事实并独立引用" in prompt

@@ -106,12 +106,22 @@ export function MessageBubble({ message }: Props) {
               components={{
                 pre: ({ children }) => <>{children}</>,
                 code: ({ className, children, ...props }) => {
-                  const isInline = !className;
+                  const isInline = !className && !String(children).includes("\n");
                   if (isInline) {
                     return <code className={className} {...props}>{children}</code>;
                   }
                   return <CodeBlock className={className}>{children}</CodeBlock>;
                 },
+                table: ({ children }) => (
+                  <div className="markdown-table-wrap">
+                    <table>{children}</table>
+                  </div>
+                ),
+                a: ({ href, children, ...props }) => (
+                  <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+                    {children}
+                  </a>
+                ),
               }}
             >
               {message.content}
