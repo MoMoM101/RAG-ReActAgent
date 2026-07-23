@@ -128,6 +128,11 @@ class Settings(BaseSettings):
     rag_answer_cache_ttl_seconds: int = 300
     rag_answer_cache_max_entries: int = 1000
 
+    # Database pruning — prevent unbounded growth
+    data_retention_days: int = Field(default=90, ge=7, le=3650)
+    audit_retention_days: int = Field(default=365, ge=7, le=3650)
+    db_prune_interval_hours: int = Field(default=24, ge=1, le=720)
+
     # Output budget: explicit generation cap; 0 uses llm_output_token_reserve.
     rag_generation_max_tokens: int = 0
     # One bounded recovery call when reasoning consumes the final-answer budget.

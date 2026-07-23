@@ -1,6 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import event
@@ -239,3 +239,56 @@ async def check_revision_gate() -> None:
 async def get_db():
     async with async_session() as session:
         yield session
+
+
+async def _prune_old_records(
+    data_retention_days: int,
+    audit_retention_days: int,
+    interval_hours: int,
+) -> None:
+    """Background task: periodically prune old messages, conversations, and audit logs."""
+    import asyncio
+    import logging
+
+    _log = logging.getLogger("db_prune")
+
+    while True:
+        await asyncio.sleep(interval_hours * 3600)
+        try:
+            async with session_scope() as session:
+                now = datetime.now(UTC)
+
+                # Prune audit_logs
+                audit_cutoff = int(now.timestamp()) - audit_retention_days * 86400
+                audit_result = await session.execute(
+                    sa_text("DELETE FROM audit_logs WHERE CAST(created_at AS INTEGER) < :cutoff"),
+                    {"cutoff": audit_cutoff},
+                )
+                audit_deleted = audit_result.rowcount
+
+                # Prune messages (cascades to message_sources)
+                msg_cutoff = (now - timedelta(days=data_retention_days)).isoformat()
+                msg_result = await session.execute(
+                    sa_text("DELETE FROM messages WHERE created_at < :cutoff"),
+                    {"cutoff": msg_cutoff},
+                )
+                msg_deleted = msg_result.rowcount
+
+                # Prune orphaned conversations (no messages left)
+                conv_result = await session.execute(
+                    sa_text(
+                        "DELETE FROM conversations WHERE id NOT IN "
+                        "(SELECT DISTINCT conversation_id FROM messages)"
+                    ),
+                )
+                conv_deleted = conv_result.rowcount
+
+                await session.commit()
+
+                if audit_deleted or msg_deleted or conv_deleted:
+                    _log.info(
+                        "pruned: audit=%d messages=%d conversations=%d",
+                        audit_deleted, msg_deleted, conv_deleted,
+                    )
+        except Exception:
+            _log.warning("database prune failed", exc_info=True)

@@ -120,6 +120,18 @@ async def lifespan(app: FastAPI):
     from auth.jwt import validate_jwt_configuration
     validate_jwt_configuration()
 
+    # Proactive API key check — warn before user hits confusing runtime errors
+    if not settings.llm_api_key:
+        logger.warning(
+            "LLM_API_KEY 未配置！LLM 调用将失败。请在 backend/.env 中设置 "
+            "LLM_API_KEY，或启动后在设置页面 http://localhost:5173/settings 配置。"
+        )
+    if not settings.embedding_api_key and not settings.llm_api_key:
+        logger.warning(
+            "EMBEDDING_API_KEY 未配置！文档上传后无法入库。请在 backend/.env 中设置 "
+            "EMBEDDING_API_KEY（留空则复用 LLM_API_KEY）。"
+        )
+
     # Verify database schema revision matches code before any DB access
     await check_revision_gate()
     await init_db()
@@ -176,6 +188,13 @@ async def lifespan(app: FastAPI):
     get_task_manager().start_recovery_monitor()
     if recovered:
         logger.info("recovered %d stale background tasks", recovered)
+    # ── Database pruning ──
+    from models.database import _prune_old_records
+    _prune_task = asyncio.create_task(
+        _prune_old_records(settings.data_retention_days, settings.audit_retention_days,
+                           settings.db_prune_interval_hours),
+        name="db-prune",
+    )
     # Preload reranker model in background
     if settings.hf_endpoint:
         os.environ["HF_ENDPOINT"] = settings.hf_endpoint
@@ -408,4 +427,15 @@ if __name__ == "__main__":
     if settings.allow_remote_access:
         host = "0.0.0.0"
 
-    uvicorn.run(app, host=host, port=8000)
+    try:
+        uvicorn.run(app, host=host, port=8000)
+    except OSError as exc:
+        if "already in use" in str(exc).lower() or "address" in str(exc).lower():
+            print(
+                f"\n 端口 8000 已被占用，无法启动后端。"
+                f"\n 请执行以下命令释放端口后重试："
+                f"\n   Windows: netstat -ano | findstr :8000  找到 PID 后 taskkill /F /PID <PID>"
+                f"\n   Linux/macOS: lsof -i :8000  找到 PID 后 kill <PID>"
+                f"\n 或修改 backend/.env 中的 SERVER_HOST 和端口配置。\n"
+            )
+        raise

@@ -178,33 +178,39 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   checkAuth: async () => {
     set({ loading: true });
-    let accessToken = readAccessToken();
-    if (!accessToken) accessToken = await refreshAccessToken();
-    if (!accessToken) {
-      set({ loading: false, authenticated: false, user: null });
-      return;
-    }
-
-    let response = await fetch("/api/auth/me", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (response.status === 401) {
-      accessToken = await refreshAccessToken();
-      if (accessToken) {
-        response = await fetch("/api/auth/me", {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
+    try {
+      let accessToken = readAccessToken();
+      if (!accessToken) accessToken = await refreshAccessToken();
+      if (!accessToken) {
+        set({ loading: false, authenticated: false, user: null });
+        return;
       }
-    }
 
-    if (!response.ok) {
-      clearStoredToken();
-      set({
-        accessToken: null,
-        user: null,
-        authenticated: false,
-        loading: false,
+      let response = await fetch("/api/auth/me", {
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
+      if (response.status === 401) {
+        accessToken = await refreshAccessToken();
+        if (accessToken) {
+          response = await fetch("/api/auth/me", {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+        }
+      }
+
+      if (!response.ok) {
+        clearStoredToken();
+        set({
+          accessToken: null,
+          user: null,
+          authenticated: false,
+          loading: false,
+        });
+        return;
+      }
+    } catch {
+      // Backend unreachable — show login form without error flash
+      set({ loading: false, authenticated: false, user: null, accessToken: null });
       return;
     }
 
