@@ -166,6 +166,9 @@ class Settings(BaseSettings):
     ingestion_retry_max_sec: float = 300.0 # backoff cap
     ingestion_retry_jitter: float = 0.3    # jitter ratio (0-1)
 
+    # Development
+    auto_migrate: bool = False
+
     # Logging
     log_level: str = "INFO"
 

@@ -61,8 +61,7 @@ async def init_db():
         await conn.exec_driver_sql("PRAGMA journal_mode=WAL")
 
         # Dev convenience fallback: create missing tables when AUTO_MIGRATE is on
-        import os as _os
-        if _os.getenv("AUTO_MIGRATE", "").lower() in ("1", "true", "yes"):
+        if _auto_migrate_enabled():
             await conn.run_sync(Base.metadata.create_all)
 
 
@@ -96,7 +95,14 @@ def _head_revision() -> str:
 
 def _auto_migrate_enabled() -> bool:
     import os as _os
-    return _os.getenv("AUTO_MIGRATE", "").lower() in ("1", "true", "yes")
+    env_val = _os.getenv("AUTO_MIGRATE", "")
+    if not env_val:
+        try:
+            from config import settings
+            env_val = str(getattr(settings, "auto_migrate", "") or "")
+        except Exception:
+            pass
+    return env_val.lower() in ("1", "true", "yes")
 
 
 def _backup_before_migration(
