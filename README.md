@@ -347,7 +347,7 @@ Docker 部署额外需要：
 - Docker；
 - Docker Compose。
 
-### 方式一：Docker Compose
+### 方式一：本地统一启动
 
 克隆项目并创建配置：
 
@@ -368,37 +368,6 @@ Copy-Item backend/.env.example backend/.env
 - `BOOTSTRAP_ADMIN_PASSWORD` — 默认 `RAGAgent2026!`（首次登录后建议修改）
 
 LLM 和 Embedding 的 Key 可启动后在设置页面配置，无需提前写入 `.env`。
-
-启动：
-
-```bash
-docker compose --env-file backend/.env up -d
-```
-
-查看状态：
-
-```bash
-docker compose ps
-docker compose logs -f backend
-```
-
-停止：
-
-```bash
-docker compose down
-```
-
-默认地址：
-
-- 前端：<http://localhost:5173>
-- 后端：<http://localhost:8000>
-- OpenAPI：<http://localhost:8000/docs>
-- 健康检查：<http://localhost:8000/api/health>
-- 依赖状态：<http://localhost:8000/api/health/dependencies>
-
-Docker 基础镜像默认不安装 OCR 扩展依赖，`DOCKER_OCR_ENABLED` 默认关闭。需要 OCR 时应构建包含 `requirements-ocr.txt` 及相应系统依赖的镜像。
-
-### 方式二：本地统一启动
 
 在项目根目录创建虚拟环境：
 
@@ -446,17 +415,7 @@ npm install
 cd ..
 ```
 
-创建配置：
-
-```bash
-# Linux / macOS
-cp backend/.env.example backend/.env
-
-# Windows PowerShell
-Copy-Item backend/.env.example backend/.env
-```
-
-编辑 `backend/.env` 后启动：
+启动：
 
 ```bash
 python main.py
@@ -472,6 +431,37 @@ python main.py
 6. 在退出时关闭子进程。
 
 OCR 和 Reranker 是可选模型，不会阻塞核心网页与 API 启动。首次加载可能继续在后台下载。
+
+默认地址：
+
+- 前端：<http://localhost:5173>
+- 后端：<http://localhost:8000>
+- OpenAPI：<http://localhost:8000/docs>
+- 健康检查：<http://localhost:8000/api/health>
+- 依赖状态：<http://localhost:8000/api/health/dependencies>
+
+### 方式二：Docker Compose
+
+确保已克隆项目并创建 `backend/.env` 配置（见方式一的前两步），然后：
+
+```bash
+docker compose --env-file backend/.env up -d
+```
+
+查看状态：
+
+```bash
+docker compose ps
+docker compose logs -f backend
+```
+
+停止：
+
+```bash
+docker compose down
+```
+
+Docker 基础镜像默认不安装 OCR 扩展依赖，`DOCKER_OCR_ENABLED` 默认关闭。需要 OCR 时应构建包含 `requirements-ocr.txt` 及相应系统依赖的镜像。
 
 ### 方式三：前后端分别启动
 
