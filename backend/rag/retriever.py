@@ -118,34 +118,28 @@ def _quality_prefilter(
 
 
 async def _dedup_results(results: list[RetrievalResult]) -> list[RetrievalResult]:
-    """Remove near-duplicate chunks from different documents, keeping newest doc."""
+    """Remove near-duplicate chunks from different documents.
+
+    When two chunks from different documents are near-identical, the first-seen
+    chunk is kept with its original source attribution intact. The duplicate is
+    dropped rather than replacing the source, so users always see the document
+    that their search actually matched.
+    """
     if len(results) <= 1:
         return results
-
-    # Load document created_at for comparison
-    doc_ids = list({r.document_id for r in results})
-    async with session_scope() as session:
-        result = await session.execute(
-            select(Document.id, Document.created_at).where(Document.id.in_(doc_ids))
-        )
-        doc_times: dict[str, datetime] = {row[0]: row[1] for row in result.all()}
 
     threshold = settings.dedup_similarity_threshold
     kept: list[RetrievalResult] = []
 
     for r in results:
-        replaced = False
-        for i, existing in enumerate(kept):
+        duplicate = False
+        for existing in kept:
             if r.document_id != existing.document_id:
                 ratio = difflib.SequenceMatcher(None, r.text, existing.text).ratio()
                 if ratio >= threshold:
-                    r_time = doc_times.get(r.document_id)
-                    e_time = doc_times.get(existing.document_id)
-                    if r_time and e_time and r_time > e_time:
-                        kept[i] = r  # Replace with newer doc's chunk
-                    replaced = True
+                    duplicate = True
                     break
-        if not replaced:
+        if not duplicate:
             kept.append(r)
 
     return kept
@@ -446,10 +440,6 @@ async def _filter_committed_generation(
             committed_docs.add(doc_id)
 
     valid_docs = legacy_docs | committed_docs
-    db_doc_ids = {row[0] for row in rows}
-    for r in results:
-        if r.document_id not in db_doc_ids:
-            valid_docs.add(r.document_id)  # not in DB = legacy/pre-generation-tracking
     filtered = [r for r in results if r.document_id in valid_docs]
     if len(filtered) < len(results):
         logger.info(

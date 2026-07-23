@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDocumentStore } from "../../stores/documentStore";
 import { UploadIcon } from "../shared/Icons";
 
@@ -10,6 +10,7 @@ export function UploadZone() {
     cancelUpload, maxUploadMb, batchMaxFiles, batchMaxTotalMb, loadUploadConfig,
   } = useDocumentStore();
   const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadUploadConfig();
@@ -34,7 +35,7 @@ export function UploadZone() {
       onDrop={handleDrop}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
-      onClick={() => document.getElementById("file-input")?.click()}
+      onClick={() => fileInputRef.current?.click()}
     >
       {uploading ? (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
@@ -104,7 +105,7 @@ export function UploadZone() {
         </>
       )}
       <input
-        id="file-input"
+        ref={fileInputRef}
         type="file"
         style={{ display: "none" }}
         accept={ACCEPT}

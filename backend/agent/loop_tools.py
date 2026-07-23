@@ -42,17 +42,29 @@ def _source_key(item: dict[str, Any]) -> str:
     return str(item.get("chunk_id") or f"{item.get('document_id', '')}:{item.get('section_key', '')}:{item.get('text', '')}")
 
 
+_WS_PREFIX = "WS"
+
+
 def _register_search_sources(
     state: ToolTurnState,
     tool_name: str,
     tool_result: Any,
     search_group: str,
 ) -> None:
-    if tool_name != "search_docs" or not tool_result.success or not tool_result.data:
+    if not tool_result.success or not tool_result.data:
         return
     items = tool_result.data.get("results", [])
     if not isinstance(items, list):
         return
+    if tool_name == "search_docs":
+        _register_kb_sources(state, items, search_group)
+    elif tool_name == "web_search":
+        _register_web_sources(state, items)
+
+
+def _register_kb_sources(
+    state: ToolTurnState, items: list[dict], search_group: str,
+) -> None:
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -81,9 +93,36 @@ def _register_search_sources(
         item["citation_id"] = citation_id
 
 
+def _register_web_sources(state: ToolTurnState, items: list[dict]) -> None:
+    """Register web_search results with WS-prefixed citation IDs."""
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url", "")
+        source_key = f"web:{url}"
+        if source_key in state.citation_by_source:
+            continue
+        citation_id = f"{_WS_PREFIX}{len(state.citation_by_source) + 1}"
+        state.citation_by_source[source_key] = citation_id
+        state.sources.append(
+            {
+                "citation_id": citation_id,
+                "chunk_id": f"web-{citation_id}",
+                "text": f"{item.get('title', '')}\n{item.get('snippet', '')}",
+                "document_id": source_key,
+                "document_key": "web_search",
+                "section_key": "",
+                "filename": item.get("title", "Web Search"),
+                "score": 0.5,
+                "rank": len(state.sources) + 1,
+            }
+        )
+        item["citation_id"] = citation_id
+
+
 def _tool_message(tool_name: str, tool_result: Any, tool_call: ToolCall) -> ChatMessage:
     result_text = json.dumps(tool_result.data, ensure_ascii=False) if tool_result.success else f"Error: {tool_result.error}"
-    if tool_name == "search_docs" and tool_result.success:
+    if tool_name in ("search_docs", "web_search") and tool_result.success:
         injection_warning = check_injection_patterns(result_text)
         result_text = (
             "<UNTRUSTED_RETRIEVED_CONTENT>\n"

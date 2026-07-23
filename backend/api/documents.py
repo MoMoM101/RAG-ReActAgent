@@ -42,14 +42,22 @@ TERMINAL_DOCUMENT_STATUSES = {"ready", "failed", "waiting_for_ocr", "not_found"}
 
 async def _delete_document_source(doc: Document) -> None:
     """Delete a committed object, with a hash-safe legacy-file fallback."""
+    await _delete_document_source_by_attrs(
+        doc.storage_key, doc.filename, doc.file_type, doc.file_hash,
+    )
+
+
+async def _delete_document_source_by_attrs(
+    storage_key: str | None, filename: str, file_type: str, file_hash: str,
+) -> None:
+    """Delete file source using individual attributes (safe after doc expire)."""
     storage = get_storage()
-    if doc.storage_key and await storage.exists(doc.storage_key):
-        await storage.delete(doc.storage_key)
+    if storage_key and await storage.exists(storage_key):
+        await storage.delete(storage_key)
         return
     legacy_path = find_upload(
-        doc.filename,
-        doc.file_type,
-        expected_sha256=doc.file_hash,
+        filename, file_type,
+        expected_sha256=file_hash,
         root_dir=settings.upload_dir,
     )
     if legacy_path:
@@ -317,17 +325,34 @@ async def clear_all_documents(db: AsyncSession = Depends(get_db)):
             f"仍有 {len(active)} 个文档正在处理，请等待完成或失败后再清空",
         )
 
-    vectordb = await create_vectordb()
-    fts = BM25Search()
-    for doc in docs:
-        await vectordb.delete_by_document(doc.id)
-        await fts.delete_by_document(doc.id)
+    # Extract attributes before deletion (expired after commit)
+    doc_attrs = [
+        (d.id, d.storage_key, d.filename, d.file_type, d.file_hash)
+        for d in docs
+    ]
 
-        await _delete_document_source(doc)
-
+    # Atomic SQLite deletion first
     count = len(docs)
     await db.execute(sa_delete(Document))
     await db.commit()
+
+    # Best-effort external store cleanup
+    vectordb = await create_vectordb()
+    fts = BM25Search()
+    for doc_id, storage_key, filename, file_type, file_hash in doc_attrs:
+        try:
+            await vectordb.delete_by_document(doc_id)
+        except Exception as e:
+            logger.warning("clear_all Qdrant cleanup failed doc_id=%s: %s", doc_id, e)
+        try:
+            await fts.delete_by_document(doc_id)
+        except Exception as e:
+            logger.warning("clear_all BM25 cleanup failed doc_id=%s: %s", doc_id, e)
+        try:
+            await _delete_document_source_by_attrs(storage_key, filename, file_type, file_hash)
+        except Exception as e:
+            logger.warning("clear_all file cleanup failed doc_id=%s: %s", doc_id, e)
+
     bump_collection_version()
     await record_audit("document_clear_all",
                        detail=f"count={count}")
@@ -345,17 +370,33 @@ async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     if doc.status not in (DocStatus.ready, DocStatus.failed, DocStatus.waiting_for_ocr):
         raise HTTPException(409, "Document is still being processed")
 
-    # Clean up in order
-    vectordb = await create_vectordb()
-    fts = BM25Search()
+    # Extract doc attributes before deletion (expired after commit)
+    storage_key = doc.storage_key
+    filename = doc.filename
+    file_type = doc.file_type
+    file_hash = doc.file_hash
 
-    await vectordb.delete_by_document(doc_id)
-    await fts.delete_by_document(doc_id)
-
-    await _delete_document_source(doc)
-
+    # Delete SQLite record first (atomic from user's perspective).
+    # External store cleanup is best-effort — orphaned vectors are
+    # harmless (filtered by _filter_committed_generation).
     await db.delete(doc)
     await db.commit()
+
+    vectordb = await create_vectordb()
+    fts = BM25Search()
+    try:
+        await vectordb.delete_by_document(doc_id)
+    except Exception as e:
+        logger.warning("delete_document Qdrant cleanup failed doc_id=%s: %s", doc_id, e)
+    try:
+        await fts.delete_by_document(doc_id)
+    except Exception as e:
+        logger.warning("delete_document BM25 cleanup failed doc_id=%s: %s", doc_id, e)
+    try:
+        await _delete_document_source_by_attrs(storage_key, filename, file_type, file_hash)
+    except Exception as e:
+        logger.warning("delete_document file cleanup failed doc_id=%s: %s", doc_id, e)
+
     bump_collection_version()
     await record_audit("document_delete",
                        object_type="document", object_id=doc_id)

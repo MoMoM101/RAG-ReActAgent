@@ -18,6 +18,7 @@ from agent.verifier import (
     Evidence,
     _claim_citations,
     _content_tokens,
+    _number_subset_of,
     _numbers,
 )
 
@@ -169,8 +170,9 @@ class AtomicUnitBuffer:
 
 def _is_mid_citation(text: str) -> bool:
     """Check if the buffer ends mid-citation like '[S1' or '[S1, S'."""
-    # Find last '[' that starts a citation
-    last_bracket = text.rfind("[S")
+    # Case-insensitive search — LLM may emit lowercase [s1
+    text_lower = text.lower()
+    last_bracket = text_lower.rfind("[s")
     if last_bracket == -1:
         return False
     after = text[last_bracket:]
@@ -218,8 +220,8 @@ def verify_unit(
     best_src_id = ""
     missing_numbers: set[str] = set()
 
+    cited_evidence: list[Evidence] = []
     if cited_ids:
-        cited_evidence: list[Evidence] = []
         for cid in cited_ids:
             src = evidence_by_id.get(cid)
             if src is None:
@@ -229,7 +231,7 @@ def verify_unit(
             if score > best_score:
                 best_score = score
                 best_src_id = cid
-            missing = unit_nums - _numbers(src.text)
+            missing = _number_subset_of(unit_nums, _numbers(src.text))
             if score >= min_support_score and not missing:
                 return UnitResult(unit=unit, verdict=UnitVerdict.VERIFIED)
             if not missing:
@@ -246,19 +248,25 @@ def verify_unit(
                 union_tokens.update(_content_tokens(src.text))
                 union_numbers.update(_numbers(src.text))
             union_score = _source_cov(unit_tokens, union_tokens)
-            union_missing = unit_nums - union_numbers
+            union_missing = _number_subset_of(unit_nums, union_numbers)
             best_score = max(best_score, union_score)
             if union_score >= min_support_score and not union_missing:
                 return UnitResult(unit=unit, verdict=UnitVerdict.VERIFIED)
             missing_numbers = union_missing
-    else:
-        # No citations — check all evidence for potential support
+    if not cited_ids or not cited_evidence:
+        # No citations or all phantom — check all evidence for potential support.
+        # Phantom citations (e.g. [S99] with only 8 sources) are treated as
+        # uncited content eligible for deterministic auto-cite repair.
+        if not cited_ids:
+            pass  # original uncited case
+        else:
+            cited_ids = set()  # clear phantom citations for FORMAT_ONLY path below
         for src in evidence:
             score = _source_cov(unit_tokens, _content_tokens(src.text))
             if score > best_score:
                 best_score = score
                 best_src_id = src.citation_id
-            missing = unit_nums - _numbers(src.text)
+            missing = _number_subset_of(unit_nums, _numbers(src.text))
             if score >= min_support_score and not missing:
                 # Uncited but supported → format issue
                 return UnitResult(

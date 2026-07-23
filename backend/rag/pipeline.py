@@ -158,7 +158,7 @@ async def cleanup_staging_generations() -> int:
             "SELECT g.id, g.doc_id, d.active_generation_id "
             "FROM index_generations g "
             "LEFT JOIN documents d ON d.id = g.doc_id "
-            "WHERE g.status IN ('preparing', 'staging')"
+            "WHERE g.status IN ('preparing', 'staging', 'writing_vector', 'writing_bm25', 'verifying')"
         ))).fetchall()
 
     if not rows:
@@ -188,9 +188,13 @@ async def cleanup_staging_generations() -> int:
                     gen_id[:8], doc_id, active_generation_id[:8],
                 )
                 continue
-            if vectordb is not None:
-                await vectordb.delete_by_document(doc_id)
-            await fts.delete_by_document(doc_id)
+            # Only delete index data when the document still references this
+            # generation. If the document is gone (active_generation_id is NULL),
+            # skip deletion — the data may belong to a re-created document.
+            if active_generation_id is not None:
+                if vectordb is not None:
+                    await vectordb.delete_by_document(doc_id)
+                await fts.delete_by_document(doc_id)
             await _fail_generation(gen_id, 0, 0)
             logger.warning("cleaned up staging generation gen_id=%s doc_id=%s", gen_id[:8], doc_id)
         except Exception as e:
@@ -691,15 +695,10 @@ async def _process_document(doc_id: str, file_path: str, file_type: str):
                 stored = await vectordb.get_chunk_ids_by_document(doc_id)
                 qdrant_read_ids = set(stored)
             except Exception:
-                pass
+                logger.warning("Qdrant read failed during verification for doc_id=%s", doc_id)
             fts_read_ids = set(await fts.get_chunk_ids_by_document(doc_id))
 
             if not await _verify_generation(gen_id, qdrant_read_ids, fts_read_ids):
-                await _fail_generation(
-                    gen_id, len(qdrant_read_ids), len(fts_read_ids),
-                    error_stage="verifying",
-                    error_message=f"Cross-store mismatch: Qdrant={len(qdrant_read_ids)} BM25={len(fts_read_ids)}",
-                )
                 raise RuntimeError(
                     f"Generation {gen_id[:8]} verification failed: "
                     f"Qdrant={len(qdrant_read_ids)} BM25={len(fts_read_ids)}"
@@ -733,15 +732,19 @@ async def _process_document(doc_id: str, file_path: str, file_type: str):
             idx_elapsed = int((time.time() - t_idx) * 1000)
             logger.info("indexing done doc_id=%s elapsed_ms=%d gen_id=%s chunks=%d",
                         doc_id, idx_elapsed, gen_id[:8], expected_count)
-        except Exception:
+        except Exception as idx_err:
             # Clean up Qdrant data written before the failure
             try:
                 await vectordb.delete_by_document(doc_id)
             except Exception as cleanup_err:
                 logger.warning("failed to clean Qdrant after indexing failure: %s", cleanup_err)
+            try:
+                await fts.delete_by_document(doc_id)
+            except Exception as cleanup_err:
+                logger.warning("failed to clean BM25 after indexing failure: %s", cleanup_err)
             await _fail_generation(
                 gen_id, 0, 0,
                 error_stage="indexing",
-                error_message="Indexing failed, see logs for details",
+                error_message=str(idx_err)[:500],
             )
             raise

@@ -195,8 +195,8 @@ class SearchDocsTool(BaseTool):
         except TimeoutError:
             logger.warning("retrieval timed out for query: %s", query[:100])
             return ToolResult(
-                success=True,
-                data={"count": 0, "reranked": False, "results": []},
+                success=False,
+                error="检索超时，请稍后重试。如果问题持续出现，请尝试缩小问题范围或简化查询。",
             )
         except Exception as e:
             _raise_if_retryable(e, "SearchDocs")

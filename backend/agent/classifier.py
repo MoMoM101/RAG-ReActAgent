@@ -16,81 +16,21 @@ class IntentHint:
 
 
 def _rule_match(query: str, has_history: bool) -> IntentHint | None:
-    """快速规则匹配，命中返回 IntentHint，未命中返回 None。"""
-
-    # Pure acknowledgment
-    ack_words = {"好的", "嗯", "ok", "OK", "好", "行", "可以", "明白了", "懂了", "谢谢", "感谢"}
-    if has_history and query.strip() in ack_words:
-        return IntentHint(
-            intent="acknowledgment", confidence=0.9, suggested_tools=[],
-            hint_text="用户只是确认/致谢，不需要调用工具，简单回应即可。",
-        )
-
-    # Short / pronoun followup
-    followup_markers = {
-        "它", "他", "她", "这个", "那个", "这些", "那些",
-        "这", "那", "哪个", "还有", "继续", "接着",
-        "上面", "刚才", "之前", "呢",
-    }
-    is_short = len(query) <= 12
-    has_followup_marker = any(m in query for m in followup_markers)
-    if has_history and (has_followup_marker or is_short):
-        return IntentHint(
-            intent="context_followup", confidence=0.85, suggested_tools=["search_docs"],
-            hint_text="这是一个追问。请用对话历史理解用户在指什么，将指代词替换为具体名词后调用 search_docs 检索。",
-        )
-
-    # Medium followup
-    if has_history and len(query) <= 30:
-        return IntentHint(
-            intent="possible_followup", confidence=0.5, suggested_tools=["search_docs"],
-            hint_text="用户可能在继续之前的话题。请结合对话历史补全query后调用 search_docs 检索。",
-        )
-
-    # Calculator
-    calc_kw = {"计算", "算", "等于", "加", "减", "乘", "除", "+", "-", "*", "/"}
-    if any(kw in query for kw in calc_kw) and re.search(r"[\d+\-*/]", query):
-        return IntentHint(
-                intent="calculation", confidence=0.7, suggested_tools=["calculator"],
-                hint_text="用户可能在询问数学计算，建议使用 calculator 进行计算",
-            )
-
-    # Document listing
-    if any(kw in query for kw in {"有哪些文档", "文档列表", "所有文档", "什么文档", "哪些文件", "文件列表", "列出文档"}):
-        return IntentHint(
-            intent="document_listing", confidence=0.7, suggested_tools=["list_documents"],
-            hint_text="用户想查看知识库中的文档列表，建议使用 list_documents",
-        )
-
-    # Personal information — broad regex catches self-introductions the
-    # regex intercept may miss (e.g. "本人是", "我的岗位是", "目前在从事")
-    identity_patterns = [
-        r"我(?:\S)?(?:职责|职业|工作|身份|岗位|职务|职位)\S*是",
-        r"我(?:\S)?是(?:\S)?(?:一名|一个|一位)",
-        r"本人(?:\S)?是",
-        r"我的(?:工作|职业|岗位|职责|身份|职务|职位)",
-    ]
-    if any(re.search(p, query) for p in identity_patterns):
-        return IntentHint(
-            intent="personal_memory", confidence=0.85, suggested_tools=["recall_memory"],
-            hint_text="用户在分享个人身份信息（职业/工作相关）。请确认已理解并适当回应，系统会自动保存这些信息。",
-        )
-
-    return None  # 规则未命中，走 LLM
+    """Rule layer removed — model autonomously decides tools via ReAct reasoning."""
+    return None
 
 
 INTENT_TOOL = {
     "type": "function",
     "function": {
         "name": "classify_intent",
-        "description": "判断用户意图并推荐工具。如果用户透露了个人信息，同时提取可保存的内容。",
+        "description": "判断用户意图（仅识别 personal_memory 或 general_chat），提取可保存的个人信息。",
         "parameters": {
             "type": "object",
             "properties": {
                 "intent": {
                     "type": "string",
-                    "enum": ["personal_memory", "knowledge_retrieval", "web_search",
-                             "document_info", "general_chat"],
+                    "enum": ["personal_memory", "general_chat"],
                     "description": "用户意图分类",
                 },
                 "suggested_tools": {
@@ -133,28 +73,18 @@ async def _llm_classify(query: str, has_history: bool) -> IntentHint:
     """LLM 意图分类（规则未命中时调用）。"""
     from llm.factory import create_llm
 
-    system_prompt = """你是意图分类器。根据用户消息判断意图并推荐工具。
+    system_prompt = """你是意图分类器。判断用户消息的意图类型，并提取个人信息。
 
 意图类型:
-- personal_memory: 用户透露个人信息（"我是/我叫/我职责/我职业/我工作/我身份/我喜欢/我习惯/我决定"）
-  或询问记忆（"我是谁/我之前说过什么/还记得吗"）
-  推荐: recall_memory
-- knowledge_retrieval: 用户询问文档/知识问题（"什么是/如何/怎么/有哪些"）
-  推荐: search_docs
-- web_search: 用户想搜索互联网（"网上查/搜索一下/最新"）
-  推荐: web_search
-- document_info: 用户想了解文档详情（"文档信息/多少个切片"）
-  推荐: get_document_info 或 list_documents
-- general_chat: 闲聊、问候、或无需工具的简单问题
-  推荐: []
+- personal_memory: 用户透露个人信息或询问记忆
+- general_chat: 闲聊、问候、或其他类型
 
 规则:
 - 用户在以任何方式介绍自己（名字、职业、身份、角色、工作、职责、偏好、习惯、决定）→ personal_memory
 - "我是谁""我叫什么""还记得吗" → personal_memory
-- 技术/知识类问题 → knowledge_retrieval
-- 带"网上""搜索""最新""新闻" → web_search
+- 其他所有情况 → general_chat
 
-重要: 即使用户的主要意图是 knowledge_retrieval 或 general_chat，
+重要: 即使用户的主要意图是 general_chat，
 只要消息中包含个人身份/偏好/决定信息，就额外在 save_to_profile 字段中提取出来。
 系统会自动保存这些信息供未来对话使用。
 
@@ -190,7 +120,7 @@ async def _llm_classify(query: str, has_history: bool) -> IntentHint:
 
     return IntentHint(
         intent="general_chat", confidence=0.3, suggested_tools=[],
-        hint_text="请判断用户意图。如果是新话题需要检索则调用 search_docs，能直接回答则直接回答",
+        hint_text="根据问题类型自行选择合适的工具。知识类问题优先搜索知识库，不足时可用联网搜索。",
     )
 
 

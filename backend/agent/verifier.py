@@ -26,7 +26,7 @@ _POST_SENTENCE_CITATION_RE = re.compile(
     r"([。！？!?；;])\s*(\[S\d+(?:\s*[,，]\s*S\d+)*\])",
     re.IGNORECASE,
 )
-_NUMBER_RE = re.compile(r"(?<![A-Za-z])\d+(?:\.\d+)*(?:%|℃|°C|ms|s|MB|GB|mg|V)?", re.IGNORECASE)
+_NUMBER_RE = re.compile(r"(?<![A-Za-z])\d+(?:\.\d+)*(?:\s*(?:%|℃|°C|ms|s|MB|GB|mg|V))?", re.IGNORECASE)
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.+-]*|\d+(?:\.\d+)*|[\u4e00-\u9fff]+")
 _META_PREFIXES = (
     "以下是",
@@ -309,6 +309,23 @@ def _numbers(text: str) -> set[str]:
     return {match.group(0).lower() for match in _NUMBER_RE.finditer(text)}
 
 
+def _number_subset_of(claim_nums: set[str], source_nums: set[str]) -> set[str]:
+    """Return claim numbers NOT found in source, with version prefix matching.
+
+    A claim number like "3.12" is considered present if the source contains
+    "3.12.0" or any number starting with "3.12." (version-like patterns).
+    """
+    missing: set[str] = set()
+    for cn in claim_nums:
+        if cn in source_nums:
+            continue
+        # Version prefix: "3.12" matches "3.12.0", "3.12.1", etc.
+        if "." in cn and any(sn.startswith(cn + ".") for sn in source_nums):
+            continue
+        missing.add(cn)
+    return missing
+
+
 def _normalize_evidence(sources: Sequence[EvidenceSource]) -> list[Evidence]:
     evidence: list[Evidence] = []
     for index, source in enumerate(sources, 1):
@@ -381,7 +398,7 @@ def verify_answer(
         for candidate in candidates:
             score = _support_score(fact, candidate.text)
             best_score = max(best_score, score)
-            missing = fact_numbers - _numbers(candidate.text)
+            missing = _number_subset_of(fact_numbers, _numbers(candidate.text))
             if score >= _SUPPORT_THRESHOLD and not missing:
                 supporting.append(candidate.citation_id)
                 if citations:
@@ -395,7 +412,7 @@ def verify_answer(
         if citations and len(candidates) > 1 and not supporting:
             union_text = "\n".join(candidate.text for candidate in candidates)
             union_score = _support_score(fact, union_text)
-            union_missing = fact_numbers - _numbers(union_text)
+            union_missing = _number_subset_of(fact_numbers, _numbers(union_text))
             best_score = max(best_score, union_score)
             if union_score >= _SUPPORT_THRESHOLD and not union_missing:
                 fact_tokens = _content_tokens(_CITATION_RE.sub("", fact))
@@ -494,35 +511,13 @@ def apply_query_safety_guard(
     *,
     has_context: bool = False,
 ) -> str:
-    """Turn relation-missing answers into explicit, deterministic abstentions.
+    """Return answer unchanged. Relation checks are now handled by the model's
+    own ReAct reasoning and post-hoc grounding verification.
 
-    A topically supported statement is not necessarily an answer to an
-    unresolved follow-up or a superlative question.  This guard only acts when
-    the generated answer failed to resolve the requested relation; it does not
-    replace a model answer that already contains an explicit supported choice.
+    Previously this function replaced answers with fixed refusal templates when
+    the answer lacked expected semantic patterns. Now it trusts the model to
+    self-correct based on grounding repair feedback.
     """
-    query_chars = [char.casefold() for char in query if char.isalnum()]
-    is_low_information = len(query_chars) <= 1 or (len(query_chars) >= 8 and len(set(query_chars)) / len(query_chars) <= 0.25)
-    if _REFUSAL_RE.search(answer):
-        return answer
-    if is_low_information:
-        return "无法确认：问题缺少可识别的有效信息，请提供具体问题后再提问。"
-    if _UNRESOLVED_REFERENCE_RE.search(query) or is_underspecified_query(query):
-        return "无法确认：问题中的指代对象不明确，请说明具体对象后再提问。"
-    if _SUPERLATIVE_QUERY_RE.search(query) and not _SUPERLATIVE_ANSWER_RE.search(answer):
-        return "无法确认：现有资料没有给出所问对象之间的最高级比较结论。"
-    if _CALCULATION_QUERY_RE.search(query) and not _CALCULATION_ANSWER_RE.search(answer):
-        return "无法确认：现有资料没有给出该指标的计算公式或计算方法。"
-    if not comparison_answer_complete(query, answer):
-        return "无法确认：现有资料没有直接给出问题所要求的比较结论。"
-    if _RESPONSIBILITY_QUERY_RE.search(query) and not _RESPONSIBILITY_ANSWER_RE.search(answer):
-        return "无法确认：现有资料没有说明所问对象各自承担的职责。"
-    if _CAUSAL_QUERY_RE.search(query) and not _CAUSAL_ANSWER_RE.search(answer):
-        return "无法确认：现有资料没有直接给出问题所要求的原因。"
-    if _IMPACT_QUERY_RE.search(query) and not _IMPACT_ANSWER_RE.search(answer):
-        return "无法确认：现有资料没有直接说明所问影响。"
-    if _RELATION_QUERY_RE.search(query) and not _RELATION_ANSWER_RE.search(answer):
-        return "无法确认：现有资料没有直接说明所问关系。"
     return answer
 
 

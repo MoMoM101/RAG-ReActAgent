@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     rerank_enabled: bool = False
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
     rerank_top_n: int = 8
-    rrf_k: int = 60
+    rrf_k: int = Field(default=60, ge=0)
     rrf_semantic_weight: float = 2.0
     rrf_keyword_weight: float = 1.0
     rrf_quality_prefilter_enabled: bool = False
@@ -109,7 +109,7 @@ class Settings(BaseSettings):
 
     # ── V4 Grounding repair ──
     # Stream verification: verify atomic units during generation and send immediately
-    grounding_stream_verify_enabled: bool = False
+    grounding_stream_verify_enabled: bool = False  # 关闭流验证，模型自主推理，后验证兜底
 
     # Deterministic citation repair (no LLM)
     grounding_deterministic_repair_enabled: bool = True

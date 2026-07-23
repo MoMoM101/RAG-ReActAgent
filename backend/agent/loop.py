@@ -177,6 +177,9 @@ async def run_agent_loop(
     loop_exhausted = True  # False if break due to timeout
     trimmed: list[ChatMessage] = []
     scheduled_drop_fingerprints: set[str] = set()
+    _verification_retries = 0
+    _tool_call_history: list[tuple[str, str]] = []  # (tool_name, query_arg) for loop detection
+    _loop_force_converge = False  # set when loop detected → disable tools
     while iteration < settings.max_loop_iterations:
         if _is_cancelled():
             from tracing import peek_request_id
@@ -225,14 +228,14 @@ async def run_agent_loop(
                     "；".join(pending_queries[-10:]),
                     settings.context_summary_max_tokens,
                 )
-            if history_summary and _first_attempt:
+            if history_summary:
                 system_msg.content = (_orig_system or "") + (f"\n[历史摘要] 早期对话要点: {history_summary}")
                 trimmed, _, _ = ctx_manager.trim_messages(
                     messages,
                     tools,
                     budget_scale=context_budget_scale,
                 )
-            if pending_queries and _first_attempt:
+            if pending_queries:
                 from worker.tasks import get_task_manager
 
                 source_material = "\x1f".join(pending_ids or pending_queries)
@@ -400,6 +403,8 @@ async def run_agent_loop(
                         )
                         _call_messages = trimmed
                         _call_tools: list[dict] | None = tools
+                        if _loop_force_converge:
+                            _call_tools = None  # disable further tool calls
                         if _empty_response_retries:
                             recovery_instruction = ChatMessage(
                                 role="user",
@@ -418,6 +423,20 @@ async def run_agent_loop(
                                 )
                                 or None
                             )
+                        elif _verification_retries:
+                            verify_retry_instruction = ChatMessage(
+                                role="user",
+                                content=(
+                                    "上一次回答未能通过来源校验。请根据反馈自行调整："
+                                    "检查你的回答中哪些陈述缺少 [S数字] 引用、哪些数字"
+                                    "在来源中找不到对应、哪些内容超出了来源范围。"
+                                    "如果来源确实不包含相关信息，可以尝试用其他工具"
+                                    "（如 web_search 联网搜索）补充后再回答，"
+                                    "或诚实说明知识库的局限。"
+                                ),
+                            )
+                            _call_messages = [*trimmed, verify_retry_instruction]
+                            _call_tools = tools  # allow tool calls so agent can escalate to web_search
                         async for chunk in llm.chat_stream(
                             _call_messages,
                             tools=_call_tools,
@@ -594,6 +613,20 @@ async def run_agent_loop(
             messages = outcome.messages
             for event in outcome.events:
                 yield event
+
+            # Loop detection: track tool calls, force convergence on repeats
+            for tc in tool_calls_acc:
+                query_arg = str(tc.arguments.get("query", ""))
+                _tool_call_history.append((tc.name, query_arg))
+            # Check for repeated calls to same tool with similar queries
+            if not _loop_force_converge:
+                same_tool_calls = [t for t in _tool_call_history if t[0] == tool_calls_acc[0].name]
+                if len(same_tool_calls) >= 3:
+                    _loop_force_converge = True
+                    logger.warning(
+                        "loop detected: %s called %d times; forcing convergence",
+                        tool_calls_acc[0].name, len(same_tool_calls),
+                    )
 
             # After tool execution, check cancellation before next iteration
             if _is_cancelled():
@@ -805,17 +838,30 @@ async def run_agent_loop(
                 repair_reasons = []
 
             # Never complete a turn with sources/thoughts but no visible answer.
-            # Do not expose the rejected draft; emit a transparent safe fallback.
-            if not "".join(_stream_emitted_parts).strip():
+            # Do not expose the rejected draft; retry once or emit a safe fallback.
+            if _stream_verify_active and not "".join(_stream_emitted_parts).strip():
                 if _empty_generation_reason:
                     empty_fallback = "抱歉，模型本次未能生成完整的最终答案，已自动重试但仍未恢复。请重新发送问题。"
                     empty_reason = _empty_generation_reason
+                elif _verification_retries < 1:
+                    _verification_retries += 1
+                    logger.warning(
+                        "stream verification dropped all units; retrying with strict prompt"
+                    )
+                    _unit_buffer = AtomicUnitBuffer()
+                    _committed_units = []
+                    _stream_emitted_parts = []
+                    _stream_needs_repair = False
+                    _stream_repair_reasons = []
+                    assistant_content = ""
+                    _last_finish_reason = None
+                    continue
                 else:
                     empty_fallback = (
-                        "抱歉，本次生成的内容未能通过来源校验，暂时无法给出可靠回答。"
-                        "请尝试缩小问题范围、补充具体条件，或重新提问。"
+                        "抱歉，知识库中的资料暂无法回答您的问题。"
+                        "建议上传相关资料后重试，或换个问题提问。"
                     )
-                    empty_reason = "empty_after_stream_verification"
+                    empty_reason = "empty_after_stream_verification_retried"
                 _stream_emitted_parts.append(empty_fallback)
                 if not _timing.get("rag_visible_ttft"):
                     _record_elapsed("rag_visible_ttft")
@@ -929,8 +975,10 @@ async def run_agent_loop(
                         timeout=settings.rag_timeout_verification,
                     )
                 except TimeoutError:
-                    logger.warning("verification timed out")
-                    decision = GroundingDecision(action="accept", reasons=["verification_timeout"])
+                    logger.warning("verification timed out — running safe repairs only")
+                    decision = GroundingDecision(
+                        action="deterministic_repair", reasons=["verification_timeout"],
+                    )
             _timing["rag_verification"] = (time.perf_counter() - _verification_started) * 1000
             repair_used = "none"
             repair_reasons = []
