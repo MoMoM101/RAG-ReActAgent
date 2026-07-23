@@ -49,10 +49,12 @@ async def _cleanup_stuck_documents():
 
 
 async def _bootstrap_user() -> None:
-    """Create the first system administrator from explicit bootstrap settings."""
+    """Create the first system administrator, auto-generating credentials if needed."""
     import re
+    import secrets as _secrets
 
     from auth.jwt import hash_password
+    from config import _write_env_key
     from sqlalchemy import select
 
     from models.database import session_scope
@@ -70,9 +72,27 @@ async def _bootstrap_user() -> None:
                 "BOOTSTRAP_ADMIN_USERNAME must be 3-64 characters using "
                 "letters, numbers, '.', '_' or '-'"
             )
-        password_bytes = password.encode("utf-8")
-        if len(password) < 12 or len(password_bytes) > 72:
-            actual = len(password_bytes)
+        if not password:
+            password = _secrets.token_urlsafe(16)
+            env_path = Path(str(settings.model_config.get("env_file", ".env")))
+            _write_env_key(env_path, "BOOTSTRAP_ADMIN_PASSWORD", password)
+            logger.warning(
+                "Auto-generated BOOTSTRAP_ADMIN_PASSWORD and saved to %s. "
+                "Use this password to log in as '%s', then change it immediately.",
+                env_path, username,
+            )
+            print(
+                f"\n{'='*60}\n"
+                f"  FIRST RUN: admin account created\n"
+                f"  Username: {username}\n"
+                f"  Password: {password}\n"
+                f"  Saved to: {env_path}\n"
+                f"  Change this password after logging in!\n"
+                f"{'='*60}\n",
+                flush=True,
+            )
+        elif len(password) < 12 or len(password.encode("utf-8")) > 72:
+            actual = len(password.encode("utf-8"))
             reason = f"got {actual} byte" + ("s" if actual != 1 else "")
             raise RuntimeError(
                 "No users exist. Set BOOTSTRAP_ADMIN_PASSWORD to a unique "
