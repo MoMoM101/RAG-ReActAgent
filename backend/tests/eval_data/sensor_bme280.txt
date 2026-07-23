@@ -1,0 +1,14 @@
+# BME280 Humidity+Pressure+Temperature Sensor (Bosch)
+
+## BME280 Standard
+Humidity: +/-3% RH. Temp: +/-0.5C. Pressure: +/-1.0 hPa
+Range: 0-100% RH, -40C to 85C, 300-1100 hPa
+Interface: I2C (addr 0x76/0x77), SPI (mode 0/3), max 3.4MHz
+Supply: 1.71V-3.6V, 3.6uA avg (weather monitoring mode)
+Package: LGA-8 2.5x2.5x0.93mm. Price: CNY 15.00 (1K+), CNY 11.20 (10K+)
+Integrated IIR filter for pressure stability
+
+## BME280-H (High Accuracy)
+Humidity: +/-2% RH. Temp: +/-0.3C. Pressure: +/-0.6 hPa (pre-screened)
+Same interface, package as standard. Price: CNY 22.00 (1K+), CNY 17.50 (10K+)
+For weather stations, indoor navigation, altitude tracking

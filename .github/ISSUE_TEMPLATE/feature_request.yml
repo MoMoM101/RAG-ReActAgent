@@ -1,0 +1,42 @@
+name: 功能建议
+description: 提议新的能力、改进或使用场景
+title: "[建议] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先说明要解决的问题，再描述建议方案。不要在建议中提交私有文档、密钥或未公开系统信息。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用问题
+      description: 当前遇到了什么问题，影响哪些使用者？
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 建议方案
+      description: 希望系统如何工作？请描述输入、行为和预期输出。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 已考虑的替代方案
+      description: 是否已有临时方案，为什么仍需要改进？
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响范围
+      description: 是否影响配置、数据库、API、部署、安全、性能或兼容性？
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 提交确认
+      options:
+        - label: 我已经搜索过现有 Issue 和项目文档。
+          required: true
+        - label: 内容不包含密钥、个人信息或真实业务数据。
+          required: true

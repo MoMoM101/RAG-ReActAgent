@@ -1,0 +1,62 @@
+name: Release Gate
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  grounded-answer-release-gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Validate canonical grounded-answer evaluation
+        run: >-
+          python release_gate.py
+          --report tests/grounded_answer_eval_final_full_rescored.json
+
+  docker-e2e-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: docker-e2e-acceptance
+      cancel-in-progress: false
+    env:
+      CI: "true"
+      E2E_ADMIN_USERNAME: ${{ vars.E2E_ADMIN_USERNAME || 'admin' }}
+      E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+      E2E_JWT_SECRET: ${{ secrets.E2E_JWT_SECRET }}
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'openai' }}
+      LLM_BASE_URL: ${{ vars.LLM_BASE_URL || 'https://api.openai.com/v1' }}
+      LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o' }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      EMBEDDING_PROVIDER: ${{ vars.EMBEDDING_PROVIDER || 'openai' }}
+      EMBEDDING_BASE_URL: ${{ vars.EMBEDDING_BASE_URL || 'https://api.openai.com/v1' }}
+      EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'text-embedding-3-small' }}
+      EMBEDDING_API_KEY: ${{ secrets.EMBEDDING_API_KEY }}
+      SECRET_KEY: ${{ secrets.E2E_SECRET_KEY || secrets.SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Docker E2E acceptance
+        shell: pwsh
+        run: ./scripts/docker_e2e_acceptance.ps1 -Clean
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-e2e-report
+          path: artifacts/docker-e2e/*/
+          if-no-files-found: error

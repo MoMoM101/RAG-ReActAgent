@@ -1,0 +1,18 @@
+# FastPay Gateway API v1.5
+
+## POST /api/v1/transactions
+merchant_id, amount(cents), currency(CNY/USD/EUR), callback_url, ttl(1800s)
+Response: txn_id(36-char), qr_code, status(NEW/PAID/EXPIRED/CLOSED)
+Error: Txn_1001 param missing, Txn_1002 merchant not found
+Error: Txn_1003 <1 CNY or >2M CNY, Txn_1004 duplicate, Txn_5001 system error
+
+## POST /api/v1/refunds
+txn_id, amount(cents, <=txn), reason(max 1000), notify_url
+Response: refund_txn_id, status(PENDING/SUCCESS/FAILED)
+Error: Ref_2001 txn not found, Ref_2002 txn not PAID
+Error: Ref_2003 over amount, Ref_2004 credit insufficient
+
+## Callback
+Events: transaction.paid, transaction.closed, refund.success, refund.failed
+Sig: SHA256-RSA(merchant_private_key, body)
+Retry: 1m/5m/15m/1h/4h x5. IP: 192.0.2.0/24, 198.51.100.128/25. Max: 2M CNY

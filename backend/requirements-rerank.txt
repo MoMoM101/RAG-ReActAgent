@@ -1,0 +1,5 @@
+# 安装重排序可选依赖 (需 torch):
+# pip install -r requirements-rerank.txt
+
+sentence-transformers>=3.0
+torch>=2.0

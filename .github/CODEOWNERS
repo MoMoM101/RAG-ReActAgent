@@ -1,0 +1,13 @@
+# Default maintainer
+* @MoMoM101
+
+# Security, authentication, deployment and release paths
+/SECURITY.md @MoMoM101
+/backend/api/auth.py @MoMoM101
+/backend/auth/ @MoMoM101
+/backend/security.py @MoMoM101
+/backend/models/ @MoMoM101
+/backend/alembic/ @MoMoM101
+/.github/workflows/ @MoMoM101
+/docker-compose*.yml @MoMoM101
+/scripts/docker_e2e_acceptance.ps1 @MoMoM101

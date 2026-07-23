@@ -1,0 +1,324 @@
+{
+  "timestamp": "2026-07-08T20:39:12.863362",
+  "config": {
+    "embedding_provider": "qwen",
+    "embedding_model": "text-embedding-v4",
+    "chunk_size": 384,
+    "chunk_overlap": 50,
+    "rerank_enabled": true
+  },
+  "num_queries": 29,
+  "aggregate_no_rerank": {
+    "precision": {
+      "3": 0.7931034482758621,
+      "5": 0.5517241379310345,
+      "10": 0.2827586206896551
+    },
+    "recall": {
+      "3": 1.795977011494253,
+      "5": 2.1091954022988504,
+      "10": 2.132183908045977
+    },
+    "ndcg": {
+      "3": 0.9482758620689655,
+      "5": 0.955245080913812,
+      "10": 0.9647940100963043
+    },
+    "hit": {
+      "3": 1.0,
+      "5": 1.0,
+      "10": 1.0
+    },
+    "mrr": 0.9540229885057472
+  },
+  "aggregate_rerank": {
+    "precision": {
+      "3": 0.7931034482758621,
+      "5": 0.5517241379310345,
+      "10": 0.2827586206896551
+    },
+    "recall": {
+      "3": 1.795977011494253,
+      "5": 2.1091954022988504,
+      "10": 2.132183908045977
+    },
+    "ndcg": {
+      "3": 0.9482758620689655,
+      "5": 0.955245080913812,
+      "10": 0.9647940100963043
+    },
+    "hit": {
+      "3": 1.0,
+      "5": 1.0,
+      "10": 1.0
+    },
+    "mrr": 0.9540229885057472
+  },
+  "avg_latency_ms_no_rerank": 440.7931034482759,
+  "per_query": [
+    {
+      "query": "ERR_40005",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "REF_001",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "Txn_1003",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "refund error code for merchant balance insufficient",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "refund error code when balance insufficient",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "refund error credit insufficient",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "humidity sensor +/-1.0% RH accuracy or better",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "HDC3022 accuracy specifications",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "BME280 pressure sensor accuracy",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "sensor with PTFE membrane for automotive",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "sensor with integrated heater for condensation",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "which sensor has integrated IIR filter",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "I2C address 0x76 sensor",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "NIST traceable humidity sensor",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "72 hours data breach notification requirement",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "immediate breach notification to affected individuals",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "PAN masking first 6 last 4 digits",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "deletion right when consent withdrawn",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "deletion right when purpose achieved retention expired",
+      "category": "long-descriptive",
+      "mrr": 0.3333333333333333,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "right to data portability in machine readable format",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "50 million CNY fine for violation",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "20 million EUR fine 4% of global turnover",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "what authentication methods do payment APIs support",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "what is the maximum payment amount allowed per transaction",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "how to handle a refund when payment is not yet confirmed",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "which sensors can operate at -40C to +125C temperature range",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "refund",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "encryption",
+      "category": "cross-document",
+      "mrr": 0.3333333333333333,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "accuracy",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    }
+  ],
+  "ablation": {
+    "semantic-only": {
+      "precision_k5": 0.5517241379310345,
+      "mrr": 0.9511494252873562,
+      "hit_k5": 1.0,
+      "ndcg_k5": 0.9528546173991014,
+      "avg_latency_ms": 369.7241379310345
+    },
+    "keyword-only": {
+      "precision_k5": 0.42758620689655175,
+      "mrr": 0.903448275862069,
+      "hit_k5": 0.9310344827586207,
+      "ndcg_k5": 0.9098914761115359,
+      "avg_latency_ms": 28.79310344827586
+    },
+    "hybrid-no-rerank": {
+      "precision_k5": 0.5517241379310345,
+      "mrr": 0.9540229885057472,
+      "hit_k5": 1.0,
+      "ndcg_k5": 0.955245080913812,
+      "avg_latency_ms": 440.7931034482759
+    },
+    "hybrid-rerank": {
+      "precision_k5": 0.5517241379310345,
+      "mrr": 0.9540229885057472,
+      "hit_k5": 1.0,
+      "ndcg_k5": 0.955245080913812,
+      "avg_latency_ms": 664.1034482758621
+    }
+  },
+  "metric_version": "legacy",
+  "legacy_note": "Generated with deprecated compute_metrics() using Jaccard text matching. Recall values may exceed 1.0."
+}

@@ -1,0 +1,18 @@
+# StripePay API v2.1
+
+## POST /v2/payments
+amount(cents), currency(ISO 4217), payment_method(card/alipay/wechat)
+Response: payment_id(32-char hex), status(PENDING/CONFIRMED/FAILED/REFUNDED)
+Error: PAY_001 missing amount, PAY_002 invalid currency, PAY_003 > 500K CNY limit
+Error: PAY_429 rate limit 200/min, PAY_500 gateway error
+
+## POST /v2/refunds
+payment_id(required), amount(cents,optional=full), reason(max 500)
+Response: refund_id, status(PENDING/SUCCESS/REJECTED)
+Error: REF_001 payment not found, REF_002 amount exceeds payment
+Error: REF_003 not CONFIRMED, REF_004 merchant balance insufficient
+
+## Webhook
+Events: payment.confirmed, payment.failed, refund.completed
+Sig: StripePay-Sig = HMAC-SHA256(key, timestamp+body)
+Retry: 30s/2m/10m/30m/2h x5. IP: 198.51.100.0/24. Max: 500K CNY

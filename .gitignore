@@ -1,0 +1,73 @@
+# Local tool data
+.codegraph/
+.superpowers/
+.claude/
+.eval-tmp/
+.playwright-mcp/
+.local-docs/
+
+# Environment
+.env
+.venv/
+.python-runtime/
+.uv-cache/
+.mypy_cache/
+.ruff_cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Runtime data and credentials
+data/
+backend/data/
+uploads/
+backend/uploads/
+backups/
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Benchmark fixtures (generated, large files)
+fixtures_benchmark/
+artifacts/
+
+# 自动生成的评测报告，只保留经过审查的发布快照
+backend/tests/grounded_answer_eval_*.json
+!backend/tests/grounded_answer_eval_final_full_rescored.json
+backend/tests/evaluation_results*.json
+!backend/tests/evaluation_results_complex_v2.json
+backend/tests/baselines/dependency_snapshot.txt
+backend/tests/baselines/release_9_1_manifest.json
+backend/tests/baselines/rag_dataset_manifest.json
+
+# Node
+node_modules/
+dist/
+dist-ssr
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Docker
+docker-compose.override.yml

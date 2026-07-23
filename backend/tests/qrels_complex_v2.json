@@ -1,0 +1,246 @@
+{
+  "name": "rag-agent-complex-disambiguation-v2",
+  "version": "2.0",
+  "document_keys": {
+    "api_paygate.txt": "api-paygate",
+    "api_stripepay.txt": "api-stripepay",
+    "api_fastpay.txt": "api-fastpay",
+    "sensor_sht4x.txt": "sensor-sht4x",
+    "sensor_hdc3x.txt": "sensor-hdc3x",
+    "sensor_bme280.txt": "sensor-bme280",
+    "compliance_gdpr.txt": "compliance-gdpr",
+    "compliance_pipl.txt": "compliance-pipl",
+    "compliance_pci_dss.txt": "compliance-pci-dss"
+  },
+  "queries": [
+    {
+      "query_id": "exact-001",
+      "query": "ERR_40005",
+      "relevant": [{"document_key": "api-paygate", "section_key": "post--orders--id--refund", "grade": 3}],
+      "expected_answer_facts": ["ERR_40005", "status not PAID"]
+    },
+    {
+      "query_id": "exact-002",
+      "query": "REF_001",
+      "relevant": [{"document_key": "api-stripepay", "section_key": "post--v2-refunds", "grade": 3}],
+      "expected_answer_facts": ["REF_001", "payment not found"]
+    },
+    {
+      "query_id": "exact-003",
+      "query": "Txn_1003",
+      "relevant": [{"document_key": "api-fastpay", "section_key": "post--api-v1-transactions", "grade": 3}],
+      "expected_answer_facts": ["Txn_1003", "2M CNY"]
+    },
+    {
+      "query_id": "payment-ambiguous-001",
+      "query": "refund error code for merchant balance insufficient",
+      "relevant": [
+        {"document_key": "api-stripepay", "section_key": "post--v2-refunds", "grade": 3},
+        {"document_key": "api-paygate", "section_key": "post--orders--id--refund", "grade": 2}
+      ],
+      "expected_answer_facts": ["REF_004", "ERR_40201"]
+    },
+    {
+      "query_id": "payment-ambiguous-002",
+      "query": "refund error code when balance insufficient",
+      "relevant": [
+        {"document_key": "api-stripepay", "section_key": "post--v2-refunds", "grade": 3},
+        {"document_key": "api-paygate", "section_key": "post--orders--id--refund", "grade": 2}
+      ],
+      "expected_answer_facts": ["REF_004", "ERR_40201"]
+    },
+    {
+      "query_id": "payment-ambiguous-003",
+      "query": "refund error credit insufficient",
+      "relevant": [{"document_key": "api-fastpay", "section_key": "post--api-v1-refunds", "grade": 3}],
+      "expected_answer_facts": ["Ref_2004", "credit insufficient"]
+    },
+    {
+      "query_id": "sensor-constraint-001",
+      "query": "humidity sensor +/-1.0% RH accuracy or better",
+      "relevant": [
+        {"document_key": "sensor-sht4x", "section_key": "sht45", "grade": 3},
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3021", "grade": 3},
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3022", "grade": 3}
+      ],
+      "expected_answer_facts": ["SHT45", "HDC3021", "HDC3022"]
+    },
+    {
+      "query_id": "sensor-exact-001",
+      "query": "HDC3022 accuracy specifications",
+      "relevant": [{"document_key": "sensor-hdc3x", "section_key": "hdc3022", "grade": 3}],
+      "expected_answer_facts": ["HDC3022", "+/-0.8% RH"]
+    },
+    {
+      "query_id": "sensor-exact-002",
+      "query": "BME280 pressure sensor accuracy",
+      "relevant": [
+        {"document_key": "sensor-bme280", "section_key": "bme280-standard", "grade": 3},
+        {"document_key": "sensor-bme280", "section_key": "bme280-h--high-accuracy", "grade": 2}
+      ],
+      "expected_answer_facts": ["+/-1.0 hPa", "+/-0.6 hPa"]
+    },
+    {
+      "query_id": "sensor-feature-001",
+      "query": "sensor with PTFE membrane for automotive",
+      "relevant": [{"document_key": "sensor-sht4x", "section_key": "sht45", "grade": 3}],
+      "expected_answer_facts": ["SHT45", "PTFE", "AEC-Q100"]
+    },
+    {
+      "query_id": "sensor-feature-002",
+      "query": "sensor with integrated heater for condensation",
+      "relevant": [{"document_key": "sensor-hdc3x", "section_key": "hdc3020", "grade": 3}],
+      "expected_answer_facts": ["HDC3020", "Integrated heater"]
+    },
+    {
+      "query_id": "sensor-feature-003",
+      "query": "which sensor has integrated IIR filter",
+      "relevant": [{"document_key": "sensor-bme280", "section_key": "bme280-standard", "grade": 3}],
+      "expected_answer_facts": ["BME280", "Integrated IIR filter"]
+    },
+    {
+      "query_id": "sensor-feature-004",
+      "query": "I2C address 0x76 sensor",
+      "relevant": [{"document_key": "sensor-bme280", "section_key": "bme280-standard", "grade": 3}],
+      "expected_answer_facts": ["BME280", "0x76"]
+    },
+    {
+      "query_id": "sensor-feature-005",
+      "query": "NIST traceable humidity sensor",
+      "relevant": [
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3021", "grade": 3},
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3022", "grade": 2}
+      ],
+      "expected_answer_facts": ["HDC3021", "HDC3022", "NIST"]
+    },
+    {
+      "query_id": "compliance-exact-001",
+      "query": "72 hours data breach notification requirement",
+      "relevant": [{"document_key": "compliance-gdpr", "section_key": "breach-notification--art-33-34", "grade": 3}],
+      "expected_answer_facts": ["Art.33", "72 hours", "supervisory authority"]
+    },
+    {
+      "query_id": "compliance-exact-002",
+      "query": "immediate breach notification to affected individuals",
+      "relevant": [{"document_key": "compliance-pipl", "section_key": "breach-response--art-57-58", "grade": 3}],
+      "expected_answer_facts": ["Art.57", "immediately notify"]
+    },
+    {
+      "query_id": "compliance-exact-003",
+      "query": "PAN masking first 6 last 4 digits",
+      "relevant": [{"document_key": "compliance-pci-dss", "section_key": "protect-stored-cardholder-data", "grade": 3}],
+      "expected_answer_facts": ["3.3", "first 6", "last 4"]
+    },
+    {
+      "query_id": "compliance-ambiguous-001",
+      "query": "deletion right when consent withdrawn",
+      "relevant": [
+        {"document_key": "compliance-pipl", "section_key": "individual-rights--art-44-48", "grade": 3},
+        {"document_key": "compliance-gdpr", "section_key": "data-subject-rights--art-15-22", "grade": 2}
+      ],
+      "expected_answer_facts": ["Art.47", "Art.17"]
+    },
+    {
+      "query_id": "compliance-exact-004",
+      "query": "deletion right when purpose achieved retention expired",
+      "relevant": [{"document_key": "compliance-pipl", "section_key": "individual-rights--art-44-48", "grade": 3}],
+      "expected_answer_facts": ["Art.47", "purpose achieved", "retention expired"]
+    },
+    {
+      "query_id": "compliance-exact-005",
+      "query": "right to data portability in machine readable format",
+      "relevant": [{"document_key": "compliance-gdpr", "section_key": "data-subject-rights--art-15-22", "grade": 3}],
+      "expected_answer_facts": ["Art.20", "machine-readable"]
+    },
+    {
+      "query_id": "compliance-numeric-001",
+      "query": "50 million CNY fine for violation",
+      "relevant": [{"document_key": "compliance-pipl", "section_key": "breach-response--art-57-58", "grade": 3}],
+      "expected_answer_facts": ["50M CNY", "5%"]
+    },
+    {
+      "query_id": "compliance-numeric-002",
+      "query": "20 million EUR fine 4% of global turnover",
+      "relevant": [{"document_key": "compliance-gdpr", "section_key": "breach-notification--art-33-34", "grade": 3}],
+      "expected_answer_facts": ["20M EUR", "4%"]
+    },
+    {
+      "query_id": "cross-payment-001",
+      "query": "what authentication methods do payment APIs support",
+      "relevant": [
+        {"document_key": "api-paygate", "section_key": "webhook", "grade": 3},
+        {"document_key": "api-stripepay", "section_key": "webhook", "grade": 3},
+        {"document_key": "api-fastpay", "section_key": "callback", "grade": 3}
+      ],
+      "expected_answer_facts": ["HMAC-SHA256", "SHA256-RSA"]
+    },
+    {
+      "query_id": "cross-payment-002",
+      "query": "what is the maximum payment amount allowed per transaction",
+      "relevant": [
+        {"document_key": "api-paygate", "section_key": "post--orders", "grade": 3},
+        {"document_key": "api-paygate", "section_key": "webhook", "grade": 3},
+        {"document_key": "api-stripepay", "section_key": "post--v2-payments", "grade": 3},
+        {"document_key": "api-stripepay", "section_key": "webhook", "grade": 3},
+        {"document_key": "api-fastpay", "section_key": "post--api-v1-transactions", "grade": 3},
+        {"document_key": "api-fastpay", "section_key": "callback", "grade": 3}
+      ],
+      "expected_answer_facts": ["1,000,000 CNY", "500K CNY", "2M CNY"]
+    },
+    {
+      "query_id": "cross-payment-003",
+      "query": "how to handle a refund when payment is not yet confirmed",
+      "relevant": [
+        {"document_key": "api-paygate", "section_key": "post--orders--id--refund", "grade": 3},
+        {"document_key": "api-stripepay", "section_key": "post--v2-refunds", "grade": 3},
+        {"document_key": "api-fastpay", "section_key": "post--api-v1-refunds", "grade": 3}
+      ],
+      "expected_answer_facts": ["ERR_40005", "REF_003", "Ref_2002"]
+    },
+    {
+      "query_id": "cross-sensor-001",
+      "query": "which sensors can operate at -40C to +125C temperature range",
+      "relevant": [
+        {"document_key": "sensor-sht4x", "section_key": "sht40", "grade": 3},
+        {"document_key": "sensor-sht4x", "section_key": "sht41", "grade": 3},
+        {"document_key": "sensor-sht4x", "section_key": "sht45", "grade": 3},
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3020", "grade": 3},
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3021", "grade": 3},
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3022", "grade": 3}
+      ],
+      "expected_answer_facts": ["SHT40", "SHT41", "SHT45", "HDC3020", "HDC3021", "HDC3022"]
+    },
+    {
+      "query_id": "broad-001",
+      "query": "refund",
+      "relevant": [
+        {"document_key": "api-paygate", "section_key": "post--orders--id--refund", "grade": 3},
+        {"document_key": "api-stripepay", "section_key": "post--v2-refunds", "grade": 3},
+        {"document_key": "api-fastpay", "section_key": "post--api-v1-refunds", "grade": 3}
+      ]
+    },
+    {
+      "query_id": "broad-002",
+      "query": "encryption",
+      "relevant": [
+        {"document_key": "compliance-pci-dss", "section_key": "encrypt-transmission--req-4", "grade": 3},
+        {"document_key": "compliance-pci-dss", "section_key": "protect-stored-cardholder-data", "grade": 2}
+      ],
+      "expected_answer_facts": ["strong cryptography", "TLS 1.2+"]
+    },
+    {
+      "query_id": "broad-003",
+      "query": "accuracy",
+      "relevant": [
+        {"document_key": "sensor-sht4x", "section_key": "sht40", "grade": 2},
+        {"document_key": "sensor-sht4x", "section_key": "sht41", "grade": 2},
+        {"document_key": "sensor-sht4x", "section_key": "sht45", "grade": 2},
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3020", "grade": 2},
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3021", "grade": 2},
+        {"document_key": "sensor-hdc3x", "section_key": "hdc3022", "grade": 2},
+        {"document_key": "sensor-bme280", "section_key": "bme280-standard", "grade": 2},
+        {"document_key": "sensor-bme280", "section_key": "bme280-h--high-accuracy", "grade": 2}
+      ]
+    }
+  ]
+}

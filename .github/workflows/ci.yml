@@ -1,0 +1,222 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan current files and Git history
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  backend-static:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Ruff
+        run: ruff check . --config ../pyproject.toml
+      - name: Mypy
+        run: python -m mypy . --config-file ../pyproject.toml
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ -v -m "not docker" \
+            --cov=. \
+            --cov-config=.coveragerc \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=60
+
+  security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run security archive tests
+        run: pytest tests/api/test_backup_security.py -v
+
+  frontend-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Build (includes TypeScript check)
+        run: npm run build
+      - name: Run tests
+        run: npm test
+
+  docker-smoke:
+    needs: [backend-static, backend-tests, frontend-quality]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t rag-backend:ci ./backend
+      - name: Smoke test backend
+        run: |
+          docker run -d --name rag-backend-smoke \
+            -e JWT_SECRET=ci-smoke-jwt-secret-at-least-32-characters \
+            -e BOOTSTRAP_ADMIN_USERNAME=admin \
+            -e BOOTSTRAP_ADMIN_PASSWORD=ci-smoke-admin-password \
+            -e ALLOW_REMOTE_ACCESS=true \
+            -e SERVER_HOST=0.0.0.0 \
+            -p 8000:8000 \
+            rag-backend:ci
+          # Wait for startup
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/health; then
+              echo "Backend healthy"
+              break
+            fi
+            sleep 2
+          done
+          # Verify health endpoint
+          curl -sf http://127.0.0.1:8000/api/health
+          # Verify 401 on admin endpoint without token (strict)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/settings)
+          test "$STATUS" = "401" || (echo "Expected 401, got $STATUS" && exit 1)
+          ACCESS_TOKEN=$(curl -sf -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"ci-smoke-admin-password"}' \
+            http://127.0.0.1:8000/api/auth/login | jq -r .access_token)
+          curl -sf -H "Authorization: Bearer $ACCESS_TOKEN" http://127.0.0.1:8000/api/settings
+      - name: Cleanup
+        if: always()
+        run: docker rm -f rag-backend-smoke
+
+  compose-smoke:
+    needs: [backend-static, backend-tests, frontend-quality]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start full compose stack
+        run: |
+          JWT_SECRET=ci-compose-jwt-secret-at-least-32-characters \
+          BOOTSTRAP_ADMIN_USERNAME=admin \
+          BOOTSTRAP_ADMIN_PASSWORD=ci-compose-admin-password \
+          docker compose up -d --build
+      - name: Wait for services
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/health; then
+              echo "Backend healthy"
+              break
+            fi
+            sleep 2
+          done
+      - name: Verify health through frontend proxy
+        run: curl --fail http://127.0.0.1:5173/api/health
+      - name: Verify frontend serves HTML
+        run: curl --fail http://127.0.0.1:5173/
+      - name: Verify auth-required endpoint through proxy
+        run: |
+          ACCESS_TOKEN=$(curl -sf -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"ci-compose-admin-password"}' \
+            http://127.0.0.1:5173/api/auth/login | jq -r .access_token)
+          curl -sf -H "Authorization: Bearer $ACCESS_TOKEN" http://127.0.0.1:5173/api/documents
+      - name: Verify unauthenticated request returns 401
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5173/api/documents)
+          test "$STATUS" = "401"
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
+
+  docker-push:
+    needs:
+      - secret-scan
+      - backend-static
+      - backend-tests
+      - security
+      - frontend-quality
+      - docker-smoke
+      - compose-smoke
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/backend:latest
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/frontend:latest

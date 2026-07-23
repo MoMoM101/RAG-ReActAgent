@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 私下报告安全漏洞
+    url: https://github.com/MoMoM101/RAG-ReActAgent/security/advisories/new
+    about: 请通过 GitHub Security Advisory 报告漏洞，不要创建公开 Issue。

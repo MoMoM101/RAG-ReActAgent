@@ -1,0 +1,7 @@
+# 安装 OCR 可选依赖:
+# pip install -r requirements-ocr.txt
+# paddlepaddle 需根据 CUDA 版本选择，详见:
+# https://www.paddlepaddle.org.cn/install/quick
+
+paddlepaddle>=3.0.0
+paddleocr>=2.9

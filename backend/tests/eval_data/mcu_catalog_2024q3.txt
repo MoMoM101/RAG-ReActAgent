@@ -1,0 +1,48 @@
+# Industrial MCU Selection Guide 2024Q3
+
+## MCU-STM32H743VI
+Architecture: ARM Cortex-M7 @ 480MHz
+Flash: 2MB, RAM: 1MB
+Interfaces: 6xUART, 4xSPI, 3xI2C, 2xCAN FD, 1xUSB OTG, 1xETH
+ADC: 3x12-bit 5MSPS, DAC: 2x12-bit
+Operating Voltage: 1.71V-3.6V, Temperature Range: -40C to 85C
+Package: LQFP-100, Dimensions: 14x14mm
+Price: CNY 68.50 (1K+), CNY 52.30 (10K+)
+Stock: 125,000 units, Lead Time: in stock
+Applications: industrial control, motor drive, PLC
+
+## MCU-STM32G474RE
+Architecture: ARM Cortex-M4F @ 170MHz
+Flash: 512KB, RAM: 128KB
+Interfaces: 3xUART, 2xSPI, 2xI2C, 1xCAN, 2xUSB
+ADC: 5x12-bit 4MSPS, includes 4 high-speed comparators
+HRTIM: 12-channel high-resolution timer(184ps resolution)
+Operating Voltage: 1.71V-3.6V, Temperature Range: -40C to 125C
+Package: LQFP-64, Dimensions: 10x10mm
+Price: CNY 28.90 (1K+), CNY 21.60 (10K+)
+Stock: 380,000 units, Lead Time: in stock
+Applications: digital power supply, inverter, lighting control
+
+## MCU-R7FA6M5BH3CFC (Renesas)
+Architecture: ARM Cortex-M33 @ 200MHz, TrustZone security extension
+Flash: 2MB (dual-bank), RAM: 512KB (incl. 64KB ECC)
+Interfaces: 3xUART, 2xSPI, 1xI2C, 2xCAN FD, 1xUSB FS, 1xQSPI, 1xSDHI
+ADC: 2x12-bit + 1x16-bit Sigma-Delta, built-in temperature sensor
+Crypto: AES-256, SHA-256, TRNG, secure boot
+Operating Voltage: 2.7V-3.6V, Temperature Range: -40C to 105C
+Package: LQFP-100, Dimensions: 14x14mm
+Price: CNY 45.00 (1K+), CNY 36.80 (10K+)
+Stock: 42,000 units, Lead Time: 8 weeks
+Applications: IoT gateway, smart meter, access control
+
+## MCU-ESP32-S3R8
+Architecture: Xtensa LX7 dual-core @ 240MHz, built-in AI accelerator
+Flash: 16MB (Octal SPI), RAM: 512KB SRAM + 8MB PSRAM
+Wireless: WiFi 4 (802.11 b/g/n 2.4GHz), BLE 5.0 + Mesh
+Interfaces: 3xUART, 2xSPI, 2xI2C, 1xUSB OTG, 45xGPIO
+ADC: 2x12-bit SAR, touch sensors x14
+Operating Voltage: 3.0V-3.6V, Temperature Range: -40C to 85C
+Package: QFN-56, Dimensions: 7x7mm
+Price: CNY 18.50 (1K+), CNY 14.20 (10K+)
+Stock: 890,000 units, Lead Time: in stock
+Applications: smart home, voice assistant, image recognition(built-in CNN accelerator)

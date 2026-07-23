@@ -1,0 +1,70 @@
+name: 缺陷报告
+description: 报告可以稳定复现的功能或部署问题
+title: "[缺陷] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。安全漏洞、认证绕过、密钥泄露或未授权数据访问请使用仓库 Security Advisory 私下报告，不要填写公开 Issue。
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 使用的版本、标签或提交哈希。
+      placeholder: "例如：v0.1.0-beta 或 main@abcdef0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: 部署方式
+      options:
+        - Docker Compose
+        - Windows 本地启动
+        - Linux 本地启动
+        - macOS 本地启动
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么，预期结果是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 启动……
+        2. 打开……
+        3. 执行……
+        4. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 请填写 Python、Node.js、Docker、浏览器和操作系统版本。不要粘贴完整 `.env`。
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: 已脱敏日志
+      description: 删除 API Key、密码、Token、Cookie、文档内容、用户名和本机路径后再提交。
+      render: text
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 提交确认
+      options:
+        - label: 我已经搜索过现有 Issue。
+          required: true
+        - label: 内容不包含密钥、密码、Token、个人信息或真实业务数据。
+          required: true
+        - label: 这不是需要私下报告的安全漏洞。
+          required: true

@@ -1,0 +1,7 @@
+pytest>=9.0
+pytest-asyncio>=1.0
+pytest-cov>=6.0
+mypy>=1.15
+ruff>=0.10
+httpx>=0.28
+PyYAML>=6.0

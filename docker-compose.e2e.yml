@@ -1,0 +1,30 @@
+services:
+  backend:
+    ports:
+      - "127.0.0.1:${E2E_BACKEND_PORT:-18000}:8000"
+    environment:
+      JWT_SECRET: ${E2E_JWT_SECRET:?E2E_JWT_SECRET is required}
+      BOOTSTRAP_ADMIN_USERNAME: ${E2E_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${E2E_ADMIN_PASSWORD:?E2E_ADMIN_PASSWORD is required}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 10s
+
+  frontend:
+    ports:
+      - "127.0.0.1:${E2E_FRONTEND_PORT:-15173}:5173"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 10s

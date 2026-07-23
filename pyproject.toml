@@ -1,0 +1,28 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 130
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+ignore = ["E402", "B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent", "api", "config", "embedding", "llm", "memory", "models", "rag", "reranker", "textdb", "utils", "vectordb"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+disable_error_code = ["override", "no-any-return", "annotation-unchecked"]
+exclude = [".venv/", "__pycache__/", "node_modules/"]

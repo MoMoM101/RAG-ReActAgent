@@ -1,0 +1,340 @@
+{
+  "timestamp": "2026-07-08T22:00:52.364119",
+  "config": {
+    "embedding_provider": "qwen",
+    "embedding_model": "text-embedding-v4",
+    "chunk_size": 200,
+    "chunk_overlap": 40,
+    "rerank_enabled": true
+  },
+  "num_queries": 31,
+  "aggregate_no_rerank": {
+    "precision": {
+      "3": 0.6129032258064516,
+      "5": 0.45161290322580644,
+      "10": 0.24193548387096775
+    },
+    "recall": {
+      "3": 1.5188172043010753,
+      "5": 1.814516129032258,
+      "10": 1.9301075268817205
+    },
+    "ndcg": {
+      "3": 0.8390141155911464,
+      "5": 0.8837929907486625,
+      "10": 0.9078624988250443
+    },
+    "hit": {
+      "3": 0.967741935483871,
+      "5": 0.967741935483871,
+      "10": 0.967741935483871
+    },
+    "mrr": 0.9193548387096774
+  },
+  "aggregate_rerank": {
+    "precision": {
+      "3": 0.6129032258064516,
+      "5": 0.45161290322580644,
+      "10": 0.24193548387096775
+    },
+    "recall": {
+      "3": 1.5188172043010753,
+      "5": 1.814516129032258,
+      "10": 1.9301075268817205
+    },
+    "ndcg": {
+      "3": 0.8390141155911464,
+      "5": 0.8837929907486625,
+      "10": 0.9078624988250443
+    },
+    "hit": {
+      "3": 0.967741935483871,
+      "5": 0.967741935483871,
+      "10": 0.967741935483871
+    },
+    "mrr": 0.9193548387096774
+  },
+  "avg_latency_ms_no_rerank": 505.7096774193548,
+  "per_query": [
+    {
+      "query": "Python 机器学习用什么框架",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "数据预处理有哪些方法",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "什么是深度学习",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "模型评估用什么指标",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "全球气温上升了多少度",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "大气中二氧化碳浓度是多少",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "太阳能和风能的增长情况",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "意面 Carbonara 怎么做",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "希腊沙拉需要什么食材",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "西班牙海鲜饭怎么烹饪",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "深度学习",
+      "category": "short-keyword",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "Carbonara",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "可再生能源",
+      "category": "short-keyword",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "我想要做一个基于神经网络的图像识别项目，需要用什么框架和工具来训练模型",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "如果我想在家里做一顿传统的地中海风味的完整晚餐，包括前菜和主菜，有什么推荐的菜谱和做法",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "关于如何减缓全球变暖的趋势，国际社会和各國政府都采取了哪些重要措施和减排协议",
+      "category": "long-descriptive",
+      "mrr": 0.5,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "ROC-AUC",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "Bomba 圆粒米",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "paellera",
+      "category": "ambiguous-broad",
+      "mrr": 0.5,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "Python 有哪些常用的框架和开发库",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 1.0,
+      "hit_k5": 1
+    },
+    {
+      "query": "如何用 Python 把一个训练好的机器学习模型部署为在线 API 服务",
+      "category": "cross-document",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 1.0,
+      "hit_k5": 1
+    },
+    {
+      "query": "420 ppm",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "1.1°C 温度上升",
+      "category": "ambiguous-broad",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "深度神经网络的常见架构和训练方法",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "意大利培根蛋奶面的正宗做法是什么",
+      "category": "natural-question",
+      "mrr": 1.0,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "Python TensorFlow 训练用什么 GPU 加速",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "FastAPI 和 Django 有什么不同，各自适合什么场景",
+      "category": "long-descriptive",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.8,
+      "hit_k5": 1
+    },
+    {
+      "query": "不用奶油的意面做法有哪些",
+      "category": "negation-contrast",
+      "mrr": 1.0,
+      "precision_k3": 0.6666666666666666,
+      "precision_k5": 0.4,
+      "hit_k5": 1
+    },
+    {
+      "query": "不涉及深度学习的传统机器学习方法有哪些",
+      "category": "negation-contrast",
+      "mrr": 1.0,
+      "precision_k3": 1.0,
+      "precision_k5": 0.6,
+      "hit_k5": 1
+    },
+    {
+      "query": "怎么做",
+      "category": "short-keyword",
+      "mrr": 0.5,
+      "precision_k3": 0.3333333333333333,
+      "precision_k5": 0.2,
+      "hit_k5": 1
+    },
+    {
+      "query": "有哪些方法",
+      "category": "short-keyword",
+      "mrr": 0.0,
+      "precision_k3": 0.0,
+      "precision_k5": 0.0,
+      "hit_k5": 0
+    }
+  ],
+  "ablation": {
+    "semantic-only": {
+      "precision_k5": 0.45806451612903226,
+      "mrr": 0.9193548387096774,
+      "hit_k5": 0.967741935483871,
+      "ndcg_k5": 0.8964370115868089,
+      "avg_latency_ms": 372.741935483871
+    },
+    "keyword-only": {
+      "precision_k5": 0.3419354838709677,
+      "mrr": 0.8198924731182796,
+      "hit_k5": 0.8709677419354839,
+      "ndcg_k5": 0.8021800548584497,
+      "avg_latency_ms": 59.67741935483871
+    },
+    "hybrid-no-rerank": {
+      "precision_k5": 0.45161290322580644,
+      "mrr": 0.9193548387096774,
+      "hit_k5": 0.967741935483871,
+      "ndcg_k5": 0.8837929907486625,
+      "avg_latency_ms": 505.7096774193548
+    },
+    "hybrid-rerank": {
+      "precision_k5": 0.45161290322580644,
+      "mrr": 0.9193548387096774,
+      "hit_k5": 0.967741935483871,
+      "ndcg_k5": 0.8837929907486625,
+      "avg_latency_ms": 879.9354838709677
+    }
+  },
+  "metric_version": "legacy",
+  "legacy_note": "Generated with deprecated compute_metrics() using Jaccard text matching. Recall values may exceed 1.0."
+}

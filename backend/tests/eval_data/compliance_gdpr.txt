@@ -1,0 +1,15 @@
+# GDPR Compliance (EU 2016/679)
+
+## Lawful Basis (Art.6-9)
+Art.6: consent, contract, legal obligation, vital interests, public interest, legitimate interests
+Art.7: consent must be freely given, specific, informed, unambiguous; withdrawable anytime
+Art.9: sensitive data (racial, political, biometric, health, sexual orientation) requires explicit consent
+
+## Data Subject Rights (Art.15-22)
+Art.15: right of access to personal data. Art.17: right to erasure (be forgotten)
+Art.20: right to data portability in structured machine-readable format
+
+## Breach Notification (Art.33-34)
+Art.33: notify supervisory authority within 72 hours of awareness
+Art.34: notify data subjects without undue delay if high risk to rights/freedoms
+Fines: up to 20M EUR or 4% of global annual turnover (whichever higher)

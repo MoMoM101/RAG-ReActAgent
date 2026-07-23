@@ -1,0 +1,41 @@
+# Cardiovascular Drug Prescribing Reference
+
+## Atorvastatin Calcium
+Brand: Lipitor
+Class: HMG-CoA reductase inhibitor (statin)
+Strengths: 10mg/tab, 20mg/tab, 40mg/tab
+Dosing: oral, start 10mg QD, max 80mg QD
+Contraindications: active liver disease, Pregnancy Category X, lactation
+ADR: myalgia (incidence 3-5%), ALT elevation (>3xULN requires discontinuation),
+  rhabdomyolysis rare (<0.1%)
+Monitoring: LFT (baseline+4wks), CK (if muscle symptoms), LDL-C (4-12wks follow-up)
+Drug Interactions: CYP3A4 substrate - clarithromycin/itraconazole co-administration
+  increases myopathy risk
+Storage: 20-25C, protect from light, sealed container
+
+## Clopidogrel
+Brand: Plavix
+Class: P2Y12 receptor antagonist (antiplatelet)
+Strengths: 75mg/tab, 300mg/tab (loading dose)
+Dosing: loading dose 300mg PO once, maintenance 75mg QD
+Contraindications: active bleeding (peptic ulcer, intracranial hemorrhage),
+  severe hepatic impairment (Child-Pugh Class C)
+ADR: bleeding (incidence 2-3%), TTP (extremely rare), agranulocytosis (<0.1%)
+Monitoring: platelet count (if bleeding symptoms), CYP2C19 genotype (poor responders)
+Drug Interactions: omeprazole reduces antiplatelet activity (avoid co-administration),
+  warfarin increases bleeding risk
+Storage: 15-30C, protect from moisture
+
+## Nifedipine GITS
+Brand: Adalat
+Class: dihydropyridine calcium channel blocker (CCB)
+Strengths: 30mg/tab, 60mg/tab
+Dosing: start 30mg QD, max 90mg QD, swallow whole do not crush or split
+Contraindications: cardiogenic shock, unstable angina, severe aortic stenosis,
+  first trimester pregnancy
+ADR: headache/facial flushing (10-15%), ankle edema (5-8%), hypotension (2%),
+  gingival hyperplasia (long-term use)
+Monitoring: blood pressure (each visit), heart rate, lower extremity edema
+Drug Interactions: strong CYP3A4 inhibitors (ketoconazole) increase plasma concentration,
+  grapefruit juice is contraindicated
+Storage: below 25C, protect from light

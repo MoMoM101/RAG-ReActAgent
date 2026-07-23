@@ -1,0 +1,26 @@
+{
+  "documents": [
+    {
+      "path": "docker_acceptance_product.txt",
+      "sha256": "66bebee9ec8fa3e3e3022166343718535e1b4bd342dc77739ecbb71306004975",
+      "expected_chunks": 1
+    },
+    {
+      "path": "docker_acceptance_policy.md",
+      "sha256": "64042cd4e4ee930bd111369faf55e2d7f17e4d0f359449911336cf1e83f8ab11",
+      "expected_chunks": 1
+    }
+  ],
+  "questions": [
+    {
+      "question": "根据知识库，星河知识平台的标准工单响应时限和紧急工单首次响应时限分别是多少？请引用来源。",
+      "expected_terms": ["四小时", "三十分钟"],
+      "expected_source": "docker_acceptance_product.txt"
+    },
+    {
+      "question": "企业年度订阅多少天内可以全额退款？请引用来源。",
+      "expected_terms": ["七个自然日"],
+      "expected_source": "docker_acceptance_policy.md"
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.0
+    # Qdrant ports are NOT exposed to the host by default.
+    # To debug, uncomment the ports section and restart:
+    # ports:
+    #   - "127.0.0.1:6333:6333"
+    #   - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - QDRANT_HOST=qdrant
+      # QdrantVectorDB constructs QdrantClient(..., port=...), which expects
+      # the HTTP API port. Port 6334 is gRPC and makes dependency checks and
+      # indexing fail in Docker.
+      - QDRANT_PORT=6333
+      - DATABASE_URL=sqlite+aiosqlite:///./data/rag_agent.db
+      - QDRANT_PATH=./data/qdrant
+      - UPLOAD_DIR=./data/uploads
+      - DOCUMENT_MAX_UPLOAD_MB=${DOCUMENT_MAX_UPLOAD_MB:-200}
+      - DOCUMENT_BATCH_MAX_FILES=${DOCUMENT_BATCH_MAX_FILES:-50}
+      - DOCUMENT_BATCH_MAX_TOTAL_MB=${DOCUMENT_BATCH_MAX_TOTAL_MB:-1024}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      # The base image installs requirements.txt only; OCR dependencies live in
+      # requirements-ocr.txt. Keep the optional component off unless a custom
+      # OCR-capable image explicitly opts in via DOCKER_OCR_ENABLED.
+      - OCR_ENABLED=${DOCKER_OCR_ENABLED:-false}
+      # Forward the key used to encrypt ENC: credentials in the env file.
+      - SECRET_KEY=${SECRET_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      - JWT_REFRESH_TOKEN_EXPIRE_DAYS=${JWT_REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-false}
+      - BOOTSTRAP_ADMIN_USERNAME=${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-}
+      - ALLOW_REMOTE_ACCESS=${ALLOW_REMOTE_ACCESS:-false}
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      - qdrant
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "127.0.0.1:5173:5173"
+    environment:
+      - VITE_API_PROXY_TARGET=http://backend:8000
+    depends_on:
+      - backend
+
+volumes:
+  qdrant_data:
+  backend_data:
