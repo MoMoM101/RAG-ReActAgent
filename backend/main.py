@@ -51,7 +51,6 @@ async def _cleanup_stuck_documents():
 async def _bootstrap_user() -> None:
     """Create the first system administrator, auto-generating credentials if needed."""
     import re
-    import secrets as _secrets
 
     from auth.jwt import hash_password
     from config import _write_env_key
@@ -73,11 +72,11 @@ async def _bootstrap_user() -> None:
                 "letters, numbers, '.', '_' or '-'"
             )
         if not password:
-            password = _secrets.token_urlsafe(16)
+            password = "RAGAgent2026!"
             env_path = Path(str(settings.model_config.get("env_file", ".env")))
             _write_env_key(env_path, "BOOTSTRAP_ADMIN_PASSWORD", password)
             logger.warning(
-                "Auto-generated BOOTSTRAP_ADMIN_PASSWORD and saved to %s. "
+                "Default BOOTSTRAP_ADMIN_PASSWORD saved to %s. "
                 "Use this password to log in as '%s', then change it immediately.",
                 env_path, username,
             )
