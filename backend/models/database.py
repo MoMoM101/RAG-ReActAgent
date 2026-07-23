@@ -94,7 +94,15 @@ def _head_revision() -> str:
 
 def _auto_migrate_enabled() -> bool:
     import os as _os
-    return _os.getenv("AUTO_MIGRATE", "").lower() in ("1", "true", "yes")
+    env_val = _os.getenv("AUTO_MIGRATE", "")
+    if not env_val:
+        # pydantic-settings reads .env into the Settings object, not os.environ
+        try:
+            from config import settings
+            env_val = str(getattr(settings, "auto_migrate", "") or "")
+        except Exception:
+            pass
+    return env_val.lower() in ("1", "true", "yes")
 
 
 async def check_revision_gate() -> None:
