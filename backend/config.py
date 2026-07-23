@@ -12,9 +12,10 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o"
     llm_api_key: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
-    # DeepSeek V4 defaults to thinking mode, which can add several seconds
-    # before grounded answers. Keep it off for latency-sensitive RAG; the
-    # option is ignored for providers/models without an explicit V4 toggle.
+    # Enable thinking/reasoning mode. DeepSeek (thinking.type) and Qwen/DashScope
+    # (enable_thinking) are supported. Qwen3 hybrid-thinking models default ON,
+    # so the SDK explicitly sets enable_thinking=False when disabled here.
+    # Keep off for latency-sensitive RAG; reasoning adds 2-10s before answers.
     llm_thinking_enabled: bool = False
 
     # Embedding

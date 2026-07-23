@@ -37,15 +37,21 @@ class OpenAILLM(BaseLLM):
         self.model = model or settings.llm_model
 
     def _thinking_extra_body(self) -> dict[str, Any] | None:
-        """Return DeepSeek V4's explicit thinking-mode switch when applicable."""
+        """Return provider-specific thinking-mode control when applicable."""
         host = (urlparse(self.base_url).hostname or "").lower()
-        if host != "api.deepseek.com" or not self.model.lower().startswith("deepseek-v4"):
-            return None
-        return {
-            "thinking": {
-                "type": "enabled" if settings.llm_thinking_enabled else "disabled",
-            },
-        }
+        if "deepseek.com" in host:
+            # DeepSeek V3/V4: thinking.type
+            return {
+                "thinking": {
+                    "type": "enabled" if settings.llm_thinking_enabled else "disabled",
+                },
+            }
+        if "aliyuncs.com" in host or "dashscope" in host:
+            # Qwen/DashScope: enable_thinking
+            # Must emit explicitly — Qwen3 hybrid-thinking models default to
+            # thinking ON, consuming reasoning tokens on every request.
+            return {"enable_thinking": settings.llm_thinking_enabled}
+        return None
 
     def _build_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
