@@ -1,6 +1,7 @@
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -47,48 +48,10 @@ async def _cleanup_stuck_documents():
                 logger.warning("stale doc cleaned doc_id=%s filename=%s", doc_id, filename)
 
 
-def _bootstrap_admin_token() -> None:
-    """Generate and persist an admin token on first startup if none is configured."""
-    from pathlib import Path as _Path
-
-    if settings.admin_api_token:
-        return
-
-    env_path = _Path(str(settings.model_config.get("env_file", ".env")))
-    if env_path.exists():
-        content = env_path.read_text(encoding="utf-8")
-        import re as _re
-        m = _re.search(r"^ADMIN_API_TOKEN=(.+)", content, _re.MULTILINE)
-        if m and m.group(1).strip():
-            settings.admin_api_token = m.group(1).strip()
-            return
-
-    from security import generate_admin_token
-    token = generate_admin_token()
-    settings.admin_api_token = token
-
-    # Write token to .env file
-    if env_path.exists():
-        lines = env_path.read_text(encoding="utf-8").splitlines()
-        new_lines = []
-        found = False
-        for line in lines:
-            if line.strip().startswith("ADMIN_API_TOKEN="):
-                new_lines.append(f"ADMIN_API_TOKEN={token}")
-                found = True
-            else:
-                new_lines.append(line)
-        if not found:
-            new_lines.append(f"ADMIN_API_TOKEN={token}")
-        env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-    else:
-        env_path.write_text(f"ADMIN_API_TOKEN={token}\n", encoding="utf-8")
-
-    logger.info("Generated new admin API token (saved to %s)", env_path)
-
-
 async def _bootstrap_user() -> None:
-    """Create a default system_admin user if no users exist."""
+    """Create the first system administrator from explicit bootstrap settings."""
+    import re
+
     from auth.jwt import hash_password
     from sqlalchemy import select
 
@@ -100,19 +63,34 @@ async def _bootstrap_user() -> None:
         if result.scalar_one_or_none():
             return
 
+        username = settings.bootstrap_admin_username.strip()
+        password = settings.bootstrap_admin_password
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{3,64}", username):
+            raise RuntimeError(
+                "BOOTSTRAP_ADMIN_USERNAME must be 3-64 characters using "
+                "letters, numbers, '.', '_' or '-'"
+            )
+        password_bytes = password.encode("utf-8")
+        if len(password) < 12 or len(password_bytes) > 72:
+            actual = len(password_bytes)
+            reason = f"got {actual} byte" + ("s" if actual != 1 else "")
+            raise RuntimeError(
+                "No users exist. Set BOOTSTRAP_ADMIN_PASSWORD to a unique "
+                f"12-72 byte password before first startup ({reason}). "
+                "If you already set it in .env and it appears empty, "
+                "check that the file is in the backend/ directory."
+            )
+
         import uuid as _uuid
         admin_id = str(_uuid.uuid4())
         session.add(User(
             id=admin_id,
-            username="admin",
-            password_hash=hash_password("admin123"),
+            username=username,
+            password_hash=hash_password(password),
             role="system_admin",
         ))
         await session.commit()
-        logger.warning(
-            "Bootstrap admin user created — username='admin', password='admin123'. "
-            "Change immediately!"
-        )
+        logger.info("Bootstrap system administrator created: username=%s", username)
 
 
 @asynccontextmanager
@@ -120,8 +98,8 @@ async def lifespan(app: FastAPI):
     from logging_config import setup_logging
     setup_logging()
 
-    # Bootstrap admin token on first run
-    _bootstrap_admin_token()
+    from auth.jwt import validate_jwt_configuration
+    validate_jwt_configuration()
 
     # Verify database schema revision matches code before any DB access
     await check_revision_gate()
@@ -173,8 +151,10 @@ async def lifespan(app: FastAPI):
     if recovered_docs:
         logger.info("rescheduled %d incomplete documents", recovered_docs)
     # Recover stale background tasks (crashed mid-execution)
-    from worker.tasks import recover_tasks_on_startup
+    import worker.task_handlers  # noqa: F401  # register durable handlers
+    from worker.tasks import get_task_manager, recover_tasks_on_startup
     recovered = await recover_tasks_on_startup()
+    get_task_manager().start_recovery_monitor()
     if recovered:
         logger.info("recovered %d stale background tasks", recovered)
     # Preload reranker model in background
@@ -184,13 +164,21 @@ async def lifespan(app: FastAPI):
     preload_reranker_async()
     from ocr.factory import preload_ocr_async
     preload_ocr_async()
+    from optional_models import monitor_optional_models
+    optional_model_monitor = asyncio.create_task(
+        monitor_optional_models(), name="optional-model-monitor"
+    )
     # 重建用户画像 Qdrant 索引
     from memory.profile import rebuild_index
     await rebuild_index()
-    yield
-    # Shutdown: cancel pending background tasks
-    from worker.tasks import get_task_manager
-    await get_task_manager().shutdown()
+    try:
+        yield
+    finally:
+        optional_model_monitor.cancel()
+        with suppress(asyncio.CancelledError):
+            await optional_model_monitor
+        # Shutdown: cancel pending background tasks
+        await get_task_manager().shutdown()
 
 app = FastAPI(title="RAG Agent", lifespan=lifespan)
 app.state.limiter = limiter
@@ -276,6 +264,7 @@ async def health_dependencies():
         "reranker": "disabled",
         "ocr": "disabled",
     }
+    optional_models: dict[str, dict] = {}
 
     # Check SQLite
     try:
@@ -306,21 +295,26 @@ async def health_dependencies():
     # Reranker status
     try:
         from reranker.factory import get_reranker_status
-        deps["reranker"] = get_reranker_status()["status"]
+        optional_models["reranker"] = get_reranker_status()
+        deps["reranker"] = optional_models["reranker"]["status"]
     except Exception:
         deps["reranker"] = "error"
 
     # OCR status
     try:
         from ocr.factory import get_ocr_status
-        deps["ocr"] = get_ocr_status()["status"]
+        optional_models["ocr"] = get_ocr_status()
+        deps["ocr"] = optional_models["ocr"]["status"]
     except Exception:
         deps["ocr"] = "error"
 
     # Aggregate status
-    error_states = {"error", "failed"}
-    degraded_states = {"missing_api_key", "missing_dependency", "loading"}
-    has_error = any(v in error_states for v in deps.values())
+    # Optional model failures degrade quality/features but never make the core
+    # HTTP service unhealthy. Only required storage dependencies are fatal.
+    has_error = any(deps[name] == "error" for name in ("sqlite", "qdrant"))
+    degraded_states = {
+        "error", "failed", "missing_api_key", "missing_dependency", "downloading", "loading"
+    }
     has_degraded = any(v in degraded_states for v in deps.values()) or has_error
 
     if has_error:
@@ -330,7 +324,12 @@ async def health_dependencies():
     else:
         status = "ok"
 
-    return {"status": status, "dependencies": deps}
+    return {
+        "status": status,
+        "dependencies": deps,
+        "optional_models": optional_models,
+        "core_ready": not has_error,
+    }
 
 
 @app.get("/api/health/tasks")
@@ -389,13 +388,5 @@ if __name__ == "__main__":
     host = settings.server_host
     if settings.allow_remote_access:
         host = "0.0.0.0"
-
-    if settings.admin_api_token:
-        logger.info("Admin API token is configured")
-    else:
-        logger.warning(
-            "ADMIN_API_TOKEN is empty — admin endpoints are unprotected. "
-            "Set ADMIN_API_TOKEN in .env or environment to enable authentication."
-        )
 
     uvicorn.run(app, host=host, port=8000)

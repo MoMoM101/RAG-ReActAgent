@@ -46,6 +46,18 @@ class Settings(BaseSettings):
 
     # LLM context window (0 = auto-detect from JSON mapping or default)
     llm_max_context: int = 0
+    llm_output_token_reserve: int = Field(default=4096, ge=0)
+    llm_reasoning_token_reserve: int = Field(default=0, ge=0)
+    context_safety_tokens: int = Field(default=2048, ge=0)
+    context_tool_result_max_tokens: int = Field(default=800, ge=64)
+    context_summary_max_tokens: int = Field(default=512, ge=128, le=4096)
+    context_summary_max_items: int = Field(default=20, ge=5, le=100)
+    memory_extract_max_tokens: int = Field(default=2048, ge=256, le=8192)
+    memory_extract_debounce_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
+    tokenizer_provider: str = "auto"  # auto | tiktoken | huggingface
+    tokenizer_model: str = ""
+    tokenizer_fallback_safety_factor: float = Field(default=1.15, ge=1.0, le=2.0)
+    llm_stream_usage_enabled: bool = True
 
     # Agent
     max_loop_iterations: int = 10
@@ -86,7 +98,8 @@ class Settings(BaseSettings):
     hf_endpoint: str = ""  # HuggingFace 镜像，国内设 https://hf-mirror.com
     chunk_quality_filter_enabled: bool = True  # 设为 False 对代码/API 文档等场景禁用质量过滤
     chunk_quality_llm_enabled: bool = False  # 启用 LLM 对低质量 chunk 批量判分（会增加搜索延迟）
-    query_rewrite_enabled: bool = False  # 启用多路查询改写，搜索前用 LLM 生成关键词变体并行检索
+    query_rewrite_enabled: bool = True  # 启用多路查询改写，搜索前用 LLM 生成关键词变体并行检索
+    query_rewrite_disambiguation_only: bool = True  # 仅对消歧/短关键词查询改写，节省 LLM 调用
 
     # Grounded answer verification
     grounding_verification_enabled: bool = True
@@ -115,7 +128,7 @@ class Settings(BaseSettings):
     rag_answer_cache_ttl_seconds: int = 300
     rag_answer_cache_max_entries: int = 1000
 
-    # Output budget (Phase 5): max tokens for main generation, 0 = unlimited
+    # Output budget: explicit generation cap; 0 uses llm_output_token_reserve.
     rag_generation_max_tokens: int = 0
     # One bounded recovery call when reasoning consumes the final-answer budget.
     rag_truncation_recovery_enabled: bool = True
@@ -138,9 +151,11 @@ class Settings(BaseSettings):
     web_search_max_results: int = 5
     web_search_proxy: str = ""
 
-    # OCR
-    ocr_enabled: bool = True
+    # OCR (optional; set OCR_ENABLED=true and install requirements-ocr.txt to enable)
+    ocr_enabled: bool = False
     ocr_min_text_length: int = 50
+    optional_model_notice_seconds: float = Field(default=180.0, ge=10.0)
+    optional_model_poll_seconds: float = Field(default=5.0, ge=1.0, le=60.0)
 
     # Ingestion
     ingestion_max_concurrency: int = 3
@@ -158,22 +173,27 @@ class Settings(BaseSettings):
     backup_max_upload_mb: int = 512
     backup_max_extracted_mb: int = 2048
     backup_max_members: int = 10000
+    migration_backup_keep: int = Field(default=5, ge=1, le=50)
 
     # Server
     secret_key: str = "change-me-in-production"
     server_host: str = "127.0.0.1"
     allow_remote_access: bool = False
-    admin_api_token: str = ""
 
-    # JWT
-    jwt_secret: str = ""                           # auto-generated if empty
+    # Authentication
+    jwt_secret: str = ""
     jwt_access_token_expire_minutes: int = 60      # 1 hour
     jwt_refresh_token_expire_days: int = 7         # 7 days
-    legacy_admin_token_enabled: bool = True        # transition period
+    auth_cookie_secure: bool = False
+    bootstrap_admin_username: str = "admin"
+    bootstrap_admin_password: str = ""
 
     model_config = {
         "env_file": str(Path(__file__).resolve().parent / ".env"),
         "env_file_encoding": "utf-8",
+        # Removed settings may remain in an existing local .env during upgrade.
+        # They are ignored rather than re-enabling deprecated behavior.
+        "extra": "ignore",
     }
 
 
@@ -257,6 +277,21 @@ def _init_settings() -> Settings:
         else:
             s.secret_key = secrets.token_urlsafe(32)
             _write_env_key(env_path, "SECRET_KEY", s.secret_key)
+
+    # JWT_SECRET 为空或过短时自动生成 64 位 hex，写入 .env 确保重启后不变
+    import re as _re2
+    if not s.jwt_secret or len(s.jwt_secret.strip()) < 32:
+        if env_path.exists():
+            text = env_path.read_text(encoding="utf-8")
+            m = _re2.search(r"^JWT_SECRET=(.+)", text, _re2.MULTILINE)
+            if m and len(m.group(1).strip()) >= 32:
+                s.jwt_secret = m.group(1).strip()
+            else:
+                s.jwt_secret = secrets.token_hex(32)
+                _write_env_key(env_path, "JWT_SECRET", s.jwt_secret)
+        else:
+            s.jwt_secret = secrets.token_hex(32)
+            _write_env_key(env_path, "JWT_SECRET", s.jwt_secret)
 
     # 解密 API Key
     from utils.crypto import decrypt_if_needed
