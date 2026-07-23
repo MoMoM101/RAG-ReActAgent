@@ -363,24 +363,11 @@ Windows PowerShell 可以使用：
 Copy-Item backend/.env.example backend/.env
 ```
 
-至少配置以下两项：
+`.env.example` 已提供合理默认值：
+- `JWT_SECRET` — 首次启动时自动生成并写入 `.env`
+- `BOOTSTRAP_ADMIN_PASSWORD` — 默认 `RAGAgent2026!`（首次登录后建议修改）
 
-```env
-JWT_SECRET=<固定的至少 32 字符随机值>
-BOOTSTRAP_ADMIN_PASSWORD=RAGAgent2026!
-```
-
-如果需要实际问答，还需要配置：
-
-```env
-LLM_API_KEY=<大模型密钥>
-LLM_BASE_URL=<OpenAI 兼容接口地址>
-LLM_MODEL=<模型名称>
-
-EMBEDDING_API_KEY=<向量模型密钥>
-EMBEDDING_BASE_URL=<OpenAI 兼容接口地址>
-EMBEDDING_MODEL=<向量模型名称>
-```
+LLM 和 Embedding 的 Key 可启动后在设置页面配置，无需提前写入 `.env`。
 
 启动：
 
