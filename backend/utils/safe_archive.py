@@ -5,7 +5,7 @@ import logging
 import os
 import tarfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,23 @@ def validate_tar_members(
                 f"unsupported file type {m.type!r} for member {m.name!r}"
             )
 
-        resolved = os.path.normpath(str(destination / m.name))
+        # Tar member names are POSIX-style, but hostile archives may contain
+        # Windows drive/UNC paths or backslashes. Reject those forms explicitly
+        # so validation behaves identically on Linux, macOS, and Windows.
+        portable_name = m.name.replace("\\", "/")
+        posix_name = PurePosixPath(portable_name)
+        windows_name = PureWindowsPath(m.name)
+        if (
+            posix_name.is_absolute()
+            or windows_name.is_absolute()
+            or bool(windows_name.drive)
+            or ".." in posix_name.parts
+        ):
+            raise ArchiveSecurityError(
+                f"member {m.name!r} escapes destination directory"
+            )
+
+        resolved = os.path.normpath(str(destination / portable_name))
         if not _is_within(destination, resolved):
             raise ArchiveSecurityError(
                 f"member {m.name!r} escapes destination directory"
