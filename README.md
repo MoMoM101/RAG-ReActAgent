@@ -367,7 +367,7 @@ Copy-Item backend/.env.example backend/.env
 
 ```env
 JWT_SECRET=<固定的至少 32 字符随机值>
-BOOTSTRAP_ADMIN_PASSWORD=<首次启动管理员密码>
+BOOTSTRAP_ADMIN_PASSWORD=ChangeMe@2026!
 ```
 
 如果需要实际问答，还需要配置：
@@ -517,10 +517,11 @@ npm run dev
 
 ```env
 BOOTSTRAP_ADMIN_USERNAME=admin
-BOOTSTRAP_ADMIN_PASSWORD=<首次管理员密码>
+BOOTSTRAP_ADMIN_PASSWORD=ChangeMe@2026!
 ```
 
 后续启动不会使用环境变量覆盖数据库中已有用户的密码。
+`ChangeMe@2026!` 是公开的临时初始密码，仅用于首次启动；首次登录后请立即通过登录页旁的“修改密码”入口更换。
 
 ### 登录保持
 
