@@ -21,4 +21,4 @@ duckduckgo_search>=7.0
 jsonschema>=4.20,<5
 PyJWT>=2.9,<3
 bcrypt>=4.2,<5
-alembic>=1.14,<2
+alembic>=1.18.5,<2
