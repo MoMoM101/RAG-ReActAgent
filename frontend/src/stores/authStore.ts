@@ -208,23 +208,22 @@ export const useAuthStore = create<AuthState>((set) => ({
         });
         return;
       }
+      const me = (await response.json()) as MeResponse;
+      set({
+        accessToken,
+        user: {
+          id: me.user_id,
+          username: me.username,
+          role: me.role,
+        },
+        authenticated: true,
+        loading: false,
+      });
     } catch {
       // Backend unreachable — show login form without error flash
       set({ loading: false, authenticated: false, user: null, accessToken: null });
-      return;
     }
 
-    const me = (await response.json()) as MeResponse;
-    set({
-      accessToken,
-      user: {
-        id: me.user_id,
-        username: me.username,
-        role: me.role,
-      },
-      authenticated: true,
-      loading: false,
-    });
   },
 }));
 
