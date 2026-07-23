@@ -430,7 +430,21 @@ python main.py
 5. 输出 Web、设置页和 API 文档地址；
 6. 在退出时关闭子进程。
 
-OCR 和 Reranker 是可选模型，不会阻塞核心网页与 API 启动。首次加载可能继续在后台下载。
+OCR 和 Reranker 默认关闭（`OCR_ENABLED=false` / `RERANK_ENABLED=false`），不下载模型也不阻塞启动。
+
+如需启用，先安装对应依赖，再将配置改为 `true`，然后重启：
+
+```bash
+# OCR（扫描 PDF / 图片中的文字）
+pip install -r backend/requirements-ocr.txt
+# 在 backend/.env 设置 OCR_ENABLED=true
+
+# Reranker（提升搜索精度）
+pip install -r backend/requirements-rerank.txt
+# 在 backend/.env 设置 RERANK_ENABLED=true
+```
+
+启用后首次启动时模型会在后台下载，不影响核心服务就绪。
 
 默认地址：
 
