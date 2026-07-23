@@ -238,7 +238,7 @@ flowchart LR
 主要目录：
 
 ```text
-RAG_Agent/
+RAG-ReActAgent/
 ├── main.py                         统一启动后端和前端
 ├── backend/
 │   ├── main.py                     FastAPI 应用与生命周期
@@ -353,7 +353,7 @@ Docker 部署额外需要：
 
 ```bash
 git clone https://github.com/MoMoM101/RAG-ReActAgent.git
-cd RAG_Agent
+cd RAG-ReActAgent
 cp backend/.env.example backend/.env
 ```
 
