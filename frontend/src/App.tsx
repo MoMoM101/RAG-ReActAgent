@@ -5,7 +5,7 @@ import { ChatPanel } from "./components/chat/ChatPanel";
 import { ToastContainer } from "./components/shared/Toast";
 import { ConfirmProvider } from "./components/shared/ConfirmDialog";
 import { ErrorBoundary } from "./components/shared/ErrorBoundary";
-import { TokenGate } from "./components/auth/TokenGate";
+import { LoginPage } from "./components/auth/LoginPage";
 import { useAuthStore } from "./stores/authStore";
 
 const DocumentList = lazy(() =>
@@ -37,7 +37,14 @@ function RouteFallback() {
 }
 
 export default function App() {
+  const checkAuth = useAuthStore((s) => s.checkAuth);
+  const loading = useAuthStore((s) => s.loading);
+  const authenticated = useAuthStore((s) => s.authenticated);
   const clearToken = useAuthStore((s) => s.clearToken);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   useEffect(() => {
     const saved = localStorage.getItem("rag_agent_theme");
@@ -55,25 +62,37 @@ export default function App() {
     return () => window.removeEventListener("auth:required", handler);
   }, [clearToken]);
 
+  if (loading) {
+    return (
+      <div className="auth-gate-loading">
+        <div className="auth-gate-card">
+          <p>加载中…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return <LoginPage />;
+  }
+
   return (
-    <TokenGate>
-      <ConfirmProvider>
-        <BrowserRouter>
-          <ErrorBoundary>
-            <Suspense fallback={<RouteFallback />}>
-              <Routes>
-                <Route element={<MainLayout />}>
-                  <Route path="/" element={<ChatPanel />} />
-                  <Route path="/documents" element={<DocumentList />} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/memories" element={<MemoryList />} />
-                </Route>
-              </Routes>
-            </Suspense>
-          </ErrorBoundary>
-        </BrowserRouter>
-        <ToastContainer />
-      </ConfirmProvider>
-    </TokenGate>
+    <ConfirmProvider>
+      <BrowserRouter>
+        <ErrorBoundary>
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route element={<MainLayout />}>
+                <Route path="/" element={<ChatPanel />} />
+                <Route path="/documents" element={<DocumentList />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/memories" element={<MemoryList />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
+      </BrowserRouter>
+      <ToastContainer />
+    </ConfirmProvider>
   );
 }

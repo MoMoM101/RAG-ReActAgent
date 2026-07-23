@@ -1,4 +1,9 @@
-import { authHeaders } from "../stores/authStore";
+import {
+  authHeaders,
+  fetchWithAuth,
+  refreshAccessToken,
+  requireAuthentication,
+} from "../stores/authStore";
 
 const BASE_URL = "";
 
@@ -13,10 +18,6 @@ export class ApiError extends Error {
 }
 
 async function parseError(res: Response, method: string, path: string): Promise<never> {
-  if (res.status === 401) {
-    sessionStorage.removeItem("rag_admin_token");
-    window.dispatchEvent(new CustomEvent("auth:required"));
-  }
   let detail = `${method} ${path}: ${res.status}`;
   try {
     const body = JSON.parse(await res.text());
@@ -26,18 +27,16 @@ async function parseError(res: Response, method: string, path: string): Promise<
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: authHeaders(),
-  });
+  const res = await fetchWithAuth(`${BASE_URL}${path}`);
   if (!res.ok) await parseError(res, "GET", path);
   return res.json();
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   const isFormData = body instanceof FormData;
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetchWithAuth(`${BASE_URL}${path}`, {
     method: "POST",
-    headers: authHeaders(isFormData ? {} : { "Content-Type": "application/json" }),
+    headers: isFormData ? {} : { "Content-Type": "application/json" },
     body: isFormData ? body : JSON.stringify(body),
   });
   if (!res.ok) await parseError(res, "POST", path);
@@ -50,7 +49,7 @@ export function apiUpload<T>(
   onProgress?: (percent: number) => void,
   signal?: AbortSignal,
 ): Promise<T> {
-  return new Promise((resolve, reject) => {
+  const attempt = (allowRefresh: boolean): Promise<T> => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const abortRequest = () => xhr.abort();
     const cleanup = () => signal?.removeEventListener("abort", abortRequest);
@@ -63,7 +62,7 @@ export function apiUpload<T>(
         onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
       }
     };
-    xhr.onload = () => {
+    xhr.onload = async () => {
       cleanup();
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
@@ -73,9 +72,15 @@ export function apiUpload<T>(
         }
         return;
       }
+      if (xhr.status === 401 && allowRefresh) {
+        const token = await refreshAccessToken();
+        if (token) {
+          attempt(false).then(resolve, reject);
+          return;
+        }
+      }
       if (xhr.status === 401) {
-        sessionStorage.removeItem("rag_admin_token");
-        window.dispatchEvent(new CustomEvent("auth:required"));
+        requireAuthentication();
       }
       let detail = `POST ${path}: ${xhr.status}`;
       try {
@@ -100,21 +105,21 @@ export function apiUpload<T>(
     signal?.addEventListener("abort", abortRequest, { once: true });
     xhr.send(form);
   });
+  return attempt(true);
 }
 
 export async function apiDelete<T = void>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetchWithAuth(`${BASE_URL}${path}`, {
     method: "DELETE",
-    headers: authHeaders(),
   });
   if (!res.ok) await parseError(res, "DELETE", path);
   return res.json();
 }
 
 export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetchWithAuth(`${BASE_URL}${path}`, {
     method: "PUT",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) await parseError(res, "PUT", path);

@@ -26,11 +26,13 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = ""
 
 
 @router.post("/login")
 async def login(req: LoginRequest):
+    from fastapi.responses import JSONResponse
+
     async with session_scope() as session:
         result = await session.execute(
             select(User).where(User.username == req.username)
@@ -53,21 +55,41 @@ async def login(req: LoginRequest):
         await record_audit("login_success",
                            object_id=user.id, detail=f"username={user.username}",
                            actor_id=user.id, actor_username=user.username)
-        return {
+
+        resp = JSONResponse({
             "access_token": access_token,
-            "refresh_token": refresh_token,
             "user": {
                 "id": user.id,
                 "username": user.username,
                 "role": str(user.role),
             },
-        }
+        })
+        resp.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            samesite="lax",
+            path="/api/auth",
+            max_age=60 * 60 * 24 * 7,  # 7 days
+        )
+        return resp
 
 
 @router.post("/refresh")
-async def refresh(req: RefreshRequest):
+async def refresh(request: Request):
+    token: str | None = None
     try:
-        payload = decode_token(req.refresh_token)
+        body = await request.json()
+        token = body.get("refresh_token", "")
+    except Exception:
+        pass
+    if not token:
+        token = request.cookies.get("refresh_token")
+    if not token:
+        raise HTTPException(401, "No refresh token provided")
+
+    try:
+        payload = decode_token(token)
     except Exception as exc:
         raise HTTPException(401, "Invalid or expired refresh token") from exc
     if payload.get("type") != "refresh":
@@ -83,6 +105,45 @@ async def refresh(req: RefreshRequest):
 
         access_token = create_access_token(user.id, user.username, str(user.role))
         return {"access_token": access_token}
+
+
+@router.post("/logout")
+async def logout():
+    from fastapi.responses import JSONResponse
+    resp = JSONResponse({"detail": "logged out"})
+    resp.delete_cookie("refresh_token", path="/api/auth")
+    return resp
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+async def change_password(req: ChangePasswordRequest, request: Request, _auth: None = Depends(jwt_auth)):
+    """Change current user's password. Requires valid access token."""
+    user_ctx: UserContext = get_current_user(request)
+
+    if len(req.new_password.encode("utf-8")) < 12 or len(req.new_password.encode("utf-8")) > 72:
+        raise HTTPException(400, "New password must be 12-72 bytes")
+
+    async with session_scope() as session:
+        result = await session.execute(
+            select(User).where(User.id == user_ctx.user_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user or user.disabled:
+            raise HTTPException(404, "User not found")
+
+        if not verify_password(req.current_password, user.password_hash):
+            raise HTTPException(400, "Current password is incorrect")
+
+        from auth.jwt import hash_password
+        user.password_hash = hash_password(req.new_password)
+        await session.commit()
+
+    return {"detail": "password changed"}
 
 
 @router.get("/me")
