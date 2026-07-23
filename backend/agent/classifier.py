@@ -26,25 +26,25 @@ def _rule_match(query: str, has_history: bool) -> IntentHint | None:
             hint_text="用户只是确认/致谢，不需要调用工具，简单回应即可。",
         )
 
-    # Short / pronoun followup
+    # Followup markers: pronouns, continuations, and explicit references
     followup_markers = {
         "它", "他", "她", "这个", "那个", "这些", "那些",
         "这", "那", "哪个", "还有", "继续", "接着",
-        "上面", "刚才", "之前", "呢",
+        "上面", "刚才", "之前", "呢", "展开", "详细",
     }
-    is_short = len(query) <= 12
     has_followup_marker = any(m in query for m in followup_markers)
-    if has_history and (has_followup_marker or is_short):
+
+    if has_history and has_followup_marker:
         return IntentHint(
             intent="context_followup", confidence=0.85, suggested_tools=["search_docs"],
             hint_text="这是一个追问。请用对话历史理解用户在指什么，将指代词替换为具体名词后调用 search_docs 检索。",
         )
 
-    # Medium followup
+    # Short query without followup markers — still a knowledge question, must search
     if has_history and len(query) <= 30:
         return IntentHint(
-            intent="possible_followup", confidence=0.5, suggested_tools=["search_docs"],
-            hint_text="用户可能在继续之前的话题。请结合对话历史补全query后调用 search_docs 检索。",
+            intent="knowledge_retrieval", confidence=0.7, suggested_tools=["search_docs"],
+            hint_text="用户提出了新问题，请调用 search_docs 进行全新检索，严格只用检索结果回答。",
         )
 
     # Calculator
