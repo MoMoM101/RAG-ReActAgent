@@ -71,3 +71,6 @@ npm-debug.log*
 
 # Docker
 docker-compose.override.yml
+
+# Release export artifacts
+.release-export/
