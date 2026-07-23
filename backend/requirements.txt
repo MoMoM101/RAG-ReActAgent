@@ -12,6 +12,7 @@ pydantic-settings==2.7.1
 python-dotenv==1.2.2
 sqlalchemy==2.0.36
 aiosqlite==0.20.0
+greenlet>=3.0,<4
 sse-starlette==2.2.1
 slowapi>=0.1.9
 jieba>=0.42

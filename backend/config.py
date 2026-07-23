@@ -151,8 +151,8 @@ class Settings(BaseSettings):
     web_search_max_results: int = 5
     web_search_proxy: str = ""
 
-    # OCR
-    ocr_enabled: bool = True
+    # OCR (optional; set OCR_ENABLED=true and install requirements-ocr.txt to enable)
+    ocr_enabled: bool = False
     ocr_min_text_length: int = 50
     optional_model_notice_seconds: float = Field(default=180.0, ge=10.0)
     optional_model_poll_seconds: float = Field(default=5.0, ge=1.0, le=60.0)
@@ -277,6 +277,21 @@ def _init_settings() -> Settings:
         else:
             s.secret_key = secrets.token_urlsafe(32)
             _write_env_key(env_path, "SECRET_KEY", s.secret_key)
+
+    # JWT_SECRET 为空或过短时自动生成 64 位 hex，写入 .env 确保重启后不变
+    import re as _re2
+    if not s.jwt_secret or len(s.jwt_secret.strip()) < 32:
+        if env_path.exists():
+            text = env_path.read_text(encoding="utf-8")
+            m = _re2.search(r"^JWT_SECRET=(.+)", text, _re2.MULTILINE)
+            if m and len(m.group(1).strip()) >= 32:
+                s.jwt_secret = m.group(1).strip()
+            else:
+                s.jwt_secret = secrets.token_hex(32)
+                _write_env_key(env_path, "JWT_SECRET", s.jwt_secret)
+        else:
+            s.jwt_secret = secrets.token_hex(32)
+            _write_env_key(env_path, "JWT_SECRET", s.jwt_secret)
 
     # 解密 API Key
     from utils.crypto import decrypt_if_needed

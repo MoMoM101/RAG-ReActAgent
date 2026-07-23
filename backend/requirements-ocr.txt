@@ -1,7 +1,9 @@
-# 安装 OCR 可选依赖:
+# 安装 OCR 可选依赖（docTR 引擎）:
 # pip install -r requirements-ocr.txt
-# paddlepaddle 需根据 CUDA 版本选择，详见:
-# https://www.paddlepaddle.org.cn/install/quick
+#
+# docTR 使用 PyTorch，模型首次运行时会自动下载。
+# 国内用户建议设置 HF_ENDPOINT=https://hf-mirror.com
 
-paddlepaddle>=3.0.0
-paddleocr>=2.9
+python-doctr>=0.9,<1
+torch>=2.0
+opencv-python-headless>=4.5

@@ -72,9 +72,13 @@ async def _bootstrap_user() -> None:
             )
         password_bytes = password.encode("utf-8")
         if len(password) < 12 or len(password_bytes) > 72:
+            actual = len(password_bytes)
+            reason = f"got {actual} byte" + ("s" if actual != 1 else "")
             raise RuntimeError(
                 "No users exist. Set BOOTSTRAP_ADMIN_PASSWORD to a unique "
-                "12-72 byte password before first startup"
+                f"12-72 byte password before first startup ({reason}). "
+                "If you already set it in .env and it appears empty, "
+                "check that the file is in the backend/ directory."
             )
 
         import uuid as _uuid
