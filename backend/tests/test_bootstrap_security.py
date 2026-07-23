@@ -8,22 +8,25 @@ from models.orm import User
 
 
 async def test_bootstrap_auto_generates_password_when_empty(setup_db, monkeypatch):
-    """When BOOTSTRAP_ADMIN_PASSWORD is empty, a random password is generated."""
+    """When BOOTSTRAP_ADMIN_PASSWORD is empty, a default password is used."""
+    from auth.jwt import verify_password
+
     from config import settings
     from main import _bootstrap_user
 
     monkeypatch.setattr(settings, "bootstrap_admin_username", "admin")
     monkeypatch.setattr(settings, "bootstrap_admin_password", "")
 
-    # Should NOT raise — auto-generates password instead
+    # Should NOT raise — uses default password instead
     await _bootstrap_user()
 
-    # Verify user was created with a generated password
+    # Verify user was created with the default password
     async with session_scope() as session:
         user = await session.scalar(select(User))
         assert user is not None
         assert user.username == "admin"
         assert str(user.role) == "system_admin"
+        assert verify_password("RAGAgent2026!", user.password_hash)
 
 
 async def test_bootstrap_rejects_weak_or_oversized_password(setup_db, monkeypatch):

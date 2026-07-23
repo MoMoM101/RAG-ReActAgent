@@ -367,7 +367,7 @@ Copy-Item backend/.env.example backend/.env
 
 ```env
 JWT_SECRET=<固定的至少 32 字符随机值>
-BOOTSTRAP_ADMIN_PASSWORD=ChangeMe@2026!
+BOOTSTRAP_ADMIN_PASSWORD=RAGAgent2026!
 ```
 
 如果需要实际问答，还需要配置：
@@ -517,11 +517,11 @@ npm run dev
 
 ```env
 BOOTSTRAP_ADMIN_USERNAME=admin
-BOOTSTRAP_ADMIN_PASSWORD=ChangeMe@2026!
+BOOTSTRAP_ADMIN_PASSWORD=RAGAgent2026!
 ```
 
 后续启动不会使用环境变量覆盖数据库中已有用户的密码。
-`ChangeMe@2026!` 是公开的临时初始密码，仅用于首次启动；首次登录后请立即通过登录页旁的“修改密码”入口更换。
+`RAGAgent2026!` 是公开的临时初始密码，仅用于首次启动；首次登录后请立即通过登录页旁的”修改密码”入口更换。
 
 ### 登录保持
 
@@ -650,7 +650,7 @@ cd backend
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh Cookie 有效期 |
 | `AUTH_COOKIE_SECURE` | `false` | HTTPS 部署设为 `true` |
 | `BOOTSTRAP_ADMIN_USERNAME` | `admin` | 首次管理员用户名 |
-| `BOOTSTRAP_ADMIN_PASSWORD` | 空 | 空数据库首次启动必须设置 |
+| `BOOTSTRAP_ADMIN_PASSWORD` | `RAGAgent2026!` | 默认密码，首次登录后建议修改 |
 | `SERVER_HOST` | `127.0.0.1` | 监听地址 |
 | `ALLOW_REMOTE_ACCESS` | `false` | 是否允许远程访问 |
 | `LOG_LEVEL` | `INFO` | 日志等级 |
