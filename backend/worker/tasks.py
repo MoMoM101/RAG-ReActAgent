@@ -320,6 +320,9 @@ class BackgroundTaskManager:
                 with suppress(asyncio.CancelledError):
                     await heartbeat_task
 
+    def start_recovery_monitor(self):
+        """No-op on this deployment — recovery runs synchronously at startup."""
+
     def _record(
         self, name: str, status: str, elapsed: float,
         metadata: dict | None = None,
