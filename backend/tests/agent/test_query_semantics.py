@@ -65,6 +65,19 @@ def test_coverage_queries_require_whole_answer_validation(query: str):
     assert requires_whole_answer_validation(query)
 
 
+@pytest.mark.parametrize(
+    "query",
+    ["Skill", "列出主要功能", "总结这份资料", "如何部署项目", "安装步骤", "使用指南"],
+)
+def test_structured_output_queries_require_whole_answer_validation(query: str):
+    assert requires_whole_answer_validation(query)
+
+
+@pytest.mark.parametrize("query", ["光伏成本如何？", "光伏成本下降了吗？"])
+def test_short_questions_are_not_mistaken_for_term_only_overviews(query: str):
+    assert not requires_whole_answer_validation(query)
+
+
 def test_extracts_explicit_comparison_entities():
     assert extract_comparison_entities("MCP 和 Skill 有什么区别") == ("MCP", "Skill")
     assert extract_comparison_entities("MCP vs Skill") == ("MCP", "Skill")

@@ -91,6 +91,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // Attach steps to the most recent assistant message
           for (let i = displayMsgs.length - 1; i >= 0; i--) {
             if (displayMsgs[i].role === "assistant") {
+              // Tool-calling preambles are protocol context, not final answer text.
+              // Hide them just as the live SSE path does when the first tool starts.
+              displayMsgs[i].content = "";
               displayMsgs[i].steps.push({
                 type: "tool_call",
                 data: { tool: toolName, args, call_id: m.tool_call_id },
@@ -189,6 +192,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
           if (event.event === "answer_chunk") {
             last.content += (event.data as { delta: string }).delta || "";
+          }
+          if (event.event === "answer_replace") {
+            last.content = (event.data as { content: string }).content || "";
+          }
+          if (
+            event.event === "tool_call"
+            && !last.steps.some((existingStep) => existingStep.type === "tool_call")
+          ) {
+            // The backend resets pre-tool assistant text into protocol history.
+            // Mirror that reset so narration such as "先搜索一下" cannot be
+            // glued to the final Markdown answer in the live message bubble.
+            last.content = "";
           }
           if (event.event === "sources") {
             last.sources = event.data as SourceReference[];

@@ -147,6 +147,16 @@ async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: 
         event_type = event["event"]
         get_metrics().record_stream_event(event_type)
         if event_type == "done":
+            if assistant_content:
+                from agent.answer_format import normalize_answer_markdown
+
+                normalized_content = normalize_answer_markdown(assistant_content)
+                if normalized_content != assistant_content:
+                    assistant_content = normalized_content
+                    yield (
+                        "event: answer_replace\ndata: "
+                        f"{json.dumps({'content': assistant_content}, ensure_ascii=False)}\n\n"
+                    )
             verification_data = None
             if (
                 assistant_content

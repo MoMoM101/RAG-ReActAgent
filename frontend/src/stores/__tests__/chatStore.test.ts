@@ -62,6 +62,28 @@ describe("chatStore empty answer fallback", () => {
     expect(answer?.isStreaming).toBe(false);
   });
 
+  it("removes tool-calling preamble before appending the final markdown answer", async () => {
+    await useChatStore.getState().send("和 mcp 有什么区别");
+
+    onEvent?.({ event: "answer_chunk", data: { delta: "先搜索一下相关资料。" } });
+    onEvent?.({ event: "tool_call", data: { tool: "search_docs", args: {} } });
+    onEvent?.({ event: "tool_result", data: { tool: "search_docs", success: true } });
+    onEvent?.({ event: "answer_chunk", data: { delta: "### Skill\n\n- 工作流封装" } });
+
+    const answer = useChatStore.getState().messages.at(-1);
+    expect(answer?.content).toBe("### Skill\n\n- 工作流封装");
+    expect(answer?.content).not.toContain("先搜索一下");
+  });
+
+  it("replaces streamed text with the backend-normalized final markdown", async () => {
+    await useChatStore.getState().send("总结一下");
+
+    onEvent?.({ event: "answer_chunk", data: { delta: "```markdown\n###总结\n```" } });
+    onEvent?.({ event: "answer_replace", data: { content: "### 总结" } });
+
+    expect(useChatStore.getState().messages.at(-1)?.content).toBe("### 总结");
+  });
+
   it("shows an interruption fallback when the transport fails before content", async () => {
     await useChatStore.getState().send("问题");
 

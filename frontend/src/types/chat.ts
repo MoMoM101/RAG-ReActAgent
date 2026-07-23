@@ -1,5 +1,5 @@
 export interface AgentStep {
-  type: "status" | "tool_call" | "tool_result" | "clarification" | "answer_chunk" | "thought" | "sources" | "verification" | "error" | "done";
+  type: "status" | "tool_call" | "tool_result" | "clarification" | "answer_chunk" | "answer_replace" | "thought" | "sources" | "verification" | "error" | "done";
   data: Record<string, unknown>;
   timestamp: number;
 }

@@ -15,7 +15,19 @@ COMPARISON_QUERY_RE = re.compile(
 UNRESOLVED_REFERENCE_RE = re.compile(
     r"它们|两者|前者|后者|它(?!们)|这个|那个|上述|刚才(?:说|提到)的|前面(?:说|提到)的",
 )
-COVERAGE_QUERY_RE = re.compile(r"^(?:什么是|有哪些|概览|详细说明|介绍一下|说说|讲讲)")
+COVERAGE_QUERY_RE = re.compile(
+    r"^(?:请)?(?:什么是|有哪些|概览|详细说明|介绍(?:一下)?|说说|讲讲|解释(?:一下)?|"
+    r"列出|总结|概括|归纳|主要(?:功能|特点|优势|限制)|包括什么)",
+)
+STRUCTURED_OUTPUT_QUERY_RE = re.compile(
+    r"步骤|流程|教程|指南|怎么做|如何(?:实现|使用|配置|部署|安装|操作|解决|处理)|"
+    r"列出|总结|概括|归纳|有哪些|主要(?:功能|特点|优势|限制)|包括什么",
+)
+TERM_ONLY_QUERY_RE = re.compile(
+    r"^\s*(?:[A-Za-z][A-Za-z0-9_.+\- ]{0,39}|[\u4e00-\u9fffA-Za-z0-9_.+\-]{2,30})[？?]?\s*$",
+)
+_TERM_ONLY_STOPWORDS = {"问题", "回答", "资料", "内容", "你好", "您好", "谢谢"}
+_QUESTION_MARKER_RE = re.compile(r"什么|如何|怎么|为何|为什么|是否|多少|哪(?:个|种|些)?|吗|呢")
 RELATION_SENSITIVE_QUERY_RE = re.compile(
     r"职责|作用分别|原因|为什么|为何|如何影响|有什么影响|什么关系|有何关系|"
     r"怎么计算|如何计算|计算公式|公式是什么|"
@@ -64,7 +76,15 @@ def has_unresolved_reference(query: str) -> bool:
 
 
 def is_coverage_query(query: str) -> bool:
-    return bool(COVERAGE_QUERY_RE.search(query.strip()))
+    stripped = query.strip()
+    return bool(
+        COVERAGE_QUERY_RE.search(stripped)
+        or (
+            stripped not in _TERM_ONLY_STOPWORDS
+            and not _QUESTION_MARKER_RE.search(stripped)
+            and TERM_ONLY_QUERY_RE.fullmatch(stripped)
+        )
+    )
 
 
 def is_underspecified_query(query: str) -> bool:
@@ -76,6 +96,7 @@ def requires_whole_answer_validation(query: str) -> bool:
     return bool(
         is_comparison_query(query)
         or is_coverage_query(query)
+        or STRUCTURED_OUTPUT_QUERY_RE.search(query)
         or has_unresolved_reference(query)
         or RELATION_SENSITIVE_QUERY_RE.search(query)
     )

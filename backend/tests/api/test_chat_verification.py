@@ -98,3 +98,23 @@ async def test_system_fallback_is_not_scored_as_grounded_answer(monkeypatch):
     assert "verification" not in event_names
     assert not any("部分内容未获得检索来源" in chunk for chunk in chunks)
     assert save.await_args.kwargs["verification"] is None
+
+
+@pytest.mark.asyncio
+async def test_done_replaces_malformed_stream_with_normalized_markdown(monkeypatch):
+    async def malformed_events(*_args, **_kwargs):
+        yield {
+            "event": "answer_chunk",
+            "data": {"delta": "```markdown\n###总结\n\n- 结果\n```"},
+        }
+        yield {"event": "done", "data": {}}
+
+    save = AsyncMock()
+    monkeypatch.setattr(chat_api, "run_agent_loop", malformed_events)
+    monkeypatch.setattr(chat_api, "_save_messages", save)
+
+    chunks = [chunk async for chunk in chat_api.sse_generator("query", [], "conv-1")]
+    replacement = next(chunk for chunk in chunks if chunk.startswith("event: answer_replace"))
+
+    assert json.loads(replacement.split("data: ", 1)[1])["content"] == "### 总结\n\n- 结果"
+    assert save.await_args.args[1] == "### 总结\n\n- 结果"

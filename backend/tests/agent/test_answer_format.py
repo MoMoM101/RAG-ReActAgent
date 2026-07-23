@@ -1,5 +1,7 @@
 """Regression tests for deterministic final-answer Markdown cleanup."""
 
+import re
+
 from agent.answer_format import normalize_answer_markdown
 
 
@@ -41,3 +43,29 @@ def test_keeps_factual_step_that_starts_with_search_wording():
     answer = "先搜索向量索引，再执行重排 [S1]。"
 
     assert normalize_answer_markdown(answer) == answer
+
+
+def test_unwraps_whole_answer_markdown_fence_and_repairs_heading_spacing():
+    answer = "```markdown\n###Skill\n\n- 能力扩展 [S1]。\n```"
+
+    normalized = normalize_answer_markdown(answer)
+
+    assert normalized == "### Skill\n\n- 能力扩展 [S1]。"
+
+
+def test_inserts_missing_separator_for_plain_or_numbered_table_rows():
+    plain = "| 维度 | MCP | Skill |\n| 定位 | 连接层 | 应用层 |"
+    numbered = "1. | 维度 | MCP | Skill |\n2. | 定位 | 连接层 | 应用层 |"
+
+    for answer in (plain, numbered):
+        normalized = normalize_answer_markdown(answer)
+        assert "| --- | --- | --- |" in normalized
+        assert not any(re.match(r"^\s*\d+[.)、]\s+\|", line) for line in normalized.splitlines())
+
+
+def test_keeps_existing_valid_table_separator_once():
+    answer = "| 维度 | MCP |\n| --- | --- |\n| 定位 | 连接层 |"
+
+    normalized = normalize_answer_markdown(answer)
+
+    assert normalized.count("| --- | --- |") == 1

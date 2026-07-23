@@ -181,9 +181,10 @@ async def run_agent_loop(
 
                         _cache_metrics().record_answer_cache("hit")
                         _record_elapsed("rag_visible_ttft")
+                        cached_answer = normalize_answer_markdown(cached.answer)
                         yield {
                             "event": "answer_chunk",
-                            "data": {"delta": cached.answer},
+                            "data": {"delta": cached_answer},
                         }
                         yield {"event": "sources", "data": cached.sources}
                         _record_elapsed("rag_total")
@@ -784,9 +785,10 @@ async def run_agent_loop(
                 select_better_grounded_answer,
             )
 
+            normalized_draft = normalize_answer_markdown(assistant_content)
             final_content = apply_query_safety_guard(
                 grounding_query,
-                assistant_content,
+                normalized_draft,
                 has_context=bool(prepared_history),
             )
             # ── V4: Structured grounding decision ──
