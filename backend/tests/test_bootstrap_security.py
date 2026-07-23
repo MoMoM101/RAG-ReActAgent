@@ -1,39 +1,69 @@
-"""First-run administration bootstrap regression tests."""
+"""Secure first-user bootstrap regression tests."""
 
-from security import generate_admin_token
+import pytest
+from sqlalchemy import func, select
 
-from config import settings
-from main import _bootstrap_admin_token
-
-
-def test_generate_admin_token_is_random_and_url_safe():
-    first = generate_admin_token()
-    second = generate_admin_token()
-
-    assert first != second
-    assert len(first) >= 32
-    assert all(char.isalnum() or char in "-_" for char in first)
+from models.database import session_scope
+from models.orm import User
 
 
-def test_bootstrap_admin_token_persists_to_isolated_env(tmp_path, monkeypatch):
-    env_path = tmp_path / ".env"
-    monkeypatch.setitem(settings.model_config, "env_file", str(env_path))
-    monkeypatch.setattr(settings, "admin_api_token", "")
+async def test_bootstrap_auto_generates_password_when_empty(setup_db, monkeypatch):
+    """When BOOTSTRAP_ADMIN_PASSWORD is empty, a random password is generated."""
+    from config import settings
+    from main import _bootstrap_user
 
-    _bootstrap_admin_token()
+    monkeypatch.setattr(settings, "bootstrap_admin_username", "admin")
+    monkeypatch.setattr(settings, "bootstrap_admin_password", "")
 
-    token = settings.admin_api_token
-    assert token
-    assert env_path.read_text(encoding="utf-8") == f"ADMIN_API_TOKEN={token}\n"
+    # Should NOT raise — auto-generates password instead
+    await _bootstrap_user()
+
+    # Verify user was created with a generated password
+    async with session_scope() as session:
+        user = await session.scalar(select(User))
+        assert user is not None
+        assert user.username == "admin"
+        assert str(user.role) == "system_admin"
 
 
-def test_bootstrap_admin_token_does_not_overwrite_existing(tmp_path, monkeypatch):
-    env_path = tmp_path / ".env"
-    env_path.write_text("ADMIN_API_TOKEN=existing-token\n", encoding="utf-8")
-    monkeypatch.setitem(settings.model_config, "env_file", str(env_path))
-    monkeypatch.setattr(settings, "admin_api_token", "")
+async def test_bootstrap_rejects_weak_or_oversized_password(setup_db, monkeypatch):
+    from config import settings
+    from main import _bootstrap_user
 
-    _bootstrap_admin_token()
+    monkeypatch.setattr(settings, "bootstrap_admin_username", "admin")
+    for password in ("too-short", "密" * 30):
+        monkeypatch.setattr(settings, "bootstrap_admin_password", password)
+        with pytest.raises(RuntimeError, match="12-72 byte"):
+            await _bootstrap_user()
 
-    assert settings.admin_api_token == "existing-token"
-    assert env_path.read_text(encoding="utf-8") == "ADMIN_API_TOKEN=existing-token\n"
+
+async def test_bootstrap_creates_configured_admin_once(setup_db, monkeypatch):
+    from auth.jwt import verify_password
+
+    from config import settings
+    from main import _bootstrap_user
+
+    monkeypatch.setattr(settings, "bootstrap_admin_username", "release-admin")
+    monkeypatch.setattr(settings, "bootstrap_admin_password", "a-strong-bootstrap-password")
+
+    await _bootstrap_user()
+    await _bootstrap_user()
+
+    async with session_scope() as session:
+        assert await session.scalar(select(func.count()).select_from(User)) == 1
+        user = await session.scalar(select(User))
+        assert user is not None
+        assert user.username == "release-admin"
+        assert str(user.role) == "system_admin"
+        assert verify_password("a-strong-bootstrap-password", user.password_hash)
+
+
+async def test_existing_user_does_not_require_bootstrap_secret(
+    bootstrap_admin,
+    monkeypatch,
+):
+    from config import settings
+    from main import _bootstrap_user
+
+    monkeypatch.setattr(settings, "bootstrap_admin_password", "")
+    await _bootstrap_user()
