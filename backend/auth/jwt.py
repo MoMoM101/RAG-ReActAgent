@@ -10,12 +10,17 @@ from config import settings
 
 
 def _get_secret() -> str:
-    secret = settings.jwt_secret
-    if not secret:
-        import secrets
-        secret = secrets.token_urlsafe(32)
-        settings.jwt_secret = secret
+    secret = settings.jwt_secret.strip()
+    if len(secret) < 32:
+        raise RuntimeError(
+            "JWT_SECRET must be configured with at least 32 characters"
+        )
     return secret
+
+
+def validate_jwt_configuration() -> None:
+    """Fail fast when tokens would be signed with an unstable or weak secret."""
+    _get_secret()
 
 
 def create_access_token(user_id: str, username: str, role: str) -> str:
