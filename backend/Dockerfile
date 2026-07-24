@@ -13,6 +13,8 @@ RUN mkdir -p "$TIKTOKEN_CACHE_DIR" \
 
 COPY . .
 
+RUN mkdir -p /app/data
+
 EXPOSE 8000
 
 CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host ${SERVER_HOST:-127.0.0.1} --port 8000"]
