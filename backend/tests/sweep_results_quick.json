@@ -1,0 +1,362 @@
+[
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6776666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 1038.64,
+    "params": {
+      "rrf_k": 30,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6843333333333333,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7509046146998867,
+    "lat_h": 1068.44,
+    "params": {
+      "rrf_k": 30,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6843333333333333,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7509046146998867,
+    "lat_h": 361.68,
+    "params": {
+      "rrf_k": 30,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6776666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 353.48,
+    "params": {
+      "rrf_k": 30,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 1058.72,
+    "params": {
+      "rrf_k": 60,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 360.48,
+    "params": {
+      "rrf_k": 60,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.685047619047619,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7509046146998867,
+    "lat_h": 378.32,
+    "params": {
+      "rrf_k": 60,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 338.32,
+    "params": {
+      "rrf_k": 120,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 386.88,
+    "params": {
+      "rrf_k": 120,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 1112.6,
+    "params": {
+      "rrf_k": 120,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.685047619047619,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7509046146998867,
+    "lat_h": 348.04,
+    "params": {
+      "rrf_k": 120,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 1098.36,
+    "params": {
+      "rrf_k": 120,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6776666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 391.8,
+    "params": {
+      "rrf_k": 30,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6776666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 1058.16,
+    "params": {
+      "rrf_k": 30,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6776666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 341.4,
+    "params": {
+      "rrf_k": 30,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6776666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 1040.36,
+    "params": {
+      "rrf_k": 30,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 1069.96,
+    "params": {
+      "rrf_k": 60,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 343.56,
+    "params": {
+      "rrf_k": 60,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 1080.16,
+    "params": {
+      "rrf_k": 60,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 1146.08,
+    "params": {
+      "rrf_k": 60,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.685047619047619,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7361418048427449,
+    "lat_h": 352.08,
+    "params": {
+      "rrf_k": 60,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 1075.52,
+    "params": {
+      "rrf_k": 120,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": true,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6783809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 1027.04,
+    "params": {
+      "rrf_k": 120,
+      "rerank_top_n": 16,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.685047619047619,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7361418048427449,
+    "lat_h": 348.68,
+    "params": {
+      "rrf_k": 120,
+      "rerank_top_n": 24,
+      "chunk_quality_filter_enabled": false,
+      "dedup_enabled": false
+    }
+  }
+]

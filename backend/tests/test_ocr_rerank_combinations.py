@@ -15,6 +15,7 @@ class TestOcrRerankCombinations:
     async def test_status_reports_correct_combination(self, ocr_on, rerank_on):
         """Each combination must return valid status dicts."""
         from ocr.factory import get_ocr_status
+
         from reranker.factory import get_reranker_status
 
         ocr_status = get_ocr_status()

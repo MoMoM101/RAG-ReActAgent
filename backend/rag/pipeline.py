@@ -6,6 +6,9 @@ import time
 import uuid
 
 from sqlalchemy import select, update
+from storage import get_storage, materialize, stage_path
+from storage.base import StagedObject
+from storage.files import delete_file, find_upload
 
 from config import settings
 from embedding.factory import create_embedding
@@ -13,9 +16,6 @@ from models.database import session_scope
 from models.orm import DocStatus, Document
 from rag.loaders import OCRModelNotReadyError, load_document
 from rag.splitter import split_text
-from storage import get_storage, materialize, stage_path
-from storage.base import StagedObject
-from storage.files import delete_file, find_upload
 from textdb.bm25_search import BM25Search
 from vectordb.factory import create_vectordb
 

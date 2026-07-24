@@ -2,10 +2,6 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
-from sqlalchemy import select
-
 from audit import record_audit
 from auth.jwt import (
     create_access_token,
@@ -15,11 +11,15 @@ from auth.jwt import (
     hash_password,
     verify_password,
 )
-from config import settings
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from limiter import limiter
+from pydantic import BaseModel, Field
+from security import UserContext, get_current_user, jwt_auth
+from sqlalchemy import select
+
+from config import settings
 from models.database import session_scope
 from models.orm import User
-from security import UserContext, get_current_user, jwt_auth
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 REFRESH_COOKIE_NAME = "rag_refresh_token"

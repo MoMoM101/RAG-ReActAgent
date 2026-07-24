@@ -7,13 +7,13 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from limiter import limiter
+from security import jwt_auth, require_admin
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from config import settings
-from limiter import limiter
 from models.database import check_revision_gate, init_db
-from security import jwt_auth, require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +52,9 @@ async def _bootstrap_user() -> None:
     """Create the first system administrator, auto-generating credentials if needed."""
     import re
 
+    from auth.jwt import hash_password
     from sqlalchemy import select
 
-    from auth.jwt import hash_password
     from config import _write_env_key
     from models.database import session_scope
     from models.orm import User
@@ -287,7 +287,6 @@ async def metrics(_admin: None = Depends(require_admin)):
 async def metrics_prometheus(_admin: None = Depends(require_admin)):
     """Prometheus text format metrics endpoint."""
     from fastapi.responses import PlainTextResponse
-
     from metrics import export_prometheus
     return PlainTextResponse(content=export_prometheus(), media_type="text/plain; charset=utf-8")
 

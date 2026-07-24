@@ -2,7 +2,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
 from storage import materialize, stage_path
 from storage.base import StagedObject, StoredObject
 from storage.files import LocalFileStorage

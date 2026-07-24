@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import select
+from storage import get_storage, reset_storage
 
 from api.documents import (
     _stream_upload_to_staging,
@@ -18,7 +19,6 @@ from config import DOCUMENT_UPLOAD_HARD_LIMIT_MB, Settings, settings
 from models.database import session_scope
 from models.orm import DocStatus, Document
 from rag.pipeline import ingest_document_from_path
-from storage import get_storage, reset_storage
 
 
 @pytest.mark.asyncio

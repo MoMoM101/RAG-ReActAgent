@@ -1,0 +1,562 @@
+[
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6659999999999999,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7411415368464099,
+    "lat_h": 361.92,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 1.5,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6626666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7383685991693457,
+    "lat_h": 284.0,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 1.5,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6726666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 347.76,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 2.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6693333333333333,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.743605789312204,
+    "lat_h": 275.68,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 2.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6493333333333333,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7288429794550624,
+    "lat_h": 284.16,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 3.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6717142857142858,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7411415368464099,
+    "lat_h": 345.08,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 1.5,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6683809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7383685991693457,
+    "lat_h": 279.48,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 1.5,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6743333333333333,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.743605789312204,
+    "lat_h": 277.04,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 2.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6543333333333333,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7288429794550624,
+    "lat_h": 285.64,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 3.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6717142857142858,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7411415368464099,
+    "lat_h": 345.4,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 1.5,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6683809523809523,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7383685991693457,
+    "lat_h": 275.52,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 1.5,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6776666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7463787269892683,
+    "lat_h": 361.64,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 2.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6743333333333333,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.743605789312204,
+    "lat_h": 286.32,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 2.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.264,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6543333333333333,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7288429794550624,
+    "lat_h": 280.0,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 3.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6646666666666667,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7249561221247883,
+    "lat_h": 365.6,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 0.5,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6646666666666667,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7266563410771938,
+    "lat_h": 293.08,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 0.5,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6646666666666667,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7256674245570284,
+    "lat_h": 365.68,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 1.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6713333333333334,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7301933122676466,
+    "lat_h": 281.08,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 1.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6526666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.716141804842745,
+    "lat_h": 356.0,
+    "params": {
+      "retrieval_top_k": 6,
+      "rrf_semantic_weight": 3.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6703809523809524,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7249561221247883,
+    "lat_h": 348.6,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 0.5,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6703809523809524,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7266563410771938,
+    "lat_h": 286.48,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 0.5,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6703809523809524,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7256674245570284,
+    "lat_h": 347.16,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 1.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6770476190476191,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7301933122676466,
+    "lat_h": 279.52,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 1.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6776666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7309046146998867,
+    "lat_h": 343.64,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 2.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6576666666666666,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.716141804842745,
+    "lat_h": 353.36,
+    "params": {
+      "retrieval_top_k": 8,
+      "rrf_semantic_weight": 3.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6703809523809524,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7249561221247883,
+    "lat_h": 352.92,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 0.5,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6703809523809524,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7266563410771938,
+    "lat_h": 285.08,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 0.5,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6770476190476191,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7301933122676466,
+    "lat_h": 352.92,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 1.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8266666666666667,
+    "mrr_h": 0.6770476190476191,
+    "hit5_h": 0.88,
+    "ndcg5_h": 0.7301933122676466,
+    "lat_h": 278.12,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 1.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.256,
+    "p5_s": 0.30400000000000005,
+    "r5_h": 0.8666666666666667,
+    "mrr_h": 0.6643333333333333,
+    "hit5_h": 0.92,
+    "ndcg5_h": 0.7213789949856033,
+    "lat_h": 374.88,
+    "params": {
+      "retrieval_top_k": 12,
+      "rrf_semantic_weight": 3.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.24,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.65,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.7094820098354068,
+    "lat_h": 345.24,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 0.5,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.23200000000000004,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.65,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.6964194189306706,
+    "lat_h": 273.68,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 0.5,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.23200000000000004,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.65,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.694719199978265,
+    "lat_h": 347.88,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 1.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.23200000000000004,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.6566666666666667,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.6999563901211233,
+    "lat_h": 281.36,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 1.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.23200000000000004,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.65,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.694719199978265,
+    "lat_h": 371.16,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 1.5,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.23200000000000004,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.6466666666666667,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.6919462623012008,
+    "lat_h": 284.8,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 1.5,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.23200000000000004,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.6566666666666667,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.6999563901211233,
+    "lat_h": 353.04,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 2.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.23200000000000004,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.6533333333333333,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.697183452444059,
+    "lat_h": 275.64,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 2.0,
+      "query_rewrite_enabled": false
+    }
+  },
+  {
+    "p5_h": 0.23200000000000004,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.6366666666666666,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.6851935802639817,
+    "lat_h": 372.28,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 3.0,
+      "query_rewrite_enabled": true
+    }
+  },
+  {
+    "p5_h": 0.23200000000000004,
+    "p5_s": 0.272,
+    "r5_h": 0.7866666666666667,
+    "mrr_h": 0.6333333333333333,
+    "hit5_h": 0.84,
+    "ndcg5_h": 0.6824206425869173,
+    "lat_h": 282.24,
+    "params": {
+      "retrieval_top_k": 4,
+      "rrf_semantic_weight": 3.0,
+      "query_rewrite_enabled": false
+    }
+  }
+]

@@ -84,6 +84,7 @@ def test_image_loader_reports_model_loading_instead_of_empty_text(tmp_path, monk
     pytest.importorskip("cv2")
 
     import ocr.factory as factory
+
     from rag.loaders import load_image
 
     image = tmp_path / "waiting.png"

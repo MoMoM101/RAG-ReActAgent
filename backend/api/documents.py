@@ -5,23 +5,23 @@ import logging
 import os
 import re
 
+from audit import audit_from_request, record_audit
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from limiter import limiter
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from storage import get_storage, materialize, stage_path
+from storage.base import StagedObject
+from storage.files import delete_file, find_upload
 
-from audit import audit_from_request, record_audit
 from config import DOCUMENT_UPLOAD_HARD_LIMIT_MB, settings
-from limiter import limiter
 from models.database import get_db, session_scope
 from models.orm import DocStatus, Document
 from rag.answer_cache import bump_collection_version
 from rag.loaders import OCRModelNotReadyError
 from rag.pipeline import _mark_waiting_for_ocr, _process_document, ingest_document_from_staged
-from storage import get_storage, materialize, stage_path
-from storage.base import StagedObject
-from storage.files import delete_file, find_upload
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
@@ -461,8 +461,9 @@ async def reprocess_document(doc_id: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
     bump_collection_version()
 
-    from rag.progress import progress
     from worker.tasks import get_task_manager
+
+    from rag.progress import progress
 
     progress.publish(doc_id, {"status": "uploaded", "message": "已提交重新处理"})
 
