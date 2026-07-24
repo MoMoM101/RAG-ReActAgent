@@ -183,8 +183,9 @@ async def check_revision_gate() -> None:
             elif _auto_migrate_enabled():
                 # Dev/test: auto-migrate empty DB
 
-                from alembic import command as alc_cmd
                 from alembic.config import Config as AlcCfg
+
+                from alembic import command as alc_cmd
 
                 backend_dir = str(_Path(__file__).resolve().parent.parent)
                 cfg = AlcCfg(str(_Path(backend_dir) / "alembic.ini"))
@@ -197,8 +198,9 @@ async def check_revision_gate() -> None:
                 )
         elif current != head:
             if _auto_migrate_enabled():
-                from alembic import command as alc_cmd
                 from alembic.config import Config as AlcCfg
+
+                from alembic import command as alc_cmd
 
                 backend_dir = str(_Path(__file__).resolve().parent.parent)
                 cfg = AlcCfg(str(_Path(backend_dir) / "alembic.ini"))

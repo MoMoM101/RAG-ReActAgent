@@ -7,11 +7,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+
 from config import settings
 from vectordb.qdrant import QdrantVectorDB
-from textdb.bm25_search import BM25Search
-from models.database import session_scope
-from sqlalchemy import text as sa_text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("cleanup")

@@ -76,10 +76,24 @@ def make_queries():
 
 def apply_settings(params):
     from config import settings
-    settings.rrf_k = params["rrf_k"]
-    settings.rerank_top_n = params["rerank_top_n"]
-    settings.chunk_quality_filter_enabled = params["chunk_quality_filter_enabled"]
-    settings.dedup_enabled = params["dedup_enabled"]
+    if "rrf_k" in params:
+        settings.rrf_k = params["rrf_k"]
+    if "rerank_top_n" in params:
+        settings.rerank_top_n = params["rerank_top_n"]
+    if "chunk_quality_filter_enabled" in params:
+        settings.chunk_quality_filter_enabled = params["chunk_quality_filter_enabled"]
+    if "dedup_enabled" in params:
+        settings.dedup_enabled = params["dedup_enabled"]
+    if "retrieval_top_k" in params:
+        settings.retrieval_top_k = params["retrieval_top_k"]
+    if "rrf_semantic_weight" in params:
+        settings.rrf_semantic_weight = params["rrf_semantic_weight"]
+    if "rrf_keyword_weight" in params:
+        settings.rrf_keyword_weight = params["rrf_keyword_weight"]
+    if "query_rewrite_enabled" in params:
+        settings.query_rewrite_enabled = params["query_rewrite_enabled"]
+    if "rrf_adaptive_enabled" in params:
+        settings.rrf_adaptive_enabled = params["rrf_adaptive_enabled"]
 
 
 async def run_one_eval(docs, queries):
@@ -132,47 +146,87 @@ async def sweep(grid, docs, queries):
         elapsed = time.time() - t0
         eta = (elapsed / (i + 1)) * (total - i - 1) if i > 0 else 0
         p = params
-        print(f"[{i+1:3d}/{total}] rrf_k={p['rrf_k']:3d} "
-              f"rn={p['rerank_top_n']:2d} "
-              f"qual={str(p['chunk_quality_filter_enabled']):5s} "
-              f"dedup={str(p['dedup_enabled']):5s} "
-              f"P@5={r['p5_h']:.1%} "
-              f"sem={r['p5_s']:.1%} "
-              f"l={r['lat_h']:.0f}ms "
-              f"ETA={eta/60:.0f}m")
+        parts = [f"[{i+1:3d}/{total}]"]
+        if "rrf_k" in p:
+            parts.append(f"rrf_k={p['rrf_k']:3d}")
+        if "rerank_top_n" in p:
+            parts.append(f"rn={p['rerank_top_n']:2d}")
+        if "retrieval_top_k" in p:
+            parts.append(f"top_k={p['retrieval_top_k']:2d}")
+        if "rrf_semantic_weight" in p:
+            parts.append(f"sem_w={p['rrf_semantic_weight']:.1f}")
+        if "rrf_keyword_weight" in p:
+            parts.append(f"kw_w={p['rrf_keyword_weight']:.1f}")
+        if "query_rewrite_enabled" in p:
+            parts.append(f"rewr={str(p['query_rewrite_enabled']):5s}")
+        if "rrf_adaptive_enabled" in p:
+            parts.append(f"adap={str(p['rrf_adaptive_enabled']):5s}")
+        if "chunk_quality_filter_enabled" in p:
+            parts.append(f"qual={str(p['chunk_quality_filter_enabled']):5s}")
+        if "dedup_enabled" in p:
+            parts.append(f"dedup={str(p['dedup_enabled']):5s}")
+        parts.append(
+            f"P@5={r['p5_h']:.1%} sem={r['p5_s']:.1%} "
+            f"l={r['lat_h']:.0f}ms ETA={eta / 60:.0f}m"
+        )
+        print(" ".join(parts))
 
     results.sort(key=lambda x: x["p5_h"], reverse=True)
     return results
 
 
+def param_keys(results):
+    """Detect which param keys are present in results."""
+    if not results:
+        return []
+    return [k for k in results[0]["params"]]
+
+
 def print_table(results):
-    print("\n" + "=" * 95)
-    print("Rank  rrf_k  top_n  qual   dedup  P@5(hyb) P@5(sem) Rec@5   MRR     Hit@5  NDCG@5  Lat")
-    print("-" * 95)
-    for i, r in enumerate(results[:15]):
+    if not results:
+        print("\nNo results.")
+        return
+    keys = param_keys(results)
+    header = "Rank  " + "  ".join(f"{k:<8}" for k in keys) + "  P@5(h)    P@5(s)   Rec@5   MRR      Hit@5  NDCG@5   Lat"
+    sep = "-" * (len(header) + 10)
+    print("\n" + sep)
+    print(header)
+    print("-" * len(sep))
+    for i, r in enumerate(results[:20]):
         p = r["params"]
-        print(f"{i+1:<5} {p['rrf_k']:<5}  {p['rerank_top_n']:<5}  "
-              f"{str(p['chunk_quality_filter_enabled']):<5}  "
-              f"{str(p['dedup_enabled']):<5}  "
-              f"{r['p5_h']:<.1%}     {r['p5_s']:<.1%}    "
-              f"{r['r5_h']:<.1%}      {r['mrr_h']:<.1%}   "
-              f"{r['hit5_h']:<.0%}     {r['ndcg5_h']:<.1%}   {r['lat_h']:<4.0f}")
-    if results:
-        best = results[0]
-        d = best["p5_h"] - best["p5_s"]
-        s = "+" if d >= 0 else ""
-        print(f"\nBest hybrid-rerank P@5 vs semantic-only: {s}{d:.1%}")
-        print(f"Best config: {best['params']}")
+        vals = "  ".join(f"{str(p[k]):<8}" for k in keys)
+        print(f"{i+1:<5}  {vals}  {r['p5_h']:<.1%}     {r['p5_s']:<.1%}    "
+              f"{r['r5_h']:<.1%}   {r['mrr_h']:<.4f}  {r['hit5_h']:<.0%}    "
+              f"{r['ndcg5_h']:<.4f}   {r['lat_h']:<.0f}")
+    best = results[0]
+    d = best["p5_h"] - best["p5_s"]
+    s = "+" if d >= 0 else ""
+    print(f"\nBest hybrid-rerank P@5 vs semantic-only: {s}{d:.1%}")
+    print(f"Best config: {best['params']}")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true")
     parser.add_argument("--rrf-only", action="store_true")
+    parser.add_argument("--expanded", action="store_true")
     parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
 
-    if args.quick:
+    if args.expanded:
+        # Phase 2: expand new-framework params
+        # Baseline (fixed): rrf_k=30, rerank_top_n=24, quality=True, dedup=False
+        from config import settings
+        settings.rrf_k = 30
+        settings.rerank_top_n = 24
+        settings.chunk_quality_filter_enabled = True
+        settings.dedup_enabled = False
+        grid = {
+            "retrieval_top_k": [4, 6, 8, 12],
+            "rrf_semantic_weight": [0.5, 1.0, 1.5, 2.0, 3.0],
+            "query_rewrite_enabled": [True, False],
+        }
+    elif args.quick:
         grid = {
             "rrf_k": [30, 60, 120],
             "rerank_top_n": [16, 24],

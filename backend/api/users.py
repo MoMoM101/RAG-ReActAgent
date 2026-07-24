@@ -1,14 +1,14 @@
 """User management API — system_admin only."""
 
-from audit import audit_from_request
-from auth.jwt import hash_password
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from security import get_current_user, require_role
 from sqlalchemy import select
 
+from audit import audit_from_request
+from auth.jwt import hash_password
 from models.database import session_scope
 from models.orm import User, UserRole
+from security import get_current_user, require_role
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 

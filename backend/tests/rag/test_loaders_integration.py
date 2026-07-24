@@ -1,3 +1,5 @@
+import pytest
+
 from rag.loaders import LOADERS, load_document, load_docx, load_image, load_pdf, load_xlsx
 
 
@@ -87,11 +89,12 @@ class TestLoadPdf:
 
 class TestLoadImage:
     def test_ocr_disabled(self, tmp_path):
+        pytest.importorskip("PIL")
         from config import settings
         old = settings.ocr_enabled
         settings.ocr_enabled = False
         try:
-            from PIL import Image
+            from PIL import Image  # noqa: F811
             img = Image.new("RGB", (100, 100), color="white")
             f = tmp_path / "test.png"
             img.save(str(f))

@@ -3,7 +3,6 @@
 from datetime import UTC, datetime, timedelta
 
 from release_gate import DEFAULT_REPORT, validate_release_report
-
 from tests.qrels_schema import QrelDataset, QrelQuery
 from tests.run_grounded_answer_eval import EVALUATION_SCOPE, SCORING_VERSION
 

@@ -81,8 +81,9 @@ async def test_ready_ocr_atomically_resumes_waiting_documents(monkeypatch):
 
 
 def test_image_loader_reports_model_loading_instead_of_empty_text(tmp_path, monkeypatch):
-    import ocr.factory as factory
+    pytest.importorskip("cv2")
 
+    import ocr.factory as factory
     from rag.loaders import load_image
 
     image = tmp_path / "waiting.png"

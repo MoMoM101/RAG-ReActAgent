@@ -1,6 +1,5 @@
 """Intent classifier — fast rules + LLM fallback."""
 
-import re
 from dataclasses import dataclass
 
 from llm.base import ChatMessage

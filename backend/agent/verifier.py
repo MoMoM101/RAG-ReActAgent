@@ -14,7 +14,6 @@ from agent.query_semantics import (
     UNRESOLVED_REFERENCE_RE,
     extract_comparison_entities,
     is_comparison_query,
-    is_underspecified_query,
 )
 
 logger = logging.getLogger(__name__)

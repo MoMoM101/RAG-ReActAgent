@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
+
 from worker.tasks import BackgroundTaskManager, get_task_manager, reset_task_manager
 
 

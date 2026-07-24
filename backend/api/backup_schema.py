@@ -127,8 +127,9 @@ def classify_staged_revision(
 
 
 async def migrate_staged_db(db_path: Path, head_revision: str) -> None:
-    from alembic import command
     from alembic.config import Config as AlembicConfig
+
+    from alembic import command
 
     backend_dir = Path(__file__).resolve().parent.parent
     config = AlembicConfig(str(backend_dir / "alembic.ini"))

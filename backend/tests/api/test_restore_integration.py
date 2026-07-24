@@ -14,9 +14,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from auth.jwt import create_access_token
 from httpx import ASGITransport, AsyncClient
 
+from auth.jwt import create_access_token
 from main import app
 
 ADMIN_HEADERS = {
@@ -54,8 +54,9 @@ def _create_template_db(target_revision: str) -> Path:
     Uses cfg.set_main_option so alembic/env.py targets the template file
     instead of the test database.
     """
-    from alembic import command as alc_cmd
     from alembic.config import Config as AlcCfg
+
+    from alembic import command as alc_cmd
 
     tmp = Path(tempfile.mkdtemp(prefix=f"test_template_{target_revision}_"))
     db_path = tmp / "template.db"

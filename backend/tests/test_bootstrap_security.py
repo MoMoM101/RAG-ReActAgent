@@ -10,7 +10,6 @@ from models.orm import User
 async def test_bootstrap_auto_generates_password_when_empty(setup_db, monkeypatch):
     """When BOOTSTRAP_ADMIN_PASSWORD is empty, a default password is used."""
     from auth.jwt import verify_password
-
     from config import settings
     from main import _bootstrap_user
 
@@ -42,7 +41,6 @@ async def test_bootstrap_rejects_weak_or_oversized_password(setup_db, monkeypatc
 
 async def test_bootstrap_creates_configured_admin_once(setup_db, monkeypatch):
     from auth.jwt import verify_password
-
     from config import settings
     from main import _bootstrap_user
 

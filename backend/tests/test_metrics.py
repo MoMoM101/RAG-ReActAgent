@@ -1,5 +1,6 @@
 # backend/tests/test_metrics.py
 import pytest
+
 from metrics import MetricsCollector, export_prometheus
 
 

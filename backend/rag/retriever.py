@@ -3,15 +3,11 @@ import difflib
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, cast
-
-from sqlalchemy import select
 
 from config import settings
 from embedding.factory import create_embedding
 from models.database import session_scope
-from models.orm import Document
 from textdb.base import TextSearchResult
 from textdb.bm25_search import BM25Search
 from vectordb.base import VectorSearchResult
@@ -412,7 +408,6 @@ async def _filter_committed_generation(
 
     from sqlalchemy import text as sa_text
 
-    from models.database import session_scope
 
     async with session_scope() as session:
         conn = await session.connection()

@@ -2,9 +2,8 @@ import json
 import logging
 import sys
 
-from logging_config import JsonFormatter, setup_logging
-
 from config import settings
+from logging_config import JsonFormatter, setup_logging
 
 
 def _managed_handlers():

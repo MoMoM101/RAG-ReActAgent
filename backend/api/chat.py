@@ -6,13 +6,13 @@ from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from limiter import limiter
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.loop import run_agent_loop
 from config import settings
+from limiter import limiter
 from llm.base import ChatMessage, ToolCall
 from models.database import get_db, session_scope
 from models.orm import Conversation, Message
@@ -306,9 +306,8 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
             raise HTTPException(404, "Conversation not found")
         conv_id = conv.id
         # 打开旧会话：增量提取未处理的消息
-        from worker.tasks import get_task_manager
-
         from agent.session_extract import extract_session_memories
+        from worker.tasks import get_task_manager
         get_task_manager().create(
             lambda: extract_session_memories(conv_id),
             "extract_memories",
@@ -318,9 +317,8 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
         )
     else:
         # 新会话：对上一段会话做记忆提取
-        from worker.tasks import get_task_manager
-
         from agent.session_extract import extract_session_memories
+        from worker.tasks import get_task_manager
         prev = await db.execute(
             select(Conversation.id).order_by(Conversation.updated_at.desc()).limit(1)
         )

@@ -2,12 +2,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import select
-from storage import reset_storage
 
 from config import settings
 from models.database import session_scope
 from models.orm import DocStatus, Document
 from rag.pipeline import recover_incomplete_documents
+from storage import reset_storage
 
 
 async def _add_document(doc_id: str, filename: str, status: DocStatus) -> None:

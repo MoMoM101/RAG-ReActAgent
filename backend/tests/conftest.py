@@ -140,10 +140,9 @@ def make_fake_llm():
 @pytest_asyncio.fixture
 async def setup_db():
     # 重置模块级单例，避免测试间状态污染
-    from storage import reset_storage
-
     from embedding.factory import reset_embedding
     from llm.factory import reset_llm
+    from storage import reset_storage
     from vectordb.qdrant import reset_client_for_test
     reset_embedding()
     reset_llm()

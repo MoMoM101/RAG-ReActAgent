@@ -17,10 +17,8 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from audit import record_audit
 from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from maintenance import MaintenancePhase, get_maintenance_state
 from starlette.background import BackgroundTask
 
 from api.backup_lifecycle import (
@@ -63,7 +61,9 @@ from api.backup_schema import (
 from api.backup_schema import (
     verify_manifest as _verify_manifest,
 )
+from audit import record_audit
 from config import settings
+from maintenance import MaintenancePhase, get_maintenance_state
 from utils.safe_archive import ArchiveLimits
 
 __all__ = [

@@ -10,10 +10,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from maintenance import get_maintenance_state
 from sqlalchemy import update
 
 from config import settings
+from maintenance import get_maintenance_state
 from models.database import session_scope
 from models.orm import DocStatus, Document
 
@@ -33,7 +33,6 @@ async def _annotate_waiting_documents(message: str) -> None:
 async def monitor_optional_models() -> None:
     """Monitor forever; cancellation is handled by the app lifespan."""
     from ocr.factory import get_ocr_status
-
     from reranker.factory import get_reranker_status
 
     slow_logged: set[str] = set()
