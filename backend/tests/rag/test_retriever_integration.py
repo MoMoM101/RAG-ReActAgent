@@ -145,7 +145,7 @@ async def test_dedup_single_result():
 
 @pytest.mark.asyncio
 async def test_dedup_different_docs_similar_text():
-    """Similar text from different docs: newer doc's chunk wins."""
+    """Similar text from different docs: first-seen (higher-scored) chunk wins."""
     from datetime import datetime, timedelta
 
     from models.database import session_scope
@@ -172,7 +172,8 @@ async def test_dedup_different_docs_similar_text():
     try:
         kept = await _dedup_results([r1, r2])
         assert len(kept) == 1
-        assert kept[0].document_id == doc2_id
+        # First-seen (higher-scored) chunk is kept, not necessarily the newer doc
+        assert kept[0].document_id == doc1_id
     finally:
         async with session_scope() as session:
             from sqlalchemy import delete

@@ -40,7 +40,20 @@ def _events_by_type(events, event_type):
 class TestContextOverflowDegradation:
     """Tests for context overflow → window reduction → retry path in loop.py."""
 
-    QUERY = "有哪些文档"  # matches document_listing rule, skips LLM classify
+    QUERY = "有哪些文档"  # v0.2.0: all queries go through LLM classifier
+
+    @staticmethod
+    def _classifier_queue():
+        from llm.base import LLMResponse
+        from tests.agent.test_loop import _make_tool_call
+
+        return [LLMResponse(tool_calls=[
+            _make_tool_call("classify_intent", {
+                "intent": "general_chat",
+                "suggested_tools": ["search_docs"],
+                "hint_text": "",
+            }, call_id="ci"),
+        ])]
 
     @pytest.mark.asyncio
     async def test_overflow_triggers_window_reduction(self, make_fake_llm):
@@ -48,11 +61,10 @@ class TestContextOverflowDegradation:
         context_error = Exception("context_length_exceeded: maximum context length")
 
         fake = RaisingFakeLLM([
-            # Main loop attempt 1: raises context error
-            [LLMResponse(content="should not be seen")],
-            # Main loop attempt 2: succeeds
-            [LLMResponse(content="final answer")],
-        ], raise_on_call={0: context_error})
+            self._classifier_queue(),         # 0: classifier (succeeds)
+            [LLMResponse(content="should not be seen")],  # 1: main loop fails
+            [LLMResponse(content="final answer")],         # 2: retry succeeds
+        ], raise_on_call={1: context_error})
         _inject_llm(fake)
 
         with patch("agent.loop.registry") as mock_registry:
@@ -75,14 +87,14 @@ class TestContextOverflowDegradation:
 
     @pytest.mark.asyncio
     async def test_overflow_after_all_progressive_retries_returns_error(self):
-        """Four consecutive overflows exhaust 85/70/50% retries."""
+        """Classifier succeeds; four consecutive main-loop overflows exhaust retries."""
         import llm.factory
         llm.factory.reset_llm()
 
         context_error = Exception("context_length_exceeded: requested token count exceeds")
         fake = RaisingFakeLLM(
-            [[LLMResponse(content="should not be seen")]] * 4,
-            raise_on_call={0: context_error, 1: context_error, 2: context_error, 3: context_error},
+            [self._classifier_queue()] + [[LLMResponse(content="should not be seen")]] * 4,
+            raise_on_call={1: context_error, 2: context_error, 3: context_error, 4: context_error},
         )
         _inject_llm(fake)
 
@@ -103,13 +115,14 @@ class TestContextOverflowDegradation:
 
     @pytest.mark.asyncio
     async def test_overflow_recovery_then_normal_completion(self, make_fake_llm):
-        """Window halves once, second attempt succeeds → final answer + done."""
+        """Classifier succeeds; main loop fails once, second attempt succeeds."""
         context_error = Exception("maximum context length exceeded - reduce the length")
 
         fake = RaisingFakeLLM([
-            [LLMResponse(content="first fail")],
-            [LLMResponse(content="recovered result")],
-        ], raise_on_call={0: context_error})
+            self._classifier_queue(),         # 0: classifier
+            [LLMResponse(content="first fail")],      # 1: main loop fails
+            [LLMResponse(content="recovered result")], # 2: retry succeeds
+        ], raise_on_call={1: context_error})
         _inject_llm(fake)
 
         with patch("agent.loop.registry") as mock_registry:
@@ -130,13 +143,14 @@ class TestContextOverflowDegradation:
 
     @pytest.mark.asyncio
     async def test_non_context_error_not_swallowed(self):
-        """ValueError (not context error) should propagate, not be caught by overflow handler."""
+        """ValueError from main loop propagates, not caught by overflow handler."""
         import llm.factory
         llm.factory.reset_llm()
 
         fake = RaisingFakeLLM([
-            [LLMResponse(content="will raise")],
-        ], raise_on_call={0: ValueError("not a context error")})
+            self._classifier_queue(),         # 0: classifier succeeds
+            [LLMResponse(content="will raise")],  # 1: main loop raises ValueError
+        ], raise_on_call={1: ValueError("not a context error")})
         _inject_llm(fake)
 
         with patch("agent.loop.registry") as mock_registry:

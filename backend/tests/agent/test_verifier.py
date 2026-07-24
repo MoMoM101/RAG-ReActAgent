@@ -214,26 +214,25 @@ def test_comparison_fallback_extracts_supported_side_without_inventing_relation(
     assert verification.citation_precision == 1.0
 
 
-def test_query_safety_guard_abstains_on_unresolved_reference_without_history():
+def test_query_safety_guard_passthrough_on_unresolved_reference():
+    """v0.2.0: safety guard returns answer unchanged, trusts model self-correction."""
     answer = "FastAPI 适合高性能 API [S1]。"
 
-    assert apply_query_safety_guard("这个框架适合什么项目", answer).startswith("无法确认")
+    assert apply_query_safety_guard("这个框架适合什么项目", answer) == answer
     assert apply_query_safety_guard(
         "这个框架适合什么项目",
         answer,
         has_context=True,
-    ).startswith("无法确认")
+    ) == answer
 
 
-def test_query_safety_guard_abstains_when_superlative_relation_is_missing():
+def test_query_safety_guard_passthrough_on_superlative():
     answer = "数据预处理通常比调参更重要 [S1]。"
 
-    guarded = apply_query_safety_guard(
+    assert apply_query_safety_guard(
         "哪种预处理方法最能提升深度学习效果",
         answer,
-    )
-
-    assert guarded.startswith("无法确认")
+    ) == answer
 
 
 def test_query_safety_guard_keeps_explicit_superlative_answer():
@@ -242,13 +241,11 @@ def test_query_safety_guard_keeps_explicit_superlative_answer():
     assert apply_query_safety_guard("哪种方法最有效", answer) == answer
 
 
-def test_query_safety_guard_abstains_when_calculation_relation_is_missing():
-    guarded = apply_query_safety_guard(
+def test_query_safety_guard_passthrough_on_calculation():
+    assert apply_query_safety_guard(
         "F1 分数怎么计算",
         "F1 是常用模型评估指标 [S1]。",
-    )
-
-    assert guarded.startswith("无法确认")
+    ) == "F1 是常用模型评估指标 [S1]。"
 
 
 def test_query_safety_guard_keeps_explicit_calculation_answer():
@@ -257,22 +254,17 @@ def test_query_safety_guard_keeps_explicit_calculation_answer():
     assert apply_query_safety_guard("F1 分数怎么计算", answer) == answer
 
 
-def test_query_safety_guard_rejects_repetitive_low_information_query():
-    guarded = apply_query_safety_guard(
-        "的" * 20,
-        "Python 机器学习生态包括 scikit-learn [S1]。",
-    )
-
-    assert guarded.startswith("无法确认")
+def test_query_safety_guard_passthrough_on_repetitive_query():
+    """v0.2.0: no longer rejects repetitive queries."""
+    answer = "Python 机器学习生态包括 scikit-learn [S1]。"
+    assert apply_query_safety_guard("的" * 20, answer) == answer
 
 
-def test_query_safety_guard_abstains_when_comparison_relation_is_missing():
-    guarded = apply_query_safety_guard(
+def test_query_safety_guard_passthrough_on_comparison():
+    assert apply_query_safety_guard(
         "One-Hot 编码和 Label Encoding 的区别",
         "类别变量编码包括 One-Hot 编码和 Label Encoding [S1]。",
-    )
-
-    assert guarded.startswith("无法确认")
+    ) == "类别变量编码包括 One-Hot 编码和 Label Encoding [S1]。"
 
 
 def test_query_safety_guard_keeps_explicit_comparison_answer():
@@ -285,22 +277,24 @@ def test_comparison_guard_requires_both_named_sides():
     query = "MCP 和 Skill 怎么选"
 
     assert not comparison_answer_complete(query, "MCP 适合连接外部工具 [S1]。")
-    assert apply_query_safety_guard(query, "MCP 适合连接外部工具 [S1]。").startswith("无法确认")
     assert comparison_answer_complete(
         query,
         "MCP 适合连接外部工具，Skill 更适合封装工作流程 [S1, S2]。",
     )
+    # v0.2.0: safety guard no longer overrides answer
+    assert apply_query_safety_guard(query, "MCP 适合连接外部工具 [S1]。") == "MCP 适合连接外部工具 [S1]。"
 
 
-def test_relation_guards_reject_topical_but_nonresponsive_answers():
+def test_relation_guards_passthrough_on_topical_but_nonresponsive():
+    """v0.2.0: safety guard returns answer unchanged."""
     assert apply_query_safety_guard(
         "Django MTV 每层职责是什么",
         "Django 使用 MTV 架构 [S1]。",
-    ).startswith("无法确认")
+    ) == "Django 使用 MTV 架构 [S1]。"
     assert apply_query_safety_guard(
         "为什么会发生缓存穿透",
         "缓存穿透是一类缓存问题 [S1]。",
-    ).startswith("无法确认")
+    ) == "缓存穿透是一类缓存问题 [S1]。"
 
 
 def test_zero_support_guard_refuses_fully_unsupported_factual_answer():

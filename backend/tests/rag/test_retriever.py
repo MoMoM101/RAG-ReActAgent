@@ -99,6 +99,10 @@ def _disable_optional_retrieval_features(monkeypatch):
     monkeypatch.setattr(retriever.settings, "rrf_quality_prefilter_enabled", False)
     monkeypatch.setattr(retriever.settings, "dedup_enabled", False)
 
+    async def _noop_filter(results):
+        return results
+    monkeypatch.setattr(retriever, "_filter_committed_generation", _noop_filter)
+
 
 @pytest.mark.asyncio
 async def test_hybrid_search_keeps_keyword_results_when_semantic_fails(monkeypatch):

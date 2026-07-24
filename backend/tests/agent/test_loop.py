@@ -14,6 +14,19 @@ def _make_tool_call(name: str, args: dict, call_id: str = "call_1") -> ToolCall:
     return ToolCall(id=call_id, name=name, arguments=args)
 
 
+def _make_classifier_queue(intent="general_chat", suggested_tools=None, hint_text="search"):
+    """Return a FakeLLM queue entry for the intent classifier LLM call."""
+    if suggested_tools is None:
+        suggested_tools = ["search_docs"]
+    return [LLMResponse(tool_calls=[
+        _make_tool_call("classify_intent", {
+            "intent": intent,
+            "suggested_tools": suggested_tools,
+            "hint_text": hint_text,
+        }, call_id="ci"),
+    ])]
+
+
 def _events_by_type(events: list[dict], event_type: str) -> list[dict]:
     return [e for e in events if e.get("event") == event_type]
 
@@ -26,9 +39,10 @@ def _make_parallel_result(name: str, result: ToolResult, elapsed: float = 0.0):
 class TestAgentLoopBasic:
     @pytest.mark.asyncio
     async def test_direct_answer_no_tools(self, make_fake_llm):
-        """规则命中 + LLM 直接回答（无 tool_call）→ answer_chunk + done。"""
+        """v0.2.0: all queries go through LLM classifier, then direct answer → answer_chunk + done."""
         make_fake_llm(
             [
+                _make_classifier_queue(intent="general_chat"),
                 [LLMResponse(content="你好！有什么可以帮你的？")],
             ]
         )
@@ -52,9 +66,10 @@ class TestAgentLoopBasic:
 
     @pytest.mark.asyncio
     async def test_single_tool_call(self, make_fake_llm):
-        """规则命中 → LLM 调 search_docs → tool_result + answer_chunk + done。"""
+        """v0.2.0: classifier → LLM calls search_docs → tool_result + answer_chunk + done."""
         make_fake_llm(
             [
+                _make_classifier_queue(),
                 # 主循环第 1 轮：调 search_docs
                 [
                     LLMResponse(
@@ -103,9 +118,10 @@ class TestAgentLoopBasic:
 class TestAgentLoopToolError:
     @pytest.mark.asyncio
     async def test_tool_execution_failure(self, make_fake_llm):
-        """工具执行失败 → tool_result 含 error。"""
+        """v0.2.0: classifier → LLM calls calculator → tool_result with error."""
         make_fake_llm(
             [
+                _make_classifier_queue(),
                 [
                     LLMResponse(
                         tool_calls=[_make_tool_call("calculator", {"expression": "1/0"})],
@@ -205,9 +221,10 @@ class TestAgentLoopSources:
 
     @pytest.mark.asyncio
     async def test_source_extraction(self, make_fake_llm):
-        """search_docs 结果 → sources 事件包含文档信息。"""
+        """v0.2.0: classifier → search_docs → sources 事件包含文档信息。"""
         make_fake_llm(
             [
+                _make_classifier_queue(),
                 [
                     LLMResponse(
                         tool_calls=[_make_tool_call("search_docs", {"query": "X"})],
@@ -248,9 +265,10 @@ class TestAgentLoopSources:
 
     @pytest.mark.asyncio
     async def test_multiple_searches_get_unique_aggregated_citations(self, make_fake_llm):
-        """多次 search_docs 的来源应整轮聚合，并保持唯一引用编号。"""
+        """v0.2.0: classifier → 多次 search_docs 来源整轮聚合。"""
         make_fake_llm(
             [
+                _make_classifier_queue(),
                 [LLMResponse(tool_calls=[_make_tool_call("search_docs", {"query": "A"}, "c1")])],
                 [LLMResponse(tool_calls=[_make_tool_call("search_docs", {"query": "B"}, "c2")])],
                 [LLMResponse(content="结论分别来自 [S1] 和 [S2]。")],
@@ -293,9 +311,10 @@ class TestAgentLoopSources:
         self,
         make_fake_llm,
     ):
-        """同一文档的多次检索不能只保留第一组高分片段。"""
+        """v0.2.0: classifier → 同一文档多次检索保留各组高分片段。"""
         make_fake_llm(
             [
+                _make_classifier_queue(),
                 [LLMResponse(tool_calls=[_make_tool_call("search_docs", {"query": "MCP"}, "c1")])],
                 [LLMResponse(tool_calls=[_make_tool_call("search_docs", {"query": "Skill"}, "c2")])],
                 [LLMResponse(content="MCP 与 Skill 的资料均已找到 [S1] [S6]。")],
@@ -358,12 +377,11 @@ class TestAgentLoopSources:
 class TestAgentLoopLimits:
     @pytest.mark.asyncio
     async def test_loop_limit(self, make_fake_llm):
-        """主循环始终返回 tool_call → 达到 max_loop_iterations 后 LOOP_LIMIT 错误。"""
+        """v0.2.0: classifier then max_loop_iterations tool_calls → LOOP_LIMIT error."""
         from config import settings
 
-        # 构造超过 max_loop_iterations 轮的工具调用响应
         max_iter = settings.max_loop_iterations
-        queues = []
+        queues = [_make_classifier_queue()]
         for _ in range(max_iter):
             queues.append(
                 [
