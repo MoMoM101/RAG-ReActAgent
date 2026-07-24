@@ -13,7 +13,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -49,7 +49,7 @@ jobs:
       EMBEDDING_API_KEY: ${{ secrets.EMBEDDING_API_KEY }}
       SECRET_KEY: ${{ secrets.E2E_SECRET_KEY || secrets.SECRET_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run Docker E2E acceptance
         shell: pwsh
         run: ./scripts/docker_e2e_acceptance.ps1 -Clean
