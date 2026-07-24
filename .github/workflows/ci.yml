@@ -123,16 +123,23 @@ jobs:
             -e BOOTSTRAP_ADMIN_PASSWORD=ci-smoke-admin-password \
             -e ALLOW_REMOTE_ACCESS=true \
             -e SERVER_HOST=0.0.0.0 \
+            -e EMBEDDING_TIMEOUT=5 \
+            -e LLM_CONNECT_TIMEOUT=5 \
             -p 8000:8000 \
             rag-backend:ci
-          # Wait for startup
-          for i in $(seq 1 30); do
+          # Wait for startup (up to 120s for Qdrant init + model downloads)
+          for i in $(seq 1 60); do
             if curl -sf http://127.0.0.1:8000/api/health; then
               echo "Backend healthy"
               break
             fi
             sleep 2
           done
+          # Debug: print container logs if health check still fails
+          if ! curl -sf http://127.0.0.1:8000/api/health; then
+            echo "=== Container logs ==="
+            docker logs rag-backend-smoke
+          fi
           # Verify health endpoint
           curl -sf http://127.0.0.1:8000/api/health
           # Verify 401 on admin endpoint without token (strict)
