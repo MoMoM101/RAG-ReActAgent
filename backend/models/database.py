@@ -264,7 +264,7 @@ async def _prune_old_records(
                     sa_text("DELETE FROM audit_logs WHERE CAST(created_at AS INTEGER) < :cutoff"),
                     {"cutoff": audit_cutoff},
                 )
-                audit_deleted = audit_result.rowcount
+                audit_deleted = audit_result.rowcount  # type: ignore[attr-defined]
 
                 # Prune messages (cascades to message_sources)
                 msg_cutoff = (now - timedelta(days=data_retention_days)).isoformat()
@@ -272,7 +272,7 @@ async def _prune_old_records(
                     sa_text("DELETE FROM messages WHERE created_at < :cutoff"),
                     {"cutoff": msg_cutoff},
                 )
-                msg_deleted = msg_result.rowcount
+                msg_deleted = msg_result.rowcount  # type: ignore[attr-defined]
 
                 # Prune orphaned conversations (no messages left)
                 conv_result = await session.execute(
@@ -281,7 +281,7 @@ async def _prune_old_records(
                         "(SELECT DISTINCT conversation_id FROM messages)"
                     ),
                 )
-                conv_deleted = conv_result.rowcount
+                conv_deleted = conv_result.rowcount  # type: ignore[attr-defined]
 
                 await session.commit()
 
