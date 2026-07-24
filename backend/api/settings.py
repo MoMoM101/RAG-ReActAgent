@@ -242,7 +242,8 @@ async def _get_actual_embedding_dim() -> int:
 
     api_key = settings.embedding_api_key or settings.llm_api_key
     base_url = settings.embedding_base_url or settings.llm_base_url
-    http_client = httpx.AsyncClient(proxy=None, trust_env=False)
+    timeout = httpx.Timeout(connect=settings.llm_connect_timeout, read=10.0)
+    http_client = httpx.AsyncClient(proxy=None, trust_env=False, timeout=timeout)
     client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
     resp = await client.embeddings.create(model=settings.embedding_model, input=["test"])
     return len(resp.data[0].embedding)
