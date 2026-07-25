@@ -49,12 +49,26 @@ jobs:
       EMBEDDING_API_KEY: ${{ secrets.EMBEDDING_API_KEY }}
       SECRET_KEY: ${{ secrets.E2E_SECRET_KEY || secrets.SECRET_KEY }}
     steps:
+      - name: Check required secrets
+        id: secrets-check
+        run: |
+          MISSING=""
+          [ -z "$LLM_API_KEY" ] && MISSING="$MISSING LLM_API_KEY"
+          [ -z "$EMBEDDING_API_KEY" ] && MISSING="$MISSING EMBEDDING_API_KEY"
+          if [ -n "$MISSING" ]; then
+            echo "::warning::Missing secrets:$MISSING — skipping Docker E2E"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7
+        if: steps.secrets-check.outputs.skipped != 'true'
       - name: Run Docker E2E acceptance
+        if: steps.secrets-check.outputs.skipped != 'true'
         shell: pwsh
         run: ./scripts/docker_e2e_acceptance.ps1 -Clean
       - name: Upload report
-        if: always()
+        if: always() && steps.secrets-check.outputs.skipped != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: docker-e2e-report

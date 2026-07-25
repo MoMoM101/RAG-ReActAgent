@@ -8,6 +8,9 @@
 ![Faithfulness](https://img.shields.io/badge/回答忠实度-98.48%25-brightgreen)
 ![Citation](https://img.shields.io/badge/引用精确率-98.48%25-brightgreen)
 ![Coverage](https://img.shields.io/badge/后端覆盖率-72%25-blue)
+![CI](https://github.com/MoMoM101/RAG-ReActAgent/actions/workflows/ci.yml/badge.svg)
+![Version](https://img.shields.io/badge/version-v0.2.0--beta-blue)
+![Docker](https://img.shields.io/badge/ghcr.io-available-blue?logo=docker)
 
 RAG Agent 是一个本地优先的文档知识库与智能问答系统。用户上传文档后，可以直接使用自然语言提问；系统会完成意图识别、查询消歧、混合检索、工具调用、证据组织、流式回答和引用校验。
 
@@ -849,7 +852,7 @@ Docker 仅在运行 Compose 或 Docker E2E 时必需：
 .\scripts\docker_e2e_acceptance.ps1 -Clean
 ```
 
-2026-07-23 的候选验收中，配置、构建、健康检查、密钥检查、JWT 鉴权、文档上传、索引一致性、SSE 问答、重启持久化、备份恢复、Qdrant 降级恢复和严格冒烟测试全部通过，测试容器和卷已在结束后清理。
+2026-07-23 的验收测试中，配置、构建、健康检查、密钥检查、JWT 鉴权、文档上传、索引一致性、SSE 问答、重启持久化、备份恢复、Qdrant 降级恢复和严格冒烟测试全部通过，测试容器和卷已在结束后清理。
 
 ## 安全与隐私
 
@@ -1012,7 +1015,7 @@ cd backend
 | [项目参考](docs/PROJECT_REFERENCE.md) | 架构、配置、数据、安全、运维和故障排查 |
 | [贡献指南](CONTRIBUTING.md) | 开发流程、测试命令和提交规范 |
 | [安全策略](SECURITY.md) | 漏洞私下报告方式和部署安全边界 |
-| [更新日志](CHANGELOG.md) | 版本能力、候选验证结果和已知限制 |
+| [更新日志](CHANGELOG.md) | 版本能力、验证结果和已知限制 |
 | [社区行为准则](CODE_OF_CONDUCT.md) | 社区协作和维护规则 |
 | [测试数据来源](backend/tests/DATA_PROVENANCE.md) | 合成夹具、qrels 和评测数据的来源与许可 |
 | [环境变量模板](backend/.env.example) | 完整配置字段 |
