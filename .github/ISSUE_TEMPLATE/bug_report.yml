@@ -12,7 +12,7 @@ body:
     attributes:
       label: 版本
       description: 使用的版本、标签或提交哈希。
-      placeholder: "例如：v0.1.0-beta 或 main@abcdef0"
+      placeholder: "例如：v0.2.0-beta 或 main@abcdef0"
     validations:
       required: true
   - type: dropdown
