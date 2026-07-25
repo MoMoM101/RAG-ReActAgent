@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ChatPanel } from "./components/chat/ChatPanel";
 import { ToastContainer } from "./components/shared/Toast";

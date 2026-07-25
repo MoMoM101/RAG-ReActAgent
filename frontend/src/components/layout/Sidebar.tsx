@@ -3,7 +3,7 @@ import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirm } from "../shared/useConfirm";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router";
 import { ChatIcon, DocIcon, SettingsIcon, BrainIcon, PlusIcon, TrashIcon, LogoutIcon } from "../shared/Icons";
 
 export function Sidebar() {
