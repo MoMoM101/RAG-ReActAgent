@@ -4,4 +4,4 @@ pytest-cov>=6.0
 mypy>=1.15
 ruff>=0.15.22
 httpx>=0.28
-PyYAML>=6.0
+PyYAML>=6.0.3
