@@ -113,6 +113,7 @@ def _register_web_sources(state: ToolTurnState, items: list[dict]) -> None:
                 "document_key": "web_search",
                 "section_key": "",
                 "filename": item.get("title", "Web Search"),
+                "url": url,
                 "score": 0.5,
                 "rank": len(state.sources) + 1,
             }
@@ -201,11 +202,15 @@ def _prune_sources(state: ToolTurnState) -> None:
     pruned = merge_adjacent_chunks(pruned)
     if len(pruned) < original_count:
         logger.info("source pruning: %d → %d chunks", original_count, len(pruned))
-    search_messages = [message for message in state.messages if message.role == "tool" and message.tool_name == "search_docs"]
-    for message in search_messages[:-1]:
+    retrieval_messages = [
+        message
+        for message in state.messages
+        if message.role == "tool" and message.tool_name in ("search_docs", "web_search")
+    ]
+    for message in retrieval_messages[:-1]:
         message.content = _serialize_search_results([])
-    if search_messages:
-        search_messages[-1].content = _serialize_search_results(pruned)
+    if retrieval_messages:
+        retrieval_messages[-1].content = _serialize_search_results(pruned)
     state.sources[:] = pruned
 
 

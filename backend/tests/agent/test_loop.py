@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from agent.loop_support import detect_repetitive_tool_calls
 from agent.loop_tools import ToolTurnState, _prune_sources
 from agent.source_utils import extract_sources
 from agent.tools import ToolResult
@@ -219,6 +220,68 @@ class TestAgentLoopSources:
         assert extract_sources([messages[0]]) == []
         assert [item["citation_id"] for item in extract_sources([messages[1]])] == ["S1"]
 
+    def test_pruning_normalizes_combined_kb_and_web_messages(self):
+        kb_sources = [
+            {
+                "citation_id": f"S{index + 1}",
+                "chunk_id": f"kb-{index}",
+                "document_id": f"doc-{index}",
+                "document_key": f"doc-{index}",
+                "section_key": f"section-{index}",
+                "text": f"knowledge-base evidence {index}",
+                "score": 1.0 - index / 100,
+                "rank": index + 1,
+            }
+            for index in range(5)
+        ]
+        web_sources = [
+            {
+                "citation_id": f"WS{index + 6}",
+                "chunk_id": f"web-WS{index + 6}",
+                "document_id": f"web:https://example.com/{index}",
+                "document_key": "web_search",
+                "section_key": "",
+                "filename": f"Web result {index}",
+                "url": f"https://example.com/{index}",
+                "text": f"web evidence {index}",
+                "score": 0.5,
+                "rank": index + 6,
+            }
+            for index in range(5)
+        ]
+        sources = kb_sources + web_sources
+        messages = [
+            ChatMessage(
+                role="tool",
+                content='{"results":[{"citation_id":"S99","text":"stale kb"}]}',
+                tool_name="search_docs",
+            ),
+            ChatMessage(
+                role="tool",
+                content='{"results":[{"citation_id":"WS99","text":"stale web"}]}',
+                tool_name="web_search",
+            ),
+        ]
+        state = ToolTurnState(
+            messages=messages,
+            sources=sources,
+            citation_by_source={source["chunk_id"]: source["citation_id"] for source in sources},
+            search_groups_by_source={source["chunk_id"]: {"kb"} for source in kb_sources},
+            timing={},
+        )
+
+        _prune_sources(state)
+
+        visible_ids = {
+            source["citation_id"]
+            for source in extract_sources(messages)
+        }
+        retained_ids = {source["citation_id"] for source in state.sources}
+        assert extract_sources([messages[0]]) == []
+        assert visible_ids == retained_ids
+        assert "WS99" not in visible_ids
+        assert all(source.get("url") for source in state.sources if source["citation_id"].startswith("WS"))
+
     @pytest.mark.asyncio
     async def test_source_extraction(self, make_fake_llm):
         """v0.2.0: classifier → search_docs → sources 事件包含文档信息。"""
@@ -375,6 +438,33 @@ class TestAgentLoopSources:
 
 
 class TestAgentLoopLimits:
+    def test_loop_detection_requires_similar_retrieval_queries(self):
+        history = [
+            ("search_docs", "光伏成本下降了吗？"),
+            ("search_docs", "光伏成本的历史趋势"),
+            ("search_docs", "光伏产业补贴政策"),
+        ]
+
+        assert detect_repetitive_tool_calls(history) is None
+
+    def test_loop_detection_catches_rephrased_repetition(self):
+        history = [
+            ("search_docs", "光伏成本下降了吗？"),
+            ("search_docs", "光伏成本下降了吗"),
+            ("search_docs", "请问光伏成本下降了吗？"),
+        ]
+
+        assert detect_repetitive_tool_calls(history) == ("search_docs", 3)
+
+    def test_loop_detection_ignores_non_retrieval_tools(self):
+        history = [
+            ("calculator", ""),
+            ("calculator", ""),
+            ("calculator", ""),
+        ]
+
+        assert detect_repetitive_tool_calls(history) is None
+
     @pytest.mark.asyncio
     async def test_loop_limit(self, make_fake_llm):
         """v0.2.0: classifier then max_loop_iterations tool_calls → LOOP_LIMIT error."""

@@ -22,6 +22,7 @@ from agent.loop_support import (
 from agent.loop_support import (
     cache_sources_accessible as _cache_sources_accessible,
 )
+from agent.loop_support import detect_repetitive_tool_calls
 from agent.loop_support import (
     repair_single_unit as _repair_single_unit,
 )
@@ -618,14 +619,17 @@ async def run_agent_loop(
             for tc in tool_calls_acc:
                 query_arg = str(tc.arguments.get("query", ""))
                 _tool_call_history.append((tc.name, query_arg))
-            # Check for repeated calls to same tool with similar queries
+            # Only repeated retrieval calls with genuinely similar queries
+            # indicate a loop. Distinct multi-hop searches remain available.
             if not _loop_force_converge:
-                same_tool_calls = [t for t in _tool_call_history if t[0] == tool_calls_acc[0].name]
-                if len(same_tool_calls) >= 3:
+                repeated = detect_repetitive_tool_calls(_tool_call_history)
+                if repeated is not None:
+                    repeated_tool, similar_count = repeated
                     _loop_force_converge = True
                     logger.warning(
-                        "loop detected: %s called %d times; forcing convergence",
-                        tool_calls_acc[0].name, len(same_tool_calls),
+                        "loop detected: %s called %d times with similar queries; forcing convergence",
+                        repeated_tool,
+                        similar_count,
                     )
 
             # After tool execution, check cancellation before next iteration

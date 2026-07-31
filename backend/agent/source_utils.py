@@ -22,9 +22,13 @@ _INJECTION_PATTERNS = (
 
 
 def extract_sources(messages: list[ChatMessage]) -> list[dict]:
-    """Extract normalized sources from the latest document-search result."""
+    """Extract normalized sources from the latest retrieval result."""
     for message in reversed(messages):
-        if message.role != "tool" or not message.content or message.tool_name != "search_docs":
+        if (
+            message.role != "tool"
+            or not message.content
+            or message.tool_name not in ("search_docs", "web_search")
+        ):
             continue
         try:
             content = message.content

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import re
+from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
 from agent.verifier import Evidence
@@ -11,6 +13,39 @@ from llm.base import ChatMessage
 
 if TYPE_CHECKING:
     from agent.stream_verify import AtomicUnit, UnitResult
+
+
+_LOOP_GUARDED_TOOLS = frozenset({"search_docs", "web_search"})
+
+
+def _normalize_tool_query(query: str) -> str:
+    """Normalize a retrieval query before loop-similarity comparison."""
+    return re.sub(r"[\W_]+", "", query.casefold(), flags=re.UNICODE)
+
+
+def detect_repetitive_tool_calls(
+    history: list[tuple[str, str]],
+    *,
+    repeat_limit: int = 3,
+    similarity_threshold: float = 0.82,
+) -> tuple[str, int] | None:
+    """Return the looping retrieval tool when similar queries repeat."""
+    for tool_name in _LOOP_GUARDED_TOOLS:
+        queries = [
+            normalized
+            for name, query in history
+            if name == tool_name and (normalized := _normalize_tool_query(query))
+        ]
+        if len(queries) < repeat_limit:
+            continue
+        latest = queries[-1]
+        similar_count = sum(
+            SequenceMatcher(None, latest, previous).ratio() >= similarity_threshold
+            for previous in queries
+        )
+        if similar_count >= repeat_limit:
+            return tool_name, similar_count
+    return None
 
 
 def repair_single_unit(
