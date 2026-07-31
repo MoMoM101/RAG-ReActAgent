@@ -20,6 +20,7 @@ RAG Agent 是一个本地优先的文档知识库与智能问答系统。用户�
 
 ## 目录
 
+- [项目来源与开发说明](#项目来源与开发说明)
 - [项目亮点](#项目亮点)
 - [适用场景](#适用场景)
 - [核心功能](#核心功能)
@@ -39,6 +40,16 @@ RAG Agent 是一个本地优先的文档知识库与智能问答系统。用户�
 - [项目文档](#项目文档)
 - [参与贡献](#参与贡献)
 - [许可证](#许可证)
+
+## 项目来源与开发说明
+
+这是一个始于 **2026-06-24** 的个人独立开发项目。需求定义、架构取舍、代码集成、环境调试、测试评测和开源发布均由仓库所有者个人负责；开发过程中使用 Claude Code、Codex 等 AI 编码助手进行方案讨论、局部代码草拟、测试补充、排错和文档整理，所有进入仓库的内容均由开发者选择、审查、集成并承担最终责任。
+
+公开分支于 **2026-07-23** 建立。根提交 `5a939d2` 是从此前开发工作区整理出的首个开源快照，因此一次加入了 389 个文件、84,037 行；这表示首次公开的代码量，不表示项目在一次提交中从零生成。根提交和部分发布整理提交中的 `RAG Agent Contributors`、`RAG Agent Dev` 是同一位个人开发者在开源整理阶段使用的通用本地 Git 身份，不代表未披露的开发团队。后续提交已改用仓库所有者身份，旧提交为保持公开哈希稳定未重写。
+
+开发者主导设计和集成的核心范围包括：文档入库与失败恢复、Qdrant + BM25 + RRF 混合检索、ReAct 工具循环与上下文预算、引用与回答校验、跨存储一致性、JWT 认证、数据库迁移与备份恢复，以及 qrels 和发布质量门禁。
+
+完整的 AI 使用边界、核心模块、公开前开发阶段和版本时间线见 [项目来源与开发说明](docs/PROJECT_PROVENANCE.md)。
 
 ## 项目亮点
 
@@ -717,6 +728,8 @@ cd backend
 
 ## 质量评测
 
+> **适用范围：** 当前指标来自项目自建的固定合成数据集。93 条正式结果使用了包含开发子集在内的全量基准，尚不是严格隔离的 held-out test；它不能直接外推到任意真实业务文档。数据构成、复现命令、消融、失败案例和待补项见 [评测方法与复现说明](docs/EVALUATION_REPRODUCIBILITY.md)。
+
 ### 回答质量
 
 正式报告：
@@ -735,6 +748,8 @@ cd backend
 | 总延迟 P95 | 2,109.26 ms |
 | 首 Token 延迟 P95 | 945.39 ms |
 
+数据集 `rag-agent-eval-v2` 包含 **4 个合成文档、93 条人工标注查询**，覆盖精确字段、跨文档、数值、中英混合、长查询、不可回答、歧义、提示词注入、拼写错误等类型。数据、预期事实、必须引用项和可回答性标签均在 [`qrels_data_v2.json`](backend/tests/qrels_data_v2.json) 中公开。
+
 与不强制引用的控制组相比：
 
 | 指标 | 控制组 | 当前版本 | 提升 |
@@ -751,7 +766,7 @@ cd backend
 
 [`backend/tests/evaluation_results_complex_v2.json`](backend/tests/evaluation_results_complex_v2.json)
 
-该报告包含 29 条复杂和跨文档查询，`qrels_fallback_count=0`，所有查询均使用显式 qrels 标注。
+该报告使用 **9 个支付、传感器和合规类合成文档、29 条复杂和跨文档查询**，`qrels_fallback_count=0`，所有查询均使用显式 qrels 标注。
 
 评测参数：
 
@@ -772,6 +787,38 @@ cd backend
 | Recall | 88.65% | 92.96% | **99.57%** |
 | Hit Rate | **100.00%** | **100.00%** | **100.00%** |
 | NDCG | 92.80% | 93.17% | **95.13%** |
+
+报告同时包含 semantic-only、keyword-only、hybrid-no-rerank 和 hybrid-rerank 四组消融。在当前小型合成集上，混合检索的 NDCG@5 为 93.17%，高于语义单路的 90.72% 和关键词单路的 75.99%；Reranker 没有带来可见质量提升。完整表格和限制见 [评测方法与复现说明](docs/EVALUATION_REPRODUCIBILITY.md#消融结果)。
+
+### 一键复现
+
+从 `backend` 目录执行：
+
+```powershell
+# 无外部模型调用：检查数据、qrels、BM25 索引和基础命中
+python -m tests.run_grounded_answer_eval --dry-run
+
+# 完整回答质量评测：需要配置 LLM，最多 200 次模型调用
+python -m tests.run_grounded_answer_eval `
+  --output tests/grounded_answer_eval_reproduced.json `
+  --max-model-calls 200 `
+  --concurrency 2 `
+  --enforce-gate
+
+# 复杂检索与四组消融：需要配置 Embedding、Qdrant 和可选 Reranker
+python tests/complex_eval_runner.py
+
+# 校验已有正式报告；该命令不会重新调用模型
+python release_gate.py
+```
+
+### 失败案例与已知限制
+
+- `cross-005` 同时询问“为什么预处理比调参重要”和“部署框架”。资料只支持部分问题，optimized 版本整体拒答，导致该样本的忠实度、引用和事实召回均为 0；
+- optimized 组有 20 条记录未达到 100% 的预期事实召回，总体 expected fact recall 为 87.47%，因此引用指标不能替代事实覆盖率；
+- 当前 dev 子集和 93 条正式结果来自同一数据集，没有严格隔离的冻结 test；
+- 当前支付、传感器、合规和药品语料均为人工编写的业务风格合成文本，不是真实客户文档；
+- 独立 held-out test、多人标注一致性和真实授权脱敏业务集仍待补充。
 
 评测百分比必须与数据集、模型、参数和报告中的 provenance 一起理解。修改检索器、提示词、数据集或模型后，应重新生成报告。
 
@@ -1013,6 +1060,8 @@ cd backend
 |---|---|
 | [项目介绍](docs/PROJECT_INTRODUCTION.md) | 项目优势、量化指标和对外介绍 |
 | [项目参考](docs/PROJECT_REFERENCE.md) | 架构、配置、数据、安全、运维和故障排查 |
+| [项目来源与开发说明](docs/PROJECT_PROVENANCE.md) | 个人开发、首次开源快照、AI 使用边界和版本时间线 |
+| [评测方法与复现说明](docs/EVALUATION_REPRODUCIBILITY.md) | 数据集、标注、隔离边界、命令、消融和失败案例 |
 | [贡献指南](CONTRIBUTING.md) | 开发流程、测试命令和提交规范 |
 | [安全策略](SECURITY.md) | 漏洞私下报告方式和部署安全边界 |
 | [更新日志](CHANGELOG.md) | 版本能力、验证结果和已知限制 |
