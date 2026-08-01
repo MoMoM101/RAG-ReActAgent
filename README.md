@@ -51,7 +51,23 @@ Windows PowerShell 将第三行替换为：
 Copy-Item backend/.env.example backend/.env
 ```
 
-打开 <http://localhost:5173>，默认首次登录账号为 `admin` / `RAGAgent2026!`。建议登录后立即修改密码，并在设置页填写 LLM 与 Embedding 配置。**本地部署：源码构建、本地开发和 OCR 安装方式见[快速开始](#快速开始)。**
+打开 <http://localhost:5173>。
+
+默认首次登录用户名：
+
+```text
+admin
+```
+
+默认首次登录密码：
+
+```text
+RAGAgent2026!
+```
+
+建议登录后立即修改密码，并在设置页填写 LLM 与 Embedding 配置。
+
+**本地部署：源码构建、本地开发和 OCR 安装方式见[快速开始](#快速开始)。**
 
 ## 评测摘要
 
