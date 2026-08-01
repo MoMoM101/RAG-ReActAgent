@@ -2,7 +2,7 @@
 
 import re
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class _ProviderSettings(BaseModel):
@@ -43,7 +43,7 @@ class SettingsResponse(BaseModel):
     embedding: EmbeddingSettings
     web_search_enabled: bool = True
     rerank_enabled: bool = False
-    retrieval_top_k: int = 5
+    retrieval_top_k: int = Field(default=5, ge=1, le=20)
     web_search_max_results: int = 5
     chunk_size: int = 384
     chunk_overlap: int = 50

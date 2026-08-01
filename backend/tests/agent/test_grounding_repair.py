@@ -38,6 +38,12 @@ def test_moves_citation_from_after_period_to_before():
     assert text == "这是一个事实 [S1]。"
 
 
+def test_moves_web_citation_from_after_period_to_before():
+    text, changed = repair_citation_position("这是网页事实。 [WS3]")
+    assert changed
+    assert text == "这是网页事实 [WS3]。"
+
+
 def test_leaves_correctly_positioned_citation_unchanged():
     text, changed = repair_citation_position("这是一个事实 [S1]。")
     assert not changed
@@ -69,6 +75,23 @@ def test_deduplicates_within_citation_group():
 def test_leaves_distinct_citations_unchanged():
     text, changed = repair_duplicate_citations("事实 [S1, S2]。")
     assert not changed
+
+
+def test_auto_cite_uses_filename_and_section_metadata():
+    claim = "03_operations_manual.docx 包含运维步骤。"
+    sources = [
+        Evidence(
+            citation_id="S7",
+            filename="03_operations_manual.docx",
+            section_key="运维步骤",
+            text="维护前导出配置快照。",
+        )
+    ]
+
+    repaired, changed = auto_cite_claim(claim, sources, 0.55, 0.15)
+
+    assert changed
+    assert repaired == "03_operations_manual.docx 包含运维步骤 [S7]。"
 
 
 # ── Invalid citation removal ────────────────────────────────
@@ -229,6 +252,139 @@ def test_deterministic_repair_handles_each_sentence_in_list_item():
     )
     assert result.repaired
     assert "属于前菜 [S1]。" in result.repaired_text
+
+
+def test_deterministic_repair_does_not_skip_factual_bold_list_item():
+    decision = GroundingDecision(
+        action="deterministic_repair",
+        reasons=["missing_citation"],
+    )
+    sources = [
+        Evidence(
+            citation_id="S7",
+            filename="03_operations_manual.docx",
+            section_key="maintenance steps",
+            text="03_operations_manual.docx contains maintenance steps.",
+        )
+    ]
+
+    result = deterministic_repair(
+        "- **Operations**: 03_operations_manual.docx contains maintenance steps.",
+        sources,
+        decision,
+        re_verify=False,
+    )
+
+    assert result.repaired
+    assert result.repaired_text.endswith("[S7]")
+
+
+def test_missing_information_boundary_cites_each_negative_claim():
+    decision = GroundingDecision(
+        action="deterministic_repair",
+        reasons=["missing_citation"],
+    )
+    query = (
+        "XG-7通过了哪一级等保测评？它的ISO 27001证书编号和"
+        "数据跨境备案号分别是什么？"
+    )
+    sources = [
+        Evidence(
+            citation_id="S7",
+            filename="service_level_agreement.pdf",
+            text=(
+                "本协议不包含数据跨境备案号、等保测评等级、ISO 27001"
+                "证书编号或特定行业监管认证。对于这些问题，应确认缺少资料。"
+            ),
+        )
+    ]
+    answer = (
+        "无法确认：\n"
+        "- XG-7的等保测评等级信息未提供。\n"
+        "- XG-7的ISO 27001证书编号未提供。\n"
+        "- XG-7的数据跨境备案号未提供。"
+    )
+
+    result = deterministic_repair(
+        answer,
+        sources,
+        decision,
+        query=query,
+    )
+
+    assert result.repaired
+    assert result.needs_llm is False
+    assert result.repaired_text.count("[S7]") == 3
+    assert result.repaired_text.count("未提供 [S7]。") == 3
+    assert result.changes.count("auto_cited_missing_information") == 3
+
+
+def test_missing_information_repair_skips_heading_and_cites_merged_claim():
+    decision = GroundingDecision(
+        action="deterministic_repair",
+        reasons=["missing_citation"],
+    )
+    query = (
+        "XG-7通过了哪一级等保测评？它的ISO 27001证书编号和"
+        "数据跨境备案号分别是什么？"
+    )
+    sources = [
+        Evidence(
+            citation_id="S7",
+            text=(
+                "本协议不包含数据跨境备案号、等保测评等级、ISO 27001"
+                "证书编号。对于这些问题，应确认缺少资料并请求客户提供正式合规文件。"
+            ),
+        )
+    ]
+    answer = (
+        "**结论：无法确认。**\n\n"
+        "关于XG-7的安全合规信息，包括等保测评等级、ISO 27001证书编号以及"
+        "数据跨境备案号，知识库未提供该信息。"
+        "请客户提供正式的合规文件以获取这些详细资料。"
+    )
+
+    result = deterministic_repair(answer, sources, decision, query=query)
+
+    assert result.repaired
+    assert result.needs_llm is False
+    assert "**结论：无法确认。**" in result.repaired_text
+    assert "**结论：无法确认 [S7]。**" not in result.repaired_text
+    assert "知识库未提供该信息 [S7]。" in result.repaired_text
+
+
+def test_missing_information_repair_replaces_topical_but_wrong_citations():
+    decision = GroundingDecision(
+        action="deterministic_repair",
+        reasons=["redundant_citation", "unsupported_claim"],
+    )
+    query = (
+        "XG-7通过了哪一级等保测评？它的ISO 27001证书编号和"
+        "数据跨境备案号分别是什么？"
+    )
+    sources = [
+        Evidence(citation_id="S1", text="XG-7 产品与部署指南。"),
+        Evidence(citation_id="S6", text="XG-7 容量选择示例。"),
+        Evidence(
+            citation_id="S7",
+            text=(
+                "本协议不包含数据跨境备案号、等保测评等级、ISO 27001"
+                "证书编号，应确认缺少资料。"
+            ),
+        ),
+    ]
+    answer = (
+        "XG-7的等保测评等级 [S6]、ISO 27001证书编号 [S1]和"
+        "数据跨境备案号 [S7]均未提供。"
+    )
+
+    result = deterministic_repair(answer, sources, decision, query=query)
+
+    assert result.repaired
+    assert result.needs_llm is False
+    assert "[S1]" not in result.repaired_text
+    assert "[S6]" not in result.repaired_text
+    assert result.repaired_text.count("[S7]") == 1
 
 
 def test_same_line_confirmed_label_does_not_skip_citation_repair():

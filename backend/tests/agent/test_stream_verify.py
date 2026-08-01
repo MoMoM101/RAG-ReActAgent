@@ -51,6 +51,13 @@ class TestAtomicUnitBuffer:
         assert result is not None
         assert "[S1, S2]" in result.text
 
+    def test_web_citation_is_not_split_mid_token(self):
+        buf = AtomicUnitBuffer()
+        assert buf.feed("这是网页声明 [WS") is None
+        result = buf.feed("3]。")
+        assert result is not None
+        assert result.citations == ["WS3"]
+
     def test_structural_line_not_emitted_alone(self):
         buf = AtomicUnitBuffer()
         unit = buf.feed("已确认：知识库包含三份文档。")
@@ -148,6 +155,22 @@ class TestVerifyUnit:
         unit = AtomicUnit(text="知识库包含三份技术文档 [S1]。", citations=["S1"])
         result = verify_unit(unit, self._evidence())
         assert result.verdict == UnitVerdict.VERIFIED
+
+    def test_filename_metadata_supports_document_classification(self):
+        unit = AtomicUnit(
+            text="03_operations_manual.docx 包含运维步骤 [S7]。",
+            citations=["S7"],
+        )
+        evidence = [
+            Evidence(
+                citation_id="S7",
+                filename="03_operations_manual.docx",
+                section_key="运维步骤",
+                text="维护前导出配置快照，维护后检查服务状态。",
+            )
+        ]
+
+        assert verify_unit(unit, evidence).verdict == UnitVerdict.VERIFIED
 
     def test_format_only_when_uncited_but_supported(self):
         unit = AtomicUnit(text="知识库包含三份技术文档。", citations=[])

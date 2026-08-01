@@ -50,7 +50,7 @@ def extract_sources(messages: list[ChatMessage]) -> list[dict]:
 
         if not isinstance(data, dict):
             continue
-        results = data.get("results")
+        results = data.get("source_catalog", data.get("results"))
         if not isinstance(results, list):
             continue
         return [

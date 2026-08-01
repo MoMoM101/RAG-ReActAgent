@@ -396,6 +396,15 @@ async def test_tool_param_validation_allows_valid():
     assert result.data["result"] == 4
 
 
+@pytest.mark.asyncio
+async def test_calculator_rejects_non_finite_result():
+    from agent.tools import registry
+
+    result = await registry.execute("calculator", expression="1e308 * 1e308")
+    assert result.success is False
+    assert "有限" in (result.error or "")
+
+
 def test_tool_param_validation_degrades_safely_without_jsonschema(monkeypatch):
     """A missing optional validator must not crash an active SSE tool call."""
     import builtins
@@ -414,6 +423,34 @@ def test_tool_param_validation_degrades_safely_without_jsonschema(monkeypatch):
 
 
 class TestSearchDocsRerankedFlag:
+    def test_llm_schema_uses_user_configured_retrieval_count(self):
+        from agent.tools import SearchDocsTool
+
+        parameters = SearchDocsTool.parameters
+
+        assert "top_k" not in parameters["properties"]
+        assert parameters["additionalProperties"] is False
+
+    @pytest.mark.asyncio
+    async def test_frontend_retrieval_setting_caps_tool_requested_top_k(self, monkeypatch):
+        from agent.tools import SearchDocsTool
+        from config import settings
+
+        captured = {}
+
+        async def fake_search(query, top_k=0, document_id="", use_rerank=False):
+            captured["top_k"] = top_k
+            return []
+
+        import rag.retriever
+        monkeypatch.setattr(rag.retriever, "hybrid_search", fake_search)
+        monkeypatch.setattr(settings, "retrieval_top_k", 15)
+
+        result = await SearchDocsTool().execute("test query", top_k=20)
+
+        assert result.success is True
+        assert captured["top_k"] == 15
+
     @pytest.mark.asyncio
     async def test_reranked_false_when_results_degraded(self, monkeypatch):
         """结果带 rerank 降级标记时,reranked 必须为 False,即使 reranker 全局 ready。"""

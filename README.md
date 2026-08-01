@@ -7,7 +7,6 @@
 ![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-green)
 ![Faithfulness](https://img.shields.io/badge/回答忠实度-98.48%25-brightgreen)
 ![Citation](https://img.shields.io/badge/引用精确率-98.48%25-brightgreen)
-![Coverage](https://img.shields.io/badge/后端覆盖率-72%25-blue)
 ![CI](https://github.com/MoMoM101/RAG-ReActAgent/actions/workflows/ci.yml/badge.svg)
 ![Version](https://img.shields.io/badge/version-v0.2.0--beta-blue)
 ![Docker](https://img.shields.io/badge/ghcr.io-available-blue?logo=docker)
@@ -18,9 +17,58 @@ RAG Agent 是一个本地优先的文档知识库与智能问答系统。用户�
 
 当前阶段：`v0.2.0-beta`。
 
+## 5 分钟了解项目
+
+| 核心能力 | 项目中的实现 |
+|---|---|
+| 检索质量 | Qdrant 语义检索 + SQLite BM25 + 加权 RRF + 可选 Reranker |
+| Agent 推理 | 自研 ReAct 循环、多工具并行、上下文预算、循环收敛与长期记忆 |
+| 回答可信度 | 来源卡片、行内引用、数字一致性检查、拒答与有界回答修复 |
+| 工程可靠性 | 持久入库任务、重启恢复、Alembic、备份恢复、JWT、SSE 与发布门禁 |
+
+快速入口：[产品演示](docs/DEMO.md) · [一键启动](#一键启动) · [系统架构](#系统架构) · [评测结果](#质量评测) · [完整项目参考](docs/PROJECT_REFERENCE.md)
+
+## 产品演示
+
+![RAG Agent 跨 Word 与 PDF 检索、恢复步骤和 SLA 条件判断](docs/assets/demo/04-word-pdf-conditional.gif)
+
+演示展示了跨 Word/PDF 检索、恢复步骤、SLA 条件判断、流式回答、行内引用和来源卡片。另有文档列表、精确检索、计算器及无答案拒答等完整场景，见[产品演示指南](docs/DEMO.md)。素材来自公开合成数据，不包含真实业务信息或密钥。
+
+## 一键启动
+
+无需本地构建，直接拉取 GHCR 镜像：
+
+```bash
+git clone https://github.com/MoMoM101/RAG-ReActAgent.git
+cd RAG-ReActAgent
+cp backend/.env.example backend/.env
+docker compose --env-file backend/.env -f docker-compose.ghcr.yml up -d
+```
+
+Windows PowerShell 将第三行替换为：
+
+```powershell
+Copy-Item backend/.env.example backend/.env
+```
+
+打开 <http://localhost:5173>，默认首次登录账号为 `admin` / `RAGAgent2026!`。建议登录后立即修改密码，并在设置页填写 LLM 与 Embedding 配置。**本地部署：源码构建、本地开发和 OCR 安装方式见[快速开始](#快速开始)。**
+
+## 评测摘要
+
+| 回答评测（93 条受控问答） | 结果 |
+|---|---:|
+| 回答忠实度 / 引用精确率 | **98.48% / 98.48%** |
+| 拒答准确率 | **100.00%** |
+| 首 Token / 总延迟 P95 | **945.39 / 2,109.26 ms** |
+
+> 指标来自包含开发子集的固定合成基准，不是严格隔离的 held-out test，也不能直接外推到任意业务数据。完整口径、失败案例与复现方法见[评测方法](docs/EVALUATION_REPRODUCIBILITY.md)。
+
 ## 目录
 
-- [项目来源与开发说明](#项目来源与开发说明)
+- [5 分钟了解项目](#5-分钟了解项目)
+- [产品演示](#产品演示)
+- [一键启动](#一键启动)
+- [评测摘要](#评测摘要)
 - [项目亮点](#项目亮点)
 - [适用场景](#适用场景)
 - [核心功能](#核心功能)
@@ -37,19 +85,10 @@ RAG Agent 是一个本地优先的文档知识库与智能问答系统。用户�
 - [安全与隐私](#安全与隐私)
 - [可靠性设计](#可靠性设计)
 - [常见问题](#常见问题)
+- [项目来源与开发说明](#项目来源与开发说明)
 - [项目文档](#项目文档)
 - [参与贡献](#参与贡献)
 - [许可证](#许可证)
-
-## 项目来源与开发说明
-
-这是一个始于 **2026-06-24** 的个人独立开发项目。需求定义、架构取舍、代码集成、环境调试、测试评测和开源发布均由仓库所有者个人负责；开发过程中使用 Claude Code、Codex 等 AI 编码助手进行方案讨论、局部代码草拟、测试补充、排错和文档整理，所有进入仓库的内容均由开发者选择、审查、集成并承担最终责任。
-
-公开分支于 **2026-07-23** 建立。根提交 `5a939d2` 是从此前开发工作区整理出的首个开源快照，因此一次加入了 389 个文件、84,037 行；这表示首次公开的代码量，不表示项目在一次提交中从零生成。根提交和部分发布整理提交中的 `RAG Agent Contributors`、`RAG Agent Dev` 是同一位个人开发者在开源整理阶段使用的通用本地 Git 身份，不代表未披露的开发团队。后续提交已改用仓库所有者身份，旧提交为保持公开哈希稳定未重写。
-
-开发者主导设计和集成的核心范围包括：文档入库与失败恢复、Qdrant + BM25 + RRF 混合检索、ReAct 工具循环与上下文预算、引用与回答校验、跨存储一致性、JWT 认证、数据库迁移与备份恢复，以及 qrels 和发布质量门禁。
-
-完整的 AI 使用边界、核心模块、公开前开发阶段和版本时间线见 [项目来源与开发说明](docs/PROJECT_PROVENANCE.md)。
 
 ## 项目亮点
 
@@ -836,7 +875,6 @@ python release_gate.py
 | 后端跳过 | 11 项 |
 | 真实模型与 Docker 标记排除 | 15 项 |
 | 已执行测试通过率 | **100.00%**（920 / 920） |
-| 后端代码覆盖率 | **72%** |
 | 前端 Vitest | **64 / 64，100%** |
 | 前端 Oxlint | 通过 |
 | TypeScript 与生产构建 | 通过 |
@@ -1053,6 +1091,16 @@ cd backend
 ### 修改 Embedding 模型后检索异常
 
 不同模型可能产生不同维度的向量。切换 Embedding 模型后，应先检查维度，再通过设置页或管理接口重建集合。
+
+## 项目来源与开发说明
+
+这是一个始于 **2026-06-24** 的个人独立开发项目。需求定义、架构取舍、代码集成、环境调试、测试评测和开源发布均由仓库所有者个人负责；开发过程中使用 Claude Code、Codex 等 AI 编码助手进行方案讨论、局部代码草拟、测试补充、排错和文档整理，所有进入仓库的内容均由开发者选择、审查、集成并承担最终责任。
+
+公开分支于 **2026-07-23** 建立。根提交 `5a939d2` 是从此前开发工作区整理出的首个开源快照，因此一次加入了 389 个文件、84,037 行；这表示首次公开的代码量，不表示项目在一次提交中从零生成。根提交和部分发布整理提交中的 `RAG Agent Contributors`、`RAG Agent Dev` 是同一位个人开发者在开源整理阶段使用的通用本地 Git 身份，不代表未披露的开发团队。后续提交已改用仓库所有者身份，旧提交为保持公开哈希稳定未重写。
+
+开发者主导设计和集成的核心范围包括：文档入库与失败恢复、Qdrant + BM25 + RRF 混合检索、ReAct 工具循环与上下文预算、引用与回答校验、跨存储一致性、JWT 认证、数据库迁移与备份恢复，以及 qrels 和发布质量门禁。
+
+完整的 AI 使用边界、核心模块、公开前开发阶段和版本时间线见 [项目来源与开发说明](docs/PROJECT_PROVENANCE.md)。
 
 ## 项目文档
 

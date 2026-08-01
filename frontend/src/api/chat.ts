@@ -29,6 +29,9 @@ export function sendMessage(
 
       const decoder = new TextDecoder();
       let buffer = "";
+      // Keep the event name across network chunks. An SSE frame may be split
+      // between its `event:` and `data:` lines.
+      let eventType = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -38,7 +41,6 @@ export function sendMessage(
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
-        let eventType = "";
         for (const line of lines) {
           if (line.startsWith("event: ")) {
             eventType = line.slice(7).trim();
@@ -46,6 +48,7 @@ export function sendMessage(
             try {
               const data = JSON.parse(line.slice(6));
               onEvent({ event: eventType, data });
+              eventType = "";
             } catch {
               // skip partial
             }

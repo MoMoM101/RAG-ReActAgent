@@ -77,3 +77,34 @@ def test_wrapped_tool_truncation_preserves_untrusted_content_boundary():
 
     assert sent_tool.content.endswith(closing_tag)
     assert counter.count_text(sent_tool.content) <= 40
+
+
+def test_structured_retrieval_context_is_not_cut_into_invalid_json():
+    counter = TiktokenCounter("gpt-4o")
+    manager = ContextManager(max_tokens=5000, tool_result_max_tokens=40, counter=counter)
+    closing_tag = "\n</UNTRUSTED_RETRIEVED_CONTENT>"
+    catalog = ",".join(
+        f'{{"citation_id":"S{index}","text":"unique_fact_{index}"}}'
+        for index in range(1, 9)
+    )
+    wrapped = (
+        "<UNTRUSTED_RETRIEVED_CONTENT>\n"
+        '{"retrieval_groups":[{"query":"topic","source_ids":'
+        '["S1","S2","S3","S4","S5","S6","S7","S8"]}],'
+        f'"source_catalog":[{catalog}]}}'
+        + closing_tag
+    )
+
+    trimmed, _, _ = manager.trim_messages([
+        ChatMessage(role="user", content="question"),
+        ChatMessage(
+            role="tool",
+            content=wrapped,
+            tool_call_id="call-1",
+            tool_name="search_docs",
+        ),
+    ])
+    sent_tool = next(message for message in trimmed if message.role == "tool")
+
+    assert counter.count_text(wrapped) > 40
+    assert sent_tool.content == wrapped

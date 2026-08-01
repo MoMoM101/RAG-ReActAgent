@@ -3,10 +3,42 @@ import json
 from unittest.mock import MagicMock, patch
 
 from api.chat import (
+    _record_tool_result,
     _schedule_session_extraction,
     _tool_message_content,
     _truncate_tool_result,
 )
+
+
+def test_parallel_tool_results_are_matched_by_call_id():
+    messages = [
+        {"name": "search_docs", "call_id": "call-1", "content": ""},
+        {"name": "search_docs", "call_id": "call-2", "content": ""},
+    ]
+
+    _record_tool_result(
+        messages,
+        {
+            "call_id": "call-2",
+            "success": True,
+            "result_count": 3,
+            "full_data": {"query": "价格"},
+        },
+    )
+    _record_tool_result(
+        messages,
+        {
+            "call_id": "call-1",
+            "success": True,
+            "result_count": 5,
+            "full_data": {"query": "规格"},
+        },
+    )
+
+    assert messages[0]["content"] == "Success: 5 results"
+    assert messages[0]["result_data"] == {"query": "规格"}
+    assert messages[1]["content"] == "Success: 3 results"
+    assert messages[1]["result_data"] == {"query": "价格"}
 
 # ── _tool_message_content ──────────────────────────
 

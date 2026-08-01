@@ -14,10 +14,12 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 
 from agent.verifier import (
+    _CITATION_ID_PATTERN,
     _CITATION_RE,
     Evidence,
     _claim_citations,
     _content_tokens,
+    _evidence_support_text,
     _number_subset_of,
     _numbers,
 )
@@ -33,7 +35,10 @@ _SENTENCE_END = re.compile(r"[。！？!?；;]")
 _LIST_ITEM = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)、]\s+)", re.MULTILINE)
 
 # Citation group anywhere
-_CITATION_GROUP = re.compile(r"\[S\d+(?:\s*[,，]\s*S\d+)*\]", re.IGNORECASE)
+_CITATION_GROUP = re.compile(
+    rf"\[{_CITATION_ID_PATTERN}(?:\s*[,，]\s*{_CITATION_ID_PATTERN})*\]",
+    re.IGNORECASE,
+)
 
 # Structural labels that should not be treated as standalone facts
 _STRUCTURAL_LINE = re.compile(
@@ -172,7 +177,7 @@ def _is_mid_citation(text: str) -> bool:
     """Check if the buffer ends mid-citation like '[S1' or '[S1, S'."""
     # Case-insensitive search — LLM may emit lowercase [s1
     text_lower = text.lower()
-    last_bracket = text_lower.rfind("[s")
+    last_bracket = max(text_lower.rfind("[s"), text_lower.rfind("[ws"))
     if last_bracket == -1:
         return False
     after = text[last_bracket:]
@@ -227,11 +232,12 @@ def verify_unit(
             if src is None:
                 continue
             cited_evidence.append(src)
-            score = _source_cov(unit_tokens, _content_tokens(src.text))
+            source_text = _evidence_support_text(src)
+            score = _source_cov(unit_tokens, _content_tokens(source_text))
             if score > best_score:
                 best_score = score
                 best_src_id = cid
-            missing = _number_subset_of(unit_nums, _numbers(src.text))
+            missing = _number_subset_of(unit_nums, _numbers(source_text))
             if score >= min_support_score and not missing:
                 return UnitResult(unit=unit, verdict=UnitVerdict.VERIFIED)
             if not missing:
@@ -245,8 +251,9 @@ def verify_unit(
             union_tokens: set[str] = set()
             union_numbers: set[str] = set()
             for src in cited_evidence:
-                union_tokens.update(_content_tokens(src.text))
-                union_numbers.update(_numbers(src.text))
+                source_text = _evidence_support_text(src)
+                union_tokens.update(_content_tokens(source_text))
+                union_numbers.update(_numbers(source_text))
             union_score = _source_cov(unit_tokens, union_tokens)
             union_missing = _number_subset_of(unit_nums, union_numbers)
             best_score = max(best_score, union_score)
@@ -262,11 +269,12 @@ def verify_unit(
         else:
             cited_ids = set()  # clear phantom citations for FORMAT_ONLY path below
         for src in evidence:
-            score = _source_cov(unit_tokens, _content_tokens(src.text))
+            source_text = _evidence_support_text(src)
+            score = _source_cov(unit_tokens, _content_tokens(source_text))
             if score > best_score:
                 best_score = score
                 best_src_id = src.citation_id
-            missing = _number_subset_of(unit_nums, _numbers(src.text))
+            missing = _number_subset_of(unit_nums, _numbers(source_text))
             if score >= min_support_score and not missing:
                 # Uncited but supported → format issue
                 return UnitResult(

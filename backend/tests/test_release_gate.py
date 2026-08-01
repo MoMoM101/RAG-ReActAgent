@@ -1,6 +1,7 @@
 """Release evaluation artifact contract tests."""
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from release_gate import DEFAULT_REPORT, validate_release_report
 
@@ -114,3 +115,19 @@ def test_release_gate_rejects_expired_report(monkeypatch):
 
 def test_default_report_is_the_canonical_rescored_full_evaluation():
     assert DEFAULT_REPORT.name == "grounded_answer_eval_final_full_rescored.json"
+
+
+def test_tag_release_requires_real_docker_e2e_secrets():
+    workflow = (
+        Path(__file__).resolve().parents[2] / ".github" / "workflows" / "release-gate.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "IS_TAG_RELEASE: ${{ github.ref_type == 'tag' }}" in workflow
+    assert '[ -z "$E2E_ADMIN_PASSWORD" ]' in workflow
+    assert '[ -z "$E2E_JWT_SECRET" ]' in workflow
+    assert '[ -z "$SECRET_KEY" ]' in workflow
+    assert "tag releases require real Docker E2E" in workflow
+    assert "exit 1" in workflow
+    assert "release-ready:" in workflow
+    assert "grounded-answer-release-gate" in workflow
+    assert "docker-e2e-acceptance" in workflow

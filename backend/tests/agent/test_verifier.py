@@ -5,6 +5,8 @@ from agent.verifier import (
     apply_zero_support_guard,
     build_partial_comparison_fallback,
     comparison_answer_complete,
+    conditional_answer_complete,
+    missing_information_answer_complete,
     needs_grounding_repair,
     select_better_grounded_answer,
     verify_answer,
@@ -33,6 +35,30 @@ def test_cited_claim_with_matching_evidence_is_verified():
     assert result.claims[0].supporting_citations == ["S1"]
 
 
+def test_web_citation_is_verified_without_treating_its_id_as_a_number():
+    result = verify_answer(
+        "该版本于 2026 年发布 [WS3]。",
+        [{"citation_id": "WS3", "text": "该版本于 2026 年发布。"}],
+    )
+
+    assert result.status == "verified"
+    assert result.claims[0].citations == ["WS3"]
+    assert result.claims[0].missing_numbers == []
+
+
+def test_mixed_kb_and_web_citation_group_is_supported():
+    result = verify_answer(
+        "MCP 用于连接工具，网页资料发布于 2026 年 [S1, WS3]。",
+        [
+            {"citation_id": "S1", "text": "MCP 用于连接工具。"},
+            {"citation_id": "WS3", "text": "网页资料发布于 2026 年。"},
+        ],
+    )
+
+    assert result.status == "verified"
+    assert result.claims[0].citations == ["S1", "WS3"]
+
+
 def test_invalid_citation_is_never_counted_as_supported():
     result = verify_answer("Production deployment requires Python 3.10. [S9]", _sources())
 
@@ -49,6 +75,244 @@ def test_supported_but_uncited_claim_lowers_citation_recall():
     assert result.citation_recall == 0.0
     assert "缺少引用" in result.claims[0].reason
     assert result.to_dict()["display_status"] == "hidden"
+
+
+def test_budget_answer_ignores_structural_prose_and_trusted_calculation_summaries():
+    answer = """根据知识库中的信息，我们找到了相关的定价详情。
+下面是根据客户需要的1台设备、75个节点来计算未税首年总预算。
+
+- **硬件**:
+  - 单价：7600元 [S1]。
+- **平台基础订阅**:
+  - 基础订阅费为每月1280元 [S2]。
+  - 平台订阅费：27432元
+
+现在我们可以计算最终总额：
+- 最终总额：43032元
+"""
+    sources = [
+        {"citation_id": "S1", "text": "设备单价为7600元。"},
+        {"citation_id": "S2", "text": "平台基础订阅费为每月1280元。"},
+    ]
+
+    result = verify_answer(
+        answer,
+        sources,
+        query="计算75个节点的未税首年总预算",
+        calculation_results=[27432, 43032],
+    )
+
+    assert result.faithfulness == 1.0
+    assert result.citation_recall == 1.0
+    assert result.unsupported_claims == []
+
+
+def test_bold_numeric_fact_is_not_mistaken_for_a_structural_heading():
+    result = verify_answer(
+        "**设备价格为7600元**",
+        [{"citation_id": "S1", "text": "设备价格为4800元。"}],
+    )
+
+    assert result.facts_found == 1
+    assert result.facts_supported == 0
+    assert result.unsupported_claims == ["**设备价格为7600元**"]
+
+
+def test_runtime_calculator_fallback_is_not_scored_as_a_knowledge_claim():
+    answer = (
+        "本轮检索已完成，但计算器步骤未完整执行，因此无法可靠给出最终金额。"
+        "已获得 0 个可信计算结果，本题至少需要 3 个。请重试本问题。"
+    )
+
+    result = verify_answer(answer, [{"citation_id": "S1", "text": "设备价格7600元"}])
+
+    assert result.facts_found == 0
+    assert result.unsupported_claims == []
+    assert result.to_dict()["display_status"] == "hidden"
+
+
+def test_anaphoric_missing_information_citation_binds_to_concrete_prior_claim():
+    answer = (
+        "根据知识库中的信息，未能找到XG-7的等保测评级别、ISO 27001证书编号"
+        "以及数据跨境备案号的具体内容。"
+        "这些信息在现有文档中未被提供 [S7]。"
+    )
+    source = {
+        "citation_id": "S7",
+        "text": (
+            "本协议不包含数据跨境备案号、等保测评等级、ISO 27001证书编号。"
+            "对于这些问题，应确认缺少资料。"
+        ),
+    }
+
+    result = verify_answer(
+        answer,
+        [source],
+        query=(
+            "XG-7通过了哪一级等保测评？它的ISO 27001证书编号和"
+            "数据跨境备案号分别是什么？"
+        ),
+    )
+
+    assert result.facts_found == 1
+    assert result.facts_supported == 1
+    assert result.faithfulness == 1.0
+    assert result.citation_precision == 1.0
+    assert result.citation_recall == 1.0
+    assert result.claims[0].citations == ["S7"]
+
+
+def test_direct_missing_information_claim_is_scored_but_followup_request_is_not():
+    answer = (
+        "**结论：无法确认。**\n\n"
+        "关于XG-7的安全合规信息，包括等保测评等级、ISO 27001证书编号以及"
+        "数据跨境备案号，知识库未提供该信息 [S7]。"
+        "请客户提供正式的合规文件以获取这些详细资料。"
+    )
+    source = {
+        "citation_id": "S7",
+        "text": (
+            "本协议不包含数据跨境备案号、等保测评等级、ISO 27001证书编号。"
+            "对于这些问题，应确认缺少资料并请求客户提供正式合规文件。"
+        ),
+    }
+
+    result = verify_answer(
+        answer,
+        [source],
+        query=(
+            "XG-7通过了哪一级等保测评？它的ISO 27001证书编号和"
+            "数据跨境备案号分别是什么？"
+        ),
+    )
+
+    assert result.status == "verified"
+    assert result.facts_found == 1
+    assert result.citation_precision == 1.0
+    assert result.citation_recall == 1.0
+    assert result.claims[0].citations == ["S7"]
+
+
+def test_missing_information_followup_advice_is_not_a_factual_claim():
+    answer = (
+        "知识库未提供XG-7通过的安全测评等级信息 [S7]。\n"
+        "知识库未提供XG-7的ISO 27001证书编号 [S7]。\n"
+        "知识库未提供XG-7的数据跨境备案号 [S7]。\n"
+        "对于这些信息，建议您联系产品提供商或查阅正式的合规文件以获取准确详情。"
+    )
+    source = {
+        "citation_id": "S7",
+        "text": (
+            "本协议不包含数据跨境备案号、等保测评等级、ISO 27001"
+            "证书编号。对于这些问题，应确认缺少资料。"
+        ),
+    }
+    query = (
+        "XG-7通过了哪一级等保测评？它的ISO 27001证书编号和"
+        "数据跨境备案号分别是什么？"
+    )
+
+    result = verify_answer(answer, [source], query=query)
+
+    assert result.status == "verified"
+    assert result.facts_found == 3
+    assert result.faithfulness == 1.0
+    assert result.citation_precision == 1.0
+    assert result.citation_recall == 1.0
+
+
+def test_missing_information_claim_rejects_topical_sources_without_boundary_text():
+    answer = (
+        "XG-7的等保测评等级 [S6]、ISO 27001证书编号 [S1]和"
+        "数据跨境备案号 [S7]均未提供。"
+    )
+    sources = [
+        {"citation_id": "S1", "text": "XG-7 产品与部署指南。"},
+        {"citation_id": "S6", "text": "XG-7 容量选择示例。"},
+        {
+            "citation_id": "S7",
+            "text": (
+                "本协议不包含数据跨境备案号、等保测评等级、ISO 27001"
+                "证书编号，应确认缺少资料。"
+            ),
+        },
+    ]
+    query = (
+        "XG-7通过了哪一级等保测评？它的ISO 27001证书编号和"
+        "数据跨境备案号分别是什么？"
+    )
+
+    result = verify_answer(answer, sources, query=query)
+
+    assert result.citation_precision == 1 / 3
+    assert result.to_dict()["display_status"] == "warning"
+    assert result.claims[0].supporting_citations == ["S7"]
+
+
+def test_missing_information_answer_cannot_collapse_to_bare_field_names():
+    query = "XG-7通过了哪一级等保测评？ISO 27001证书编号和数据跨境备案号分别是什么？"
+    sources = [{
+        "citation_id": "S7",
+        "text": "本协议不包含数据跨境备案号、等保测评等级、ISO 27001证书编号，应确认缺少资料。",
+    }]
+    complete = "现有资料未提供等保等级、ISO 27001证书编号和数据跨境备案号 [S7]。"
+    collapsed = (
+        "已确认：\n- 等保测评等级 [S7]。\n"
+        "- ISO 27001证书编号 [S7]。\n- 数据跨境备案号 [S7]。"
+    )
+
+    assert missing_information_answer_complete(query, complete, sources)
+    assert not missing_information_answer_complete(query, collapsed, sources)
+    collapsed_result = verify_answer(collapsed, sources, query=query)
+    assert collapsed_result.faithfulness < 1.0
+    assert collapsed_result.to_dict()["display_status"] == "warning"
+    assert select_better_grounded_answer(
+        complete,
+        collapsed,
+        sources,
+        query=query,
+    ) == complete
+
+
+def test_supported_boundary_refusal_uses_citation_repair_not_false_refusal_rewrite():
+    query = "XG-7通过了哪一级等保测评？ISO 27001证书编号是什么？"
+    sources = [{
+        "citation_id": "S7",
+        "text": "本协议不包含等保测评等级或ISO 27001证书编号，应确认缺少资料。",
+    }]
+    answer = (
+        "无法确认：\n"
+        "- 等保测评等级未提供。\n"
+        "- ISO 27001证书编号未提供。"
+    )
+
+    decision = needs_grounding_repair(answer, sources, query=query)
+
+    assert decision.action == "deterministic_repair"
+    assert decision.reasons == ["missing_citation"]
+
+
+def test_hyphenated_product_id_is_not_treated_as_an_unsourced_number():
+    result = verify_answer(
+        "XG-7不包含所询问的认证编号 [S1]。",
+        [{"citation_id": "S1", "text": "XG7产品资料不包含认证编号。"}],
+    )
+
+    assert result.facts_supported == 1
+    assert result.claims[0].missing_numbers == []
+
+
+def test_fully_supported_partially_cited_answer_still_shows_verification():
+    result = verify_answer(
+        "Production deployment requires Python 3.10. [S1]\n"
+        "Linux is supported.",
+        _sources("Python 3.10 is required for production deployment. Linux is supported."),
+    )
+
+    assert result.faithfulness == 1.0
+    assert result.citation_precision == 1.0
+    assert 0.0 < result.citation_recall < 1.0
+    assert result.to_dict()["display_status"] == "verified"
 
 
 def test_comparison_claim_can_be_supported_by_cited_evidence_union():
@@ -285,6 +549,182 @@ def test_comparison_guard_requires_both_named_sides():
     assert apply_query_safety_guard(query, "MCP 适合连接外部工具 [S1]。") == "MCP 适合连接外部工具 [S1]。"
 
 
+def test_conditional_judgment_requires_verdict_and_all_mandatory_conditions():
+    query = "周三 03:00 的中断是否必然计入 SLA 可用性？"
+    sources = [
+        {
+            "citation_id": "S1",
+            "text": (
+                "计划维护必须同时满足以下条件："
+                "1）至少提前5个自然日发出公告；"
+                "2）公告列出受影响服务、租户范围、开始时间和预计结束时间；"
+                "3）实际中断没有超出公告的时间和服务范围。"
+                "仅发生在常规维护窗口内不足以自动排除。"
+            ),
+        }
+    ]
+    incomplete = (
+        "公告应列出受影响服务、租户范围、开始时间和预计结束时间 [S1]。"
+        "实际中断不能超出公告范围 [S1]。"
+    )
+    complete = (
+        "**结论：**不一定；仅在维护窗口内不会自动排除 [S1]。"
+        "必须至少提前5个自然日发出公告 [S1]。"
+        "公告要列出受影响服务、租户范围、开始时间和预计结束时间 [S1]。"
+        "实际中断不能超出公告的时间和服务范围 [S1]。"
+    )
+
+    assert not conditional_answer_complete(query, incomplete, sources)
+    assert conditional_answer_complete(query, complete, sources)
+    decision = needs_grounding_repair(incomplete, sources, query=query)
+    assert decision.action == "llm_repair"
+    assert "conditional_incomplete" in decision.reasons
+
+
+def test_semantically_complete_conditional_repair_wins_equal_grounding_score():
+    query = "中断是否必然计入 SLA？"
+    sources = [{"citation_id": "S1", "text": "仅在窗口内不足以自动排除；是否计入取决于公告条件。"}]
+    original = "中断发生在维护窗口内 [S1]。"
+    repaired = "**结论：**不一定；是否计入取决于公告条件 [S1]。"
+
+    assert select_better_grounded_answer(original, repaired, sources, query=query) == repaired
+
+
+def test_citation_only_tail_does_not_attach_multiple_sources_to_previous_claim():
+    result = verify_answer(
+        "维护窗口内不会自动排除 [S1]。[S2][S3][S4]",
+        [
+            {"citation_id": "S1", "text": "仅发生在维护窗口内不足以自动排除。"},
+            {"citation_id": "S2", "text": "无关的恢复步骤。"},
+            {"citation_id": "S3", "text": "无关的产品规格。"},
+            {"citation_id": "S4", "text": "无关的价格信息。"},
+        ],
+    )
+
+    assert result.claims[0].citations == ["S1"]
+    assert result.citation_precision == 1.0
+
+
+def test_valid_visible_calculations_do_not_require_knowledge_citations():
+    answer = (
+        "XG-7 Pro 单价为 7600 元 [S1]。\n"
+        "基础订阅为每月 1280 元 [S2]。\n"
+        "基础订阅年费 = 1280 × 12 = 15,360 元。\n"
+        "最终总预算 = 7600 + 27,432 + 8000 = 43,032 元。\n"
+        "**结论：**未税首年总预算为 43,032 元。"
+    )
+    result = verify_answer(
+        answer,
+        [
+            {"citation_id": "S1", "text": "XG-7 Pro 单价为 7600 元。"},
+            {"citation_id": "S2", "text": "基础订阅每月 1280 元。"},
+        ],
+    )
+
+    assert result.status == "verified"
+    assert result.faithfulness == 1.0
+    assert result.citation_recall == 1.0
+
+
+def test_incorrect_visible_calculation_is_not_exempted_from_verification():
+    result = verify_answer(
+        "最终总预算 = 7600 + 27,432 + 8000 = 99,999 元。",
+        [{"citation_id": "S1", "text": "XG-7 Pro 单价为 7600 元。"}],
+    )
+
+    assert result.status != "verified"
+    assert result.unsupported_claims
+
+
+def test_budget_verification_accepts_user_inputs_and_calculator_derivations():
+    query = (
+        "客户需要1台XG-7 Pro、75个激活节点、1年平台订阅和标准实施服务。"
+        "请计算未税首年总预算。"
+    )
+    answer = (
+        "XG-7 Pro 硬件费用为 7600 元 [S1]。\n"
+        "基础订阅包含40个节点，每月 1280 元 [S1]；"
+        "额外的35个节点（总共需要75个）按每节点每月36元计费 [S2]。\n"
+        "超额节点月费：35 * 36 = 1260 元。\n"
+        "**每月总订阅费用**：1280 + 1260 = 2540 元。\n"
+        "**一年平台订阅原价**：2540 * 12 = 30480 元。\n"
+        "年付可以享受 10% 折扣 [S2]，30480 * 0.9 = 27432 元。\n"
+        "标准实施服务费为 8000 元 [S2]。\n"
+        "最终总额 = 7600 + 27432 + 8000 = 43032 元。"
+    )
+    result = verify_answer(
+        answer,
+        [
+            {
+                "citation_id": "S1",
+                "text": "XG-7 Pro 网关 7600 元；基础订阅每月1280元，包含40个激活节点。",
+            },
+            {
+                "citation_id": "S2",
+                "text": "超额节点每节点每月36元；年付折扣比例0.1；标准实施服务8000元。",
+            },
+        ],
+        query=query,
+    )
+
+    assert result.faithfulness == 1.0
+    assert result.citation_precision == 1.0
+    assert result.to_dict()["display_status"] == "verified"
+
+
+def test_calculator_tool_results_ground_derived_values_not_repeated_as_equations():
+    result = verify_answer(
+        "基础订阅每月1280元 [S1]。\n"
+        "年度费用为15360元。\n"
+        "总订阅原价为30480元。\n"
+        "折扣金额为3048元，实际订阅费为27432元。",
+        [{"citation_id": "S1", "text": "平台基础订阅每月1280元。"}],
+        calculation_results=[15360, 30480, 3048, 27432],
+    )
+
+    assert result.faithfulness == 1.0
+    assert result.unsupported_claims == []
+
+
+def test_calculator_markdown_line_breaks_do_not_create_unsourced_claims():
+    answer = (
+        "根据知识库中的信息，以下是计算未税首年总预算的详细步骤及结果：\n"
+        "硬件价格为 7600 元 [S1]。\n"
+        "订阅原价为 (1280 + 1260) × 12 = 30,480 元。表达式\n"
+        "`(1280 + (75 - 40) * 36) * 12`\n"
+        "的结果是 30,480 元。\n"
+        "折扣后费用为 30,480 × (1 - 0.1) = 27,432 元。表达式\n"
+        "`30480 * (1 - 0.1)`\n"
+        "的结果是 27,432 元。\n"
+        "最终总额为 7600 + 27,432 + 8000 = 43,032 元。表达式\n"
+        "`7600 + 27432 + 8000`\n"
+        "的结果是 43,032 元。\n"
+        "因此，未税首年总预算为 43,032 元。"
+    )
+
+    result = verify_answer(
+        answer,
+        [{"citation_id": "S1", "text": "硬件价格为 7600 元。"}],
+        calculation_results=[30480, 27432, 43032],
+    )
+
+    assert result.facts_found == 1
+    assert result.faithfulness == 1.0
+    assert result.citation_precision == 1.0
+    assert result.citation_recall == 1.0
+    assert result.unsupported_claims == []
+
+
+def test_missing_information_wording_is_treated_as_a_limitation_not_a_fact():
+    result = verify_answer(
+        "**结论：无法确认。**\n- 知识库未提供 ISO 27001 证书编号。\n- 检索结果并未说明数据跨境备案号。",
+        [{"citation_id": "S1", "text": "XG-7 产品规格。"}],
+    )
+
+    assert result.facts_found == 0
+    assert result.to_dict()["display_status"] == "hidden"
+
+
 def test_relation_guards_passthrough_on_topical_but_nonresponsive():
     """v0.2.0: safety guard returns answer unchanged."""
     assert apply_query_safety_guard(
@@ -316,6 +756,56 @@ def test_zero_support_guard_keeps_supported_answer():
         )
         == answer
     )
+
+
+def test_zero_support_guard_accepts_trusted_calculator_result():
+    answer = "最终总额为43032元。"
+    guarded = apply_zero_support_guard(
+        answer,
+        [{"citation_id": "S1", "text": "硬件7600元，实施费8000元。"}],
+        query="请计算最终总额",
+        calculation_results=[43032],
+    )
+
+    assert guarded == answer
+
+
+def test_grounding_decision_accepts_trusted_calculator_result():
+    decision = needs_grounding_repair(
+        "硬件价格为7600元 [S1]。最终总额为43032元。",
+        [{"citation_id": "S1", "text": "XG-7 Pro硬件价格为7600元。"}],
+        query="请计算最终总额",
+        calculation_results=[43032],
+    )
+
+    assert decision.action == "accept"
+
+
+def test_document_classification_uses_source_filename_metadata():
+    sources = [
+        {
+            "citation_id": "S1",
+            "filename": "01_xingzhou_xg7_product_guide.md",
+            "section_key": "型号规格",
+            "text": "XG-7 Pro 建议接入不超过 160 个采集节点。",
+        },
+        {
+            "citation_id": "S2",
+            "filename": "02_xingzhou_xg7_pricing.xlsx",
+            "section_key": "价格目录",
+            "text": "XG-7 Standard 网关单价 4800 元。",
+        },
+    ]
+    answer = (
+        "01_xingzhou_xg7_product_guide.md 包含产品规格 [S1]。\n"
+        "02_xingzhou_xg7_pricing.xlsx 包含价格信息 [S2]。"
+    )
+
+    result = verify_answer(answer, sources)
+
+    assert result.facts_supported == 2
+    assert result.faithfulness == 1.0
+    assert apply_zero_support_guard(answer, sources) == answer
 
 
 def test_comparison_fallback_returns_none_without_safe_topical_sentence():

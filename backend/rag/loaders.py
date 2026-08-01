@@ -162,11 +162,17 @@ def load_csv(file_path: str) -> str:
 def load_xlsx(file_path: str) -> str:
     from openpyxl import load_workbook
 
-    workbook = load_workbook(file_path, read_only=True, data_only=True)
-    try:
-        return _rows_to_markdown(workbook.active.iter_rows(values_only=True))
-    finally:
-        workbook.close()
+    # Local content-addressed storage uses the SHA-256 digest as the physical
+    # filename, so the materialized path has no .xlsx suffix.  Passing that
+    # path directly makes openpyxl reject an otherwise valid OOXML archive
+    # based only on its filename.  A binary stream lets openpyxl validate the
+    # workbook contents instead and works for both stored and regular files.
+    with open(file_path, "rb") as source:
+        workbook = load_workbook(source, read_only=True, data_only=True)
+        try:
+            return _rows_to_markdown(workbook.active.iter_rows(values_only=True))
+        finally:
+            workbook.close()
 
 
 def load_image(file_path: str) -> str:

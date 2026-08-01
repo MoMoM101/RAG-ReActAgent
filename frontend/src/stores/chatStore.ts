@@ -98,14 +98,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               // Hide them just as the live SSE path does when the first tool starts.
               displayMsgs[i].content = "";
               displayMsgs[i].steps.push({
-                type: "tool_call",
-                data: { tool: toolName, args, call_id: m.tool_call_id },
-                timestamp: Date.now(),
-              });
-              displayMsgs[i].steps.push({
                 type: "tool_result",
                 data: {
                   tool: toolName,
+                  args,
+                  call_id: m.tool_call_id,
                   success,
                   result_count: m.tool_result_summary?.count ?? legacyResultCount,
                   result_kind: m.tool_result_summary?.kind,
@@ -231,7 +228,39 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             last.isStreaming = false;
             last.duration = Date.now() - (last.startTime || Date.now());
           }
-          last.steps.push(step);
+          let appendStep = true;
+          if (event.event === "tool_result") {
+            const resultData = step.data;
+            const callId = resultData.call_id;
+            let pendingIndex = -1;
+            for (let i = last.steps.length - 1; i >= 0; i--) {
+              const candidate = last.steps[i];
+              if (
+                candidate.type === "tool_call"
+                && (
+                  (callId != null && candidate.data.call_id === callId)
+                  || (
+                    callId == null
+                    && candidate.data.tool === resultData.tool
+                  )
+                )
+              ) {
+                pendingIndex = i;
+                break;
+              }
+            }
+            if (pendingIndex >= 0) {
+              const pending = last.steps[pendingIndex];
+              last.steps[pendingIndex] = {
+                ...step,
+                data: { ...pending.data, ...resultData },
+              };
+              appendStep = false;
+            }
+          }
+          if (appendStep) {
+            last.steps.push(step);
+          }
           msgs[msgs.length - 1] = { ...last };
 
           const newSseState: SSEState =

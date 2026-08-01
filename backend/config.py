@@ -61,12 +61,13 @@ class Settings(BaseSettings):
     llm_stream_usage_enabled: bool = True
 
     # Agent
-    max_loop_iterations: int = 10
+    max_loop_iterations: int = Field(default=10, ge=1, le=50)  # soft limit
+    max_loop_hard_iterations: int = Field(default=16, ge=1, le=50)
     max_tool_retries: int = 3
     max_total_time: int = 120
     chunk_size: int = 200
     chunk_overlap: int = 40
-    retrieval_top_k: int = 8
+    retrieval_top_k: int = Field(default=8, ge=1, le=20)
 
     # Timeouts (seconds)
     llm_connect_timeout: float = 10.0

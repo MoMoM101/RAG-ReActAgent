@@ -9,6 +9,8 @@
 - 流验证、引用修复与安全护栏持续优化；
 - 补充个人独立开发、首次开源快照、通用 Git 身份和 AI 辅助边界说明；
 - 公开评测数据构成、复现命令、消融结果、失败案例及 train/dev/test 局限；
+- 重构 README 首屏，增加真实界面截图、演示脚本与 GHCR 免构建启动方式；
+- Tag 发布缺少真实模型密钥时不再静默跳过 Docker E2E，并增加最终发布就绪门禁；
 - CI 完整通过（lint、test、docker-smoke、compose-smoke、docker-push）。
 
 ## v0.2.0-beta (2026-07-24) — Agent 自主推理重构

@@ -37,6 +37,15 @@ class TestCitationRequirements:
 
 
 class TestOutputStructure:
+    def test_document_inventory_and_content_mapping_are_separate_sections(self):
+        prompt = _prompt()
+
+        assert "文档列表" in prompt
+        assert "内容对应" in prompt
+        assert "不得用内容分类列表代替文档列表" in prompt
+        assert "list_documents" in prompt
+        assert "search_docs" in prompt
+
     def test_prompt_specifies_gfm_format(self):
         prompt = _prompt()
 
@@ -56,6 +65,22 @@ class TestOutputStructure:
 
         assert "简洁但完整" in prompt
         assert "不要为了简洁省略关键信息" in prompt
+
+    def test_prompt_requires_explicit_cross_document_conditional_judgment(self):
+        prompt = _prompt()
+
+        assert "是否必然" in prompt
+        assert "全部必要条件" in prompt
+        assert "恢复步骤" in prompt
+        assert "SLA 判断" in prompt
+
+    def test_prompt_requires_calculator_and_clean_refusal(self):
+        prompt = _prompt()
+
+        assert "再调用 calculator" in prompt
+        assert "不得心算" in prompt
+        assert "**结论：无法确认。**" in prompt
+        assert "不要为“未提供”附加无关来源引用" in prompt
 
 
 class TestReActPrinciples:
@@ -77,3 +102,13 @@ class TestReActPrinciples:
 
         assert "所有事实性回答必须引用具体来源" in prompt
         assert "[S数字]" in prompt or "[S" in prompt
+
+    def test_parallelizes_independent_search_topics(self):
+        prompt = _prompt()
+
+        assert "同一轮同时发起多个 search_docs" in prompt
+        assert "并行执行" in prompt
+        assert "citation_id 引用该清单" in prompt
+        assert "document_id" in prompt
+        assert "retrieval_groups" in prompt
+        assert "source_catalog" in prompt

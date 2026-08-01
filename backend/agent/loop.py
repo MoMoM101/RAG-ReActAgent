@@ -5,11 +5,23 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import math
 import time
 from functools import partial
 from typing import TYPE_CHECKING
 
-from agent.answer_format import normalize_answer_markdown
+from agent.answer_format import (
+    ensure_document_inventory_section,
+    normalize_answer_markdown,
+)
+from agent.calculation_provenance import (
+    arithmetic_expressions,
+    evaluate_expression,
+    expression_has_arithmetic,
+    expression_operation_count,
+    expression_uses_known_values,
+    numeric_values,
+)
 from agent.context import ContextManager
 from agent.context_window import get_window, is_context_error
 from agent.loop_setup import (
@@ -31,6 +43,7 @@ from agent.loop_support import (
 )
 from agent.loop_tools import ToolTurnState, execute_tool_turn
 from agent.query_semantics import (
+    requires_calculator_tool,
     requires_whole_answer_validation,
     resolve_followup_query,
     sanitize_conversation_history,
@@ -38,7 +51,7 @@ from agent.query_semantics import (
 from agent.tools import registry
 from agent.verifier import Evidence, verify_answer
 from config import settings
-from llm.base import ChatMessage
+from llm.base import ChatMessage, ToolCall
 from llm.factory import create_llm
 
 if TYPE_CHECKING:
@@ -47,6 +60,175 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _CONTEXT_RETRY_SCALES = (0.85, 0.70, 0.50)
+
+
+def _meaningful_calculator_call(tool_call: object) -> bool:
+    """Reject calculator calls that merely echo one sourced numeric value."""
+    if getattr(tool_call, "name", "") != "calculator":
+        return True
+    arguments = getattr(tool_call, "arguments", {})
+    expression = str(arguments.get("expression", "")) if isinstance(arguments, dict) else ""
+    return expression_has_arithmetic(expression)
+
+
+def _calculator_call_uses_known_values(
+    tool_call: object,
+    known_values: set[float],
+) -> bool:
+    if getattr(tool_call, "name", "") != "calculator":
+        return True
+    arguments = getattr(tool_call, "arguments", {})
+    expression = str(arguments.get("expression", "")) if isinstance(arguments, dict) else ""
+    return expression_uses_known_values(expression, known_values)
+
+
+def _filter_calculator_calls(
+    tool_calls: list,
+    known_values: set[float],
+    *,
+    enforce_provenance: bool,
+    trusted_results: set[float] | None = None,
+    min_operations: int = 1,
+    max_new_results: int | None = None,
+) -> list:
+    """Validate a calculator batch in order, including sibling dependencies."""
+    accepted: list = []
+    established = set(known_values)
+    derived_results = set(trusted_results or ())
+    seen_expressions: set[str] = set()
+    accepted_calculations = 0
+    for tool_call in tool_calls:
+        if getattr(tool_call, "name", "") != "calculator":
+            accepted.append(tool_call)
+            continue
+        if not _meaningful_calculator_call(tool_call):
+            continue
+        arguments = getattr(tool_call, "arguments", {})
+        expression = str(arguments.get("expression", "")) if isinstance(arguments, dict) else ""
+        if expression_operation_count(expression) < min_operations:
+            continue
+        if (
+            max_new_results is not None
+            and accepted_calculations >= max_new_results
+        ):
+            continue
+        normalized_expression = "".join(expression.split())
+        if normalized_expression in seen_expressions:
+            continue
+        if enforce_provenance and not _calculator_call_uses_known_values(
+            tool_call,
+            established,
+        ):
+            continue
+        predicted = evaluate_expression(expression)
+        if predicted is not None and any(
+            math.isclose(predicted, result, rel_tol=1e-12, abs_tol=1e-9)
+            for result in derived_results
+        ):
+            continue
+        accepted.append(tool_call)
+        accepted_calculations += 1
+        seen_expressions.add(normalized_expression)
+        if predicted is not None:
+            established.add(predicted)
+            derived_results.add(predicted)
+    return accepted
+
+
+def _required_calculator_result_count(query: str) -> int:
+    """Estimate the minimum distinct *requested* derived values.
+
+    This deliberately does not count every possible arithmetic sub-step. A
+    tiered subscription can be evaluated with one compound expression, so a
+    fixed five-step chain only creates redundant calculator calls.
+    """
+    lowered = query.lower()
+    has_discount = any(term in query for term in ("折扣", "折后")) or "discount" in lowered
+    has_subscription = "订阅" in query or "subscription" in lowered
+    has_total = any(term in query for term in ("总预算", "最终总额", "合计", "总额")) or any(
+        term in lowered for term in ("total budget", "final total", "total amount")
+    )
+    if has_subscription and has_discount and has_total:
+        # Subscription original, discounted subscription, and final total.
+        return 3
+    if has_discount and has_total:
+        return 2
+    return 1
+
+
+def _runtime_trusted_calculator_results(
+    tool_calls: list,
+    result_events: dict[str, dict],
+    known_values: set[float],
+) -> set[float]:
+    """Validate successful calculator results in declared dependency order."""
+    trusted: set[float] = set()
+    established = set(known_values)
+    for tool_call in tool_calls:
+        if getattr(tool_call, "name", "") != "calculator":
+            continue
+        result_event = result_events.get(str(tool_call.id), {})
+        full_data = result_event.get("full_data")
+        value = full_data.get("result") if isinstance(full_data, dict) else None
+        expression = str(tool_call.arguments.get("expression", ""))
+        if (
+            result_event.get("success")
+            and isinstance(value, int | float)
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and expression_uses_known_values(expression, established)
+        ):
+            trusted_value = float(value)
+            trusted.add(trusted_value)
+            established.add(trusted_value)
+    return trusted
+
+
+def _calculator_calls_from_draft(
+    draft: str,
+    known_values: set[float],
+    trusted_results: set[float],
+    *,
+    iteration: int,
+    min_operations: int = 1,
+    max_new_results: int | None = None,
+) -> list[ToolCall]:
+    """Recover provenance-safe calculator calls from visible draft equations."""
+    candidates = [
+        ToolCall(
+            id=f"auto_calc_{iteration}_{index}",
+            name="calculator",
+            arguments={"expression": expression},
+        )
+        for index, expression in enumerate(arithmetic_expressions(draft), 1)
+    ]
+    return _filter_calculator_calls(
+        candidates,
+        known_values,
+        enforce_provenance=True,
+        trusted_results=trusted_results,
+        min_operations=min_operations,
+        max_new_results=max_new_results,
+    )
+
+
+def _tools_during_forced_convergence(
+    tools: list[dict],
+    query: str,
+    trusted_results: set[float],
+) -> list[dict] | None:
+    """Disable repeated retrieval while preserving required calculation tools."""
+    if (
+        requires_calculator_tool(query)
+        and len(trusted_results) < _required_calculator_result_count(query)
+    ):
+        calculator_tools = [
+            schema
+            for schema in tools
+            if schema.get("function", {}).get("name") == "calculator"
+        ]
+        return calculator_tools or None
+    return None
 
 
 def _pending_dropped_messages(
@@ -101,6 +283,9 @@ async def run_agent_loop(
     turn_sources: list[dict] = []
     citation_by_source: dict[str, str] = {}
     search_groups_by_source: dict[str, set[str]] = {}
+    search_group_order: list[str] = []
+    search_query_by_group: dict[str, str] = {}
+    search_rank_by_group_source: dict[tuple[str, str], int] = {}
     iteration = 0
     grounding_guard_enabled = settings.grounding_verification_enabled and settings.grounding_enforcement != "off"
     # ── V4 timing instrumentation ──
@@ -179,9 +364,16 @@ async def run_agent_loop(
     trimmed: list[ChatMessage] = []
     scheduled_drop_fingerprints: set[str] = set()
     _verification_retries = 0
+    _trusted_calculator_results: set[float] = set()
+    _trusted_calculator_expressions: set[str] = set()
     _tool_call_history: list[tuple[str, str]] = []  # (tool_name, query_arg) for loop detection
-    _loop_force_converge = False  # set when loop detected → disable tools
-    while iteration < settings.max_loop_iterations:
+    _loop_force_converge = False  # repeated retrieval detected; restrict tools
+    _soft_loop_limit = settings.max_loop_iterations
+    _hard_loop_limit = max(_soft_loop_limit, settings.max_loop_hard_iterations)
+    _current_loop_limit = _soft_loop_limit
+    _no_progress_rounds = 0
+    _loop_stop_reason = "limit"
+    while iteration < _current_loop_limit:
         if _is_cancelled():
             from tracing import peek_request_id
 
@@ -197,7 +389,13 @@ async def run_agent_loop(
             from metrics import get_metrics
 
             get_metrics().record_agent_run(iteration, timed_out=True, loop_limit=False)
-            yield {"event": "error", "data": {"code": "TIME_LIMIT", "message": "请求超时"}}
+            yield {
+                "event": "status",
+                "data": {
+                    "code": "TIME_LIMIT",
+                    "message": "请求已达到时间上限，正在根据已有结果整理答案...",
+                },
+            }
             break
 
         # Context error retry loop
@@ -286,7 +484,15 @@ async def run_agent_loop(
 
             # V4 answer-cache fast path: retrieval has completed and the exact
             # source set is known, but final answer generation has not started.
-            if turn_sources and settings.rag_answer_cache_enabled and not saved:
+            if (
+                turn_sources
+                and settings.rag_answer_cache_enabled
+                and not saved
+                # A cached numeric answer cannot prove that this run used the
+                # trusted calculator and it also suppresses the calculator
+                # tool card. Recompute explicit budgets/totals every time.
+                and not requires_calculator_tool(grounding_query)
+            ):
                 try:
                     from rag.answer_cache import get_answer_cache
 
@@ -303,6 +509,11 @@ async def run_agent_loop(
                         _cache_metrics().record_answer_cache("hit")
                         _record_elapsed("rag_visible_ttft")
                         cached_answer = normalize_answer_markdown(cached.answer)
+                        cached_answer = ensure_document_inventory_section(
+                            grounding_query,
+                            cached_answer,
+                            cached.sources,
+                        )
                         yield {
                             "event": "answer_chunk",
                             "data": {"delta": cached_answer},
@@ -361,6 +572,7 @@ async def run_agent_loop(
                 and grounding_guard_enabled
                 and settings.grounding_stream_verify_enabled
                 and not requires_whole_answer_validation(grounding_query)
+                and not requires_calculator_tool(grounding_query)
             )
             _unit_buffer: AtomicUnitBuffer | None = None
             _committed_units: list[AtomicUnit] = []
@@ -405,7 +617,11 @@ async def run_agent_loop(
                         _call_messages = trimmed
                         _call_tools: list[dict] | None = tools
                         if _loop_force_converge:
-                            _call_tools = None  # disable further tool calls
+                            _call_tools = _tools_during_forced_convergence(
+                                tools,
+                                grounding_query,
+                                _trusted_calculator_results,
+                            )
                         if _empty_response_retries:
                             recovery_instruction = ChatMessage(
                                 role="user",
@@ -595,22 +811,224 @@ async def run_agent_loop(
                     return
                 raise
 
-        # Stream ended — branch on tool_calls or final answer
+        # Stream ended — branch on tool_calls or final answer.  Some models
+        # occasionally write correct equations in prose while forgetting the
+        # calculator call. Convert only provenance-safe visible equations into
+        # real tool calls; arbitrary prose numbers never enter this path.
+        if (
+            not tool_calls_acc
+            and assistant_content
+            and turn_sources
+            and requires_calculator_tool(grounding_query)
+            and len(_trusted_calculator_results)
+            < _required_calculator_result_count(grounding_query)
+        ):
+            required_calculator_results = _required_calculator_result_count(
+                grounding_query,
+            )
+            remaining_calculator_results = max(
+                0,
+                required_calculator_results - len(_trusted_calculator_results),
+            )
+            draft_known_values = numeric_values(grounding_query)
+            for source in turn_sources:
+                draft_known_values.update(numeric_values(str(source.get("text", ""))))
+            draft_known_values.update(_trusted_calculator_results)
+            recovered_calls = _calculator_calls_from_draft(
+                assistant_content,
+                draft_known_values,
+                _trusted_calculator_results,
+                iteration=iteration,
+                min_operations=2 if required_calculator_results >= 3 else 1,
+                max_new_results=(
+                    remaining_calculator_results
+                    if required_calculator_results >= 3
+                    else None
+                ),
+            )
+            if recovered_calls:
+                logger.info(
+                    "recovered %d calculator call(s) from draft equations",
+                    len(recovered_calls),
+                )
+                yield {
+                    "event": "status",
+                    "data": {
+                        "code": "CALCULATOR_RECOVERED",
+                        "message": "检测到回答草稿中的计算式，正在调用计算器核验...",
+                    },
+                }
+                tool_calls_acc = recovered_calls
+
         if tool_calls_acc:
+            required_calculator_results = _required_calculator_result_count(
+                grounding_query,
+            )
+            remaining_calculator_results = max(
+                0,
+                required_calculator_results - len(_trusted_calculator_results),
+            )
+            known_calculator_values = numeric_values(grounding_query)
+            for source in turn_sources:
+                known_calculator_values.update(
+                    numeric_values(str(source.get("text", ""))),
+                )
+            known_calculator_values.update(_trusted_calculator_results)
+            filtered_tool_calls = _filter_calculator_calls(
+                tool_calls_acc,
+                known_calculator_values,
+                enforce_provenance=requires_calculator_tool(grounding_query),
+                trusted_results=_trusted_calculator_results,
+                min_operations=(
+                    2
+                    if (
+                        requires_calculator_tool(grounding_query)
+                        and required_calculator_results >= 3
+                    )
+                    else 1
+                ),
+                max_new_results=(
+                    remaining_calculator_results
+                    if (
+                        requires_calculator_tool(grounding_query)
+                        and required_calculator_results >= 3
+                    )
+                    else None
+                ),
+            )
+            if len(filtered_tool_calls) != len(tool_calls_acc):
+                logger.info(
+                    "ignored %d calculator call(s) without arithmetic or trusted operands",
+                    len(tool_calls_acc) - len(filtered_tool_calls),
+                )
+            tool_calls_acc = filtered_tool_calls
+
+            if not tool_calls_acc:
+                if (
+                    requires_calculator_tool(grounding_query)
+                    and len(_trusted_calculator_results)
+                    >= required_calculator_results
+                ):
+                    messages.extend(
+                        [
+                            ChatMessage(role="assistant", content=assistant_content or None),
+                            ChatMessage(
+                                role="user",
+                                content=(
+                                    "所需计算结果已经齐全，不要继续调用 calculator。"
+                                    "请直接依据检索来源和已完成的计算结果输出最终答案。"
+                                ),
+                            ),
+                        ]
+                    )
+                    iteration += 1
+                    continue
+                _no_progress_rounds += 1
+                messages.extend(
+                    [
+                        ChatMessage(
+                            role="assistant",
+                            content="计算计划包含未经来源或前序计算确认的数字，因此未执行。",
+                        ),
+                        ChatMessage(
+                            role="user",
+                            content=(
+                                "请重新规划 calculator 调用。每个数字只能来自当前问题、"
+                                "检索来源或前序公式结果；先计算基础中间值，再计算依赖它们的结果。"
+                                "对于同时要求订阅原价、折后金额和最终总额的复杂预算，"
+                                "不要单独计算节点差、折扣系数或月度小计；"
+                                "请使用至少包含两个运算符的复合公式直接计算三个目标结果。"
+                                f"已完成公式为 {sorted(_trusted_calculator_expressions)}，"
+                                f"对应结果为 {sorted(_trusted_calculator_results)}；"
+                                "不得再次提交这些公式或产生相同结果的等价公式。"
+                            ),
+                        ),
+                    ]
+                )
+                iteration += 1
+                if _no_progress_rounds >= 2:
+                    logger.warning(
+                        "calculator made no progress for %d rounds",
+                        _no_progress_rounds,
+                    )
+                    _loop_stop_reason = "calculator_no_progress"
+                    break
+                continue
+
+        if tool_calls_acc:
+            progress_before = (len(turn_sources), len(_trusted_calculator_results))
             tool_state = ToolTurnState(
                 messages=messages,
                 sources=turn_sources,
                 citation_by_source=citation_by_source,
                 search_groups_by_source=search_groups_by_source,
                 timing=_timing,
+                search_group_order=search_group_order,
+                search_query_by_group=search_query_by_group,
+                search_rank_by_group_source=search_rank_by_group_source,
             )
-            outcome = await execute_tool_turn(
+            event_queue: asyncio.Queue[dict | None] = asyncio.Queue()
+
+            async def _execute_and_signal(
+                current_tool_calls=tool_calls_acc,
+                current_content=assistant_content,
+                current_state=tool_state,
+                current_manager=ctx_manager,
+                current_queue=event_queue,
+            ):
+                try:
+                    return await execute_tool_turn(
+                        current_tool_calls,
+                        current_content,
+                        current_state,
+                        current_manager,
+                        registry,
+                        event_sink=current_queue.put,
+                    )
+                finally:
+                    await current_queue.put(None)
+
+            execution_task = asyncio.create_task(_execute_and_signal())
+            calculator_result_events: dict[str, dict] = {}
+            while True:
+                live_event = await event_queue.get()
+                if live_event is None:
+                    break
+                live_data = live_event.get("data", {})
+                if (
+                    live_event.get("event") == "tool_result"
+                    and live_data.get("tool") == "calculator"
+                ):
+                    calculator_result_events[str(live_data.get("call_id", ""))] = live_data
+                yield live_event
+            outcome = await execution_task
+            newly_trusted_results = _runtime_trusted_calculator_results(
                 tool_calls_acc,
-                assistant_content,
-                tool_state,
-                ctx_manager,
-                registry,
+                calculator_result_events,
+                known_calculator_values,
             )
+            _trusted_calculator_results.update(newly_trusted_results)
+            for tool_call in tool_calls_acc:
+                if tool_call.name != "calculator":
+                    continue
+                result_event = calculator_result_events.get(str(tool_call.id), {})
+                full_data = result_event.get("full_data")
+                value = full_data.get("result") if isinstance(full_data, dict) else None
+                if (
+                    result_event.get("success")
+                    and isinstance(value, int | float)
+                    and not isinstance(value, bool)
+                    and any(
+                        math.isclose(float(value), result, rel_tol=1e-12, abs_tol=1e-9)
+                        for result in newly_trusted_results
+                    )
+                ):
+                    expression = str(tool_call.arguments.get("expression", "")).strip()
+                    if expression:
+                        _trusted_calculator_expressions.add(expression)
+            progress_after = (len(turn_sources), len(_trusted_calculator_results))
+            made_progress = progress_after != progress_before
+            _no_progress_rounds = 0 if made_progress else _no_progress_rounds + 1
             messages = outcome.messages
             for event in outcome.events:
                 yield event
@@ -643,6 +1061,86 @@ async def run_agent_loop(
                 get_metrics().record_agent_run(iteration, timed_out=False, loop_limit=False)
                 return
 
+            iteration += 1
+            remaining_seconds = settings.max_total_time - (time.time() - start_time)
+            if (
+                iteration >= _current_loop_limit
+                and _current_loop_limit < _hard_loop_limit
+                and made_progress
+                and remaining_seconds >= 15
+            ):
+                old_limit = _current_loop_limit
+                _current_loop_limit = min(_hard_loop_limit, _current_loop_limit + 2)
+                yield {
+                    "event": "status",
+                    "data": {
+                        "code": "LOOP_EXTENDED",
+                        "message": (
+                            f"任务仍有有效进展，思考轮次由 {old_limit} "
+                            f"延长至 {_current_loop_limit}。"
+                        ),
+                    },
+                }
+            if _no_progress_rounds >= 2:
+                logger.warning(
+                    "tool loop made no progress for %d rounds",
+                    _no_progress_rounds,
+                )
+                _loop_stop_reason = "tool_no_progress"
+                break
+            continue
+
+        # Numeric budgets/totals must be computed by the trusted calculator,
+        # even when the model can perform the arithmetic itself.
+        if (
+            requires_calculator_tool(grounding_query)
+            and turn_sources
+            and len(_trusted_calculator_results)
+            < _required_calculator_result_count(grounding_query)
+        ):
+            required_results = _required_calculator_result_count(grounding_query)
+            remaining_seconds = settings.max_total_time - (time.time() - start_time)
+            if (
+                iteration + 1 >= _current_loop_limit
+                and _current_loop_limit < _hard_loop_limit
+                and remaining_seconds >= 15
+            ):
+                old_limit = _current_loop_limit
+                _current_loop_limit = min(_hard_loop_limit, _current_loop_limit + 2)
+                yield {
+                    "event": "status",
+                    "data": {
+                        "code": "LOOP_EXTENDED",
+                        "message": (
+                            f"计算步骤尚未完成，思考轮次由 {old_limit} "
+                            f"延长至 {_current_loop_limit}。"
+                        ),
+                    },
+                }
+            if iteration + 1 >= _current_loop_limit:
+                _loop_stop_reason = "calculator_limit"
+                break
+            messages.extend(
+                [
+                    ChatMessage(role="assistant", content=assistant_content or None),
+                    ChatMessage(
+                        role="user",
+                        content=(
+                            "该问题要求计算具体金额，但可信且互不重复的 calculator 结果仍不完整："
+                            f"当前 {len(_trusted_calculator_results)} 个，至少需要 {required_results} 个。"
+                            f"已经完成的公式：{sorted(_trusted_calculator_expressions)}。"
+                            "请对尚未计算的中间值和最终值调用 calculator（多个算式可并行调用），"
+                            "不要重复已经执行过的相同公式。"
+                            "阶梯订阅可用一个复合公式直接计算订阅原价；随后依次计算折后订阅和最终总额。"
+                            "不要把节点差、折扣系数、月度超额费或月度小计拆成独立调用；"
+                            "复杂预算的每个 calculator 表达式至少应包含两个运算符。"
+                            "然后再输出完整答案。来源中的输入价格和规则逐项引用；"
+                            "calculator 结果本身不要添加知识库引用。"
+                        ),
+                    ),
+                ]
+            )
+            assistant_content = ""
             iteration += 1
             continue
 
@@ -904,6 +1402,7 @@ async def run_agent_loop(
                             verification=verify_answer(
                                 emitted_answer,
                                 sources,
+                                query=grounding_query,
                             ).to_dict(),
                             collection_version=cache.collection_version,
                         ),
@@ -974,6 +1473,7 @@ async def run_agent_loop(
                             final_content,
                             sources,
                             query=grounding_query,
+                            calculation_results=tuple(_trusted_calculator_results),
                             coverage_recheck=settings.grounding_coverage_recheck_enabled,
                         ),
                         timeout=settings.rag_timeout_verification,
@@ -1014,7 +1514,19 @@ async def run_agent_loop(
                         )
                         _get_m().record_full_refusal("converted_partial")
                 # ── Phase 1: Deterministic repair first ──
-                if settings.grounding_deterministic_repair_enabled and decision.action == "deterministic_repair":
+                format_reasons = {
+                    "missing_citation",
+                    "invalid_citation",
+                    "redundant_citation",
+                }
+                should_try_deterministic = (
+                    settings.grounding_deterministic_repair_enabled
+                    and (
+                        decision.action == "deterministic_repair"
+                        or bool(set(decision.reasons) & format_reasons)
+                    )
+                )
+                if should_try_deterministic:
                     from agent.grounding_repair import deterministic_repair
 
                     evidence = [
@@ -1028,12 +1540,22 @@ async def run_agent_loop(
                         for s in sources
                     ]
                     _deterministic_started = time.perf_counter()
+                    deterministic_decision = GroundingDecision(
+                        action="deterministic_repair",
+                        reasons=[
+                            reason
+                            for reason in decision.reasons
+                            if reason in format_reasons
+                        ] or decision.reasons,
+                        verification=decision.verification,
+                    )
                     repair_result = deterministic_repair(
                         final_content,
                         evidence,
-                        decision,
+                        deterministic_decision,
                         min_score=settings.grounding_auto_cite_min_score,
                         min_margin=settings.grounding_auto_cite_min_margin,
+                        query=grounding_query,
                     )
                     _timing["rag_deterministic_repair"] = (time.perf_counter() - _deterministic_started) * 1000
                     if repair_result.repaired:
@@ -1046,11 +1568,27 @@ async def run_agent_loop(
                             "deterministic repair applied: changes=%s",
                             repair_result.changes,
                         )
-                    if repair_result.needs_llm:
+                        rechecked = needs_grounding_repair(
+                            final_content,
+                            sources,
+                            query=grounding_query,
+                            calculation_results=tuple(_trusted_calculator_results),
+                            coverage_recheck=settings.grounding_coverage_recheck_enabled,
+                        )
+                        if rechecked.needs_repair:
+                            decision = GroundingDecision(
+                                action="llm_repair",
+                                reasons=rechecked.reasons,
+                                verification=rechecked.verification,
+                            )
+                        else:
+                            decision = rechecked
+                    elif repair_result.needs_llm:
                         # Deterministic repair wasn't enough — escalate to LLM
                         decision = GroundingDecision(
                             action="llm_repair",
                             reasons=repair_result.llm_reasons,
+                            verification=decision.verification,
                         )
                 elif decision.action == "deterministic_repair":
                     # Disabling deterministic repair must not silently accept
@@ -1072,7 +1610,7 @@ async def run_agent_loop(
                             ChatMessage(role="assistant", content=final_content),
                             ChatMessage(
                                 role="user",
-                                content=grounding_repair_instruction(final_content),
+                                content=grounding_repair_instruction(final_content, grounding_query),
                             ),
                         ]
                         repaired_chunks = []
@@ -1098,6 +1636,8 @@ async def run_agent_loop(
                                     final_content,
                                     repaired,
                                     sources,
+                                    query=grounding_query,
+                                    calculation_results=tuple(_trusted_calculator_results),
                                 )
                                 repair_accepted = selected != final_content
                                 final_content = selected
@@ -1148,13 +1688,23 @@ async def run_agent_loop(
                 repair_used = "deterministic_partial" if comparison_fallback else "safe_refusal"
                 repair_reasons = list(repair_reasons) + ["incomplete_query_relation"]
 
-            guarded_content = apply_zero_support_guard(final_content, sources)
+            guarded_content = apply_zero_support_guard(
+                final_content,
+                sources,
+                query=grounding_query,
+                calculation_results=tuple(_trusted_calculator_results),
+            )
             if guarded_content != final_content:
                 final_content = guarded_content
                 repair_used = "safe_refusal"
                 repair_reasons = list(repair_reasons) + ["zero_supported_claims"]
 
             final_content = normalize_answer_markdown(final_content)
+            final_content = ensure_document_inventory_section(
+                grounding_query,
+                final_content,
+                sources,
+            )
 
             # ── Yield final answer ──
             if final_content:
@@ -1178,6 +1728,8 @@ async def run_agent_loop(
                                 verification=verify_answer(
                                     final_content,
                                     sources,
+                                    query=grounding_query,
+                                    calculation_results=tuple(_trusted_calculator_results),
                                 ).to_dict(),
                                 collection_version=cv,
                             ),
@@ -1220,6 +1772,11 @@ async def run_agent_loop(
             # Grounding may be disabled in controlled rollouts, but answer
             # caching and end-to-end timing must still work on the RAG path.
             assistant_content = normalize_answer_markdown(assistant_content)
+            assistant_content = ensure_document_inventory_section(
+                grounding_query,
+                assistant_content,
+                sources,
+            )
             if settings.rag_answer_cache_enabled:
                 try:
                     from rag.answer_cache import CacheEntry, get_answer_cache
@@ -1238,6 +1795,8 @@ async def run_agent_loop(
                             verification=verify_answer(
                                 assistant_content,
                                 sources,
+                                query=grounding_query,
+                                calculation_results=tuple(_trusted_calculator_results),
                             ).to_dict(),
                             collection_version=cache.collection_version,
                         ),
@@ -1296,13 +1855,26 @@ async def run_agent_loop(
         get_metrics().record_agent_run(iteration, timed_out=False, loop_limit=False)
         return
 
-    # Loop limit reached — force final synthesis
-    if loop_exhausted:
+    # Loop limit/no-progress stop — bounded final synthesis. Buffer and verify
+    # the draft before any answer bytes reach the client.
+    if loop_exhausted and _loop_stop_reason == "limit":
         yield {
-            "event": "error",
-            "data": {"code": "LOOP_LIMIT", "message": f"思考轮次已达上限（{settings.max_loop_iterations} 轮）"},
+            "event": "status",
+            "data": {
+                "code": "LOOP_LIMIT",
+                "message": f"思考轮次已达当前上限（{iteration}/{_hard_loop_limit} 轮）",
+            },
         }
-    yield {"event": "status", "data": {"message": "已达到最大思考轮次，正在整理答案..."}}
+    if _loop_stop_reason.endswith("no_progress"):
+        yield {
+            "event": "status",
+            "data": {
+                "code": "NO_PROGRESS",
+                "message": "连续工具调用没有产生新结果，正在安全整理已有信息...",
+            },
+        }
+    else:
+        yield {"event": "status", "data": {"message": "已达到最大思考轮次，正在整理答案..."}}
 
     force_prompt = ChatMessage(
         role="user",
@@ -1314,26 +1886,66 @@ async def run_agent_loop(
     )
     trimmed, _, _ = ctx_manager.trim_messages(messages + [force_prompt])
 
-    summary_failed = False
-    try:
-        async for chunk in llm.chat_stream(trimmed, tools=None):
-            if chunk.content:
-                yield {"event": "answer_chunk", "data": {"delta": chunk.content}}
-    except Exception:
-        summary_failed = True
-        logger.warning("force final answer failed after loop limit", exc_info=True)
-        yield {
-            "event": "answer_chunk",
-            "data": {"delta": "抱歉，思考轮次已达上限，且自动总结失败。请尝试简化问题或提供更具体的指引。"},
-        }
-
     sources = turn_sources
+    summary_failed = False
+    required_calculations = (
+        _required_calculator_result_count(grounding_query)
+        if requires_calculator_tool(grounding_query)
+        else 0
+    )
+    if len(_trusted_calculator_results) < required_calculations:
+        # A tools-disabled synthesis must never invent missing arithmetic.
+        final_summary = (
+            "本轮检索已完成，但计算器步骤未完整执行，因此无法可靠给出最终金额。"
+            f"已获得 {len(_trusted_calculator_results)} 个可信计算结果，"
+            f"本题至少需要 {required_calculations} 个。请重试本问题。"
+        )
+        summary_failed = True
+        logger.warning(
+            "blocked forced numeric synthesis: trusted=%d required=%d",
+            len(_trusted_calculator_results),
+            required_calculations,
+        )
+    else:
+        forced_chunks: list[str] = []
+        try:
+            async for chunk in llm.chat_stream(trimmed, tools=None):
+                if chunk.content:
+                    forced_chunks.append(chunk.content)
+            final_summary = normalize_answer_markdown("".join(forced_chunks).strip())
+            if not final_summary:
+                raise ValueError("empty forced synthesis")
+            if sources and grounding_guard_enabled:
+                forced_verification = verify_answer(
+                    final_summary,
+                    sources,
+                    query=grounding_query,
+                    calculation_results=tuple(_trusted_calculator_results),
+                )
+                if forced_verification.unsupported_claims:
+                    logger.warning(
+                        "blocked ungrounded forced synthesis: supported=%d/%d",
+                        forced_verification.facts_supported,
+                        forced_verification.facts_found,
+                    )
+                    final_summary = (
+                        "已有检索结果，但自动总结未通过来源校验，"
+                        "为避免输出未经资料支持的内容，本轮不生成推测性答案。请重试本问题。"
+                    )
+                    summary_failed = True
+        except Exception:
+            summary_failed = True
+            logger.warning("force final answer failed after loop stop", exc_info=True)
+            final_summary = "抱歉，自动总结失败。请尝试简化问题或提供更具体的指引。"
+
+    yield {"event": "answer_chunk", "data": {"delta": final_summary}}
+
     if sources:
         yield {"event": "sources", "data": sources}
     if summary_failed:
-        yield {"event": "status", "data": {"message": "注意：思考轮次已达上限且总结失败，以上为兜底回复"}}
+        yield {"event": "status", "data": {"message": "注意：自动总结未通过完整性或来源校验，以上为安全兜底回复"}}
     else:
-        yield {"event": "status", "data": {"message": "注意：思考轮次已达上限，以上为自动总结"}}
+        yield {"event": "status", "data": {"message": "注意：工具循环已结束，以上为经过校验的自动总结"}}
     yield {"event": "done", "data": {}}
     from metrics import get_metrics
 

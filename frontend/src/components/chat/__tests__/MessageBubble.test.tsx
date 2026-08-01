@@ -127,6 +127,38 @@ describe("MessageBubble", () => {
     expect(screen.getByTitle("source text")).toBeInTheDocument();
   });
 
+  it("shows cited sources first and folds unused retrieval results", () => {
+    const msg = makeMsg({
+      role: "assistant",
+      content: "价格为 7600 元 [S3]，订阅规则见 [S9]。",
+      sources: [
+        { citation_id: "S3", document_id: "d3", filename: "pricing.xlsx", text: "hardware" },
+        { citation_id: "S9", document_id: "d9", filename: "pricing.xlsx", text: "subscription" },
+        { citation_id: "S12", document_id: "d12", filename: "sla.pdf", text: "unused SLA" },
+      ],
+    });
+    render(<MessageBubble message={msg} />);
+
+    expect(screen.getByTitle("hardware")).toBeInTheDocument();
+    expect(screen.getByTitle("subscription")).toBeInTheDocument();
+    expect(screen.queryByTitle("unused SLA")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看其余 1 条检索结果" })).toBeInTheDocument();
+  });
+
+  it("falls back to all sources when cited IDs do not exist in the source payload", () => {
+    const msg = makeMsg({
+      role: "assistant",
+      content: "价格见 [S99]。",
+      sources: [
+        { citation_id: "S1", document_id: "d1", text: "available source" },
+      ],
+    });
+    render(<MessageBubble message={msg} />);
+
+    expect(screen.getByTitle("available source")).toBeInTheDocument();
+    expect(screen.queryByText(/查看其余/)).not.toBeInTheDocument();
+  });
+
   it("hides misleading warning when content is supported but citation markers are missing", () => {
     const msg = makeMsg({
       role: "assistant",

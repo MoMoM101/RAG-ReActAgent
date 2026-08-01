@@ -18,6 +18,7 @@ _template: str | None = None
 _legacy_encoder = tiktoken.get_encoding("cl100k_base")
 _UNTRUSTED_CLOSE = "\n</UNTRUSTED_RETRIEVED_CONTENT>"
 _HISTORY_SUMMARY_MAX_TOKENS = 512
+_STRUCTURED_RETRIEVAL_TOOLS = frozenset({"search_docs", "web_search"})
 
 
 def _counter_from_settings() -> TokenCounter:
@@ -93,6 +94,16 @@ class ContextManager:
 
     def _prepared_message(self, message: ChatMessage) -> ChatMessage:
         if message.role != "tool" or not message.content:
+            return message
+        # Retrieval evidence has already been deduplicated and capped by the
+        # agent's source budget. Truncating its consolidated JSON here can drop
+        # valid sources and leave the model with an invalid partial payload.
+        # It remains subject to the request-wide context budget below.
+        if (
+            message.tool_name in _STRUCTURED_RETRIEVAL_TOOLS
+            and '"retrieval_groups"' in message.content
+            and '"source_catalog"' in message.content
+        ):
             return message
         if message.content.endswith(_UNTRUSTED_CLOSE):
             close_tokens = self.counter.count_text(_UNTRUSTED_CLOSE)

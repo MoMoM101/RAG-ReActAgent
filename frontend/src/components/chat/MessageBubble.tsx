@@ -135,7 +135,7 @@ export function MessageBubble({ message }: Props) {
 
         {/* Sources */}
         {message.sources && message.sources.length > 0 && (
-          <SourceCard sources={message.sources} />
+          <SourceCard sources={message.sources} answer={message.content} />
         )}
 
         {message.verification && (

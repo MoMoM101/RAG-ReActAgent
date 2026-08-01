@@ -74,3 +74,6 @@ docker-compose.override.yml
 
 # Release export artifacts
 .release-export/
+
+# Local generated outputs, raw recordings, and temporary demo/test files
+outputs/

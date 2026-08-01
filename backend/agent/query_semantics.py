@@ -64,7 +64,25 @@ _PAIR_TAIL_RE = re.compile(
     r"|\s*(?:在什么|做什么|用于什么|哪个|谁|怎么|如何|是否).*$",
     re.IGNORECASE,
 )
-_HISTORY_CITATION_RE = re.compile(r"\s*\[S\d+(?:\s*[,，]\s*S\d+)*\]", re.IGNORECASE)
+_HISTORY_CITATION_RE = re.compile(
+    r"\s*\[(?:WS|S)\d+(?:\s*[,，]\s*(?:WS|S)\d+)*\]",
+    re.IGNORECASE,
+)
+CONDITIONAL_DECISION_QUERY_RE = re.compile(
+    r"是否.{0,16}(?:必然|一定|自动|必须|都|均|计入|排除|算作|属于)|"
+    r"(?:必然|一定|自动).{0,12}(?:计入|排除|算作|属于)|"
+    r"(?:只有|除非|满足.{0,8}条件).{0,16}(?:才|是否)",
+)
+CALCULATOR_EXPLICIT_QUERY_RE = re.compile(
+    r"(?:请)?计算|总预算|总额|合计|小计|折后(?:金额|费用|价格)?|"
+    r"\b(?:calculate|total(?:\s+(?:amount|cost|budget))?)\b",
+    re.IGNORECASE,
+)
+BUDGET_QUERY_RE = re.compile(r"预算|\bbudget\b", re.IGNORECASE)
+CALCULATOR_FORMULA_ONLY_QUERY_RE = re.compile(
+    r"计算公式|公式(?:是)?什么|(?:怎么|如何)计算|\bhow\s+to\s+calculate\b",
+    re.IGNORECASE,
+)
 
 
 def is_comparison_query(query: str) -> bool:
@@ -91,6 +109,21 @@ def is_underspecified_query(query: str) -> bool:
     return bool(UNDERSPECIFIED_QUERY_RE.fullmatch(query))
 
 
+def is_conditional_decision_query(query: str) -> bool:
+    """Return whether the user asks for a conditional yes/no judgment."""
+    return bool(CONDITIONAL_DECISION_QUERY_RE.search(query))
+
+
+def requires_calculator_tool(query: str) -> bool:
+    """Require calculator execution for numeric amount/total questions."""
+    if not re.search(r"\d", query) and CALCULATOR_FORMULA_ONLY_QUERY_RE.search(query):
+        return False
+    return bool(
+        CALCULATOR_EXPLICIT_QUERY_RE.search(query)
+        or (re.search(r"\d", query) and BUDGET_QUERY_RE.search(query))
+    )
+
+
 def requires_whole_answer_validation(query: str) -> bool:
     """Return whether a query must be validated only after full generation."""
     return bool(
@@ -99,6 +132,8 @@ def requires_whole_answer_validation(query: str) -> bool:
         or STRUCTURED_OUTPUT_QUERY_RE.search(query)
         or has_unresolved_reference(query)
         or RELATION_SENSITIVE_QUERY_RE.search(query)
+        or is_conditional_decision_query(query)
+        or requires_calculator_tool(query)
     )
 
 

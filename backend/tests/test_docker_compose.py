@@ -4,6 +4,7 @@ from pathlib import Path
 import yaml
 
 DOCKER_COMPOSE = Path(__file__).resolve().parent.parent.parent / "docker-compose.yml"
+GHCR_COMPOSE = Path(__file__).resolve().parent.parent.parent / "docker-compose.ghcr.yml"
 BACKEND_DOCKERFILE = Path(__file__).resolve().parent.parent / "Dockerfile"
 BACKEND_DOCKERIGNORE = Path(__file__).resolve().parent.parent / ".dockerignore"
 E2E_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "docker_e2e_acceptance.ps1"
@@ -12,6 +13,24 @@ E2E_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "docker
 def test_docker_compose_exists():
     """docker-compose.yml must exist."""
     assert DOCKER_COMPOSE.exists(), "docker-compose.yml not found"
+
+
+def test_ghcr_compose_uses_published_images_without_build_contexts():
+    """The quick-start stack must pull published images instead of building locally."""
+    doc = yaml.safe_load(GHCR_COMPOSE.read_text(encoding="utf-8"))
+    services = doc["services"]
+
+    assert set(services) == {"qdrant", "backend", "frontend"}
+    assert services["backend"]["image"].startswith(
+        "ghcr.io/momom101/rag-reactagent/backend:"
+    )
+    assert services["frontend"]["image"].startswith(
+        "ghcr.io/momom101/rag-reactagent/frontend:"
+    )
+    assert "build" not in services["backend"]
+    assert "build" not in services["frontend"]
+    assert services["backend"]["pull_policy"] == "always"
+    assert services["frontend"]["pull_policy"] == "always"
 
 
 def test_docker_compose_has_three_services():

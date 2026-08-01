@@ -2,7 +2,58 @@
 
 import re
 
-from agent.answer_format import normalize_answer_markdown
+from agent.answer_format import (
+    ensure_document_inventory_section,
+    normalize_answer_markdown,
+)
+
+
+def _inventory_source():
+    return {
+        "citation_id": "S1",
+        "chunk_id": "tool:list_documents",
+        "source_type": "tool",
+        "documents": [
+            {
+                "filename": "01_product.md",
+                "file_type": ".md",
+                "status": "ready",
+            },
+            {
+                "filename": "02_pricing.xlsx",
+                "file_type": ".xlsx",
+                "status": "ready",
+            },
+        ],
+    }
+
+
+def test_document_list_request_gets_a_dedicated_inventory_section():
+    answer = "- **产品规格**：在 01_product.md 中。\n- **价格**：在 02_pricing.xlsx 中。"
+
+    completed = ensure_document_inventory_section(
+        "请列出当前知识库中的文档，并说明哪些文档包含产品规格和价格。",
+        answer,
+        [_inventory_source()],
+    )
+
+    assert completed.startswith("### 文档列表")
+    assert "`01_product.md`（类型：.md；状态：ready） [S1]。" in completed
+    assert "`02_pricing.xlsx`（类型：.xlsx；状态：ready） [S1]。" in completed
+    assert "### 内容对应" in completed
+    assert completed.endswith(answer)
+
+
+def test_existing_document_list_section_is_not_duplicated():
+    answer = "### 文档列表\n\n- `01_product.md` [S1]。"
+
+    completed = ensure_document_inventory_section(
+        "请列出当前知识库中的文档。",
+        answer,
+        [_inventory_source()],
+    )
+
+    assert completed == answer
 
 
 def test_removes_search_narration_and_separates_glued_heading():
@@ -69,3 +120,17 @@ def test_keeps_existing_valid_table_separator_once():
     normalized = normalize_answer_markdown(answer)
 
     assert normalized.count("| --- | --- |") == 1
+
+
+def test_unwraps_unlabeled_fence_containing_only_chinese_prose():
+    answer = (
+        "最终总预算如下：\n"
+        "```总预算 = 硬件价格 + 平台订阅费 + 实施服务费 = 43032 元。\n\n"
+        "综上所述，客户的未税首年总预算为 43032 元。```"
+    )
+
+    normalized = normalize_answer_markdown(answer)
+
+    assert "```" not in normalized
+    assert "总预算 = 硬件价格 + 平台订阅费 + 实施服务费 = 43032 元。" in normalized
+    assert "综上所述，客户的未税首年总预算为 43032 元。" in normalized

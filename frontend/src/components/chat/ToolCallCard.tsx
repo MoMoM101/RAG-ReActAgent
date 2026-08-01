@@ -44,12 +44,12 @@ function resultDescription(tool: string, data: Record<string, unknown>): string 
 export function ToolCallCard({ step }: { step: AgentStep }) {
   const [expanded, setExpanded] = useState(false);
   const data = step.data as Record<string, unknown>;
+  const argsObj = (data.args as Record<string, unknown>) || {};
+  const hasArgs = Object.keys(argsObj).length > 0;
 
   if (step.type === "tool_call") {
     const toolName = String(data.tool || "unknown");
     const label = toolLabels[toolName] || "执行工具";
-    const argsObj = (data.args as Record<string, unknown>) || {};
-    const hasArgs = Object.keys(argsObj).length > 0;
     return (
       <div className="tool-card" onClick={() => hasArgs && setExpanded(!expanded)} style={{ cursor: hasArgs ? "pointer" : "default" }}>
         <div className="tool-card-header">
@@ -77,10 +77,15 @@ export function ToolCallCard({ step }: { step: AgentStep }) {
     const operation = toolLabels[tool] || tool || "工具";
 
     return (
-      <div className="tool-card" style={{
-        borderColor: success ? "rgba(52,211,153,0.15)" : "rgba(248,113,113,0.15)",
-        background: success ? "rgba(52,211,153,0.04)" : "rgba(248,113,113,0.04)",
-      }}>
+      <div
+        className="tool-card"
+        onClick={() => hasArgs && setExpanded(!expanded)}
+        style={{
+          borderColor: success ? "rgba(52,211,153,0.15)" : "rgba(248,113,113,0.15)",
+          background: success ? "rgba(52,211,153,0.04)" : "rgba(248,113,113,0.04)",
+          cursor: hasArgs ? "pointer" : "default",
+        }}
+      >
         <div className="tool-card-header" style={{ color: success ? "var(--success)" : "var(--danger)" }}>
           <span className={`status-dot ${success ? "ready" : "failed"}`} />
           {success ? resultDescription(tool, data) : `${operation}失败`}
@@ -88,7 +93,17 @@ export function ToolCallCard({ step }: { step: AgentStep }) {
             <span style={{ fontSize: 10, color: "var(--accent)", marginLeft: 6, fontWeight: 500 }}>⚡精排</span>
           )}
           {data.error != null && <span style={{ color: "var(--muted)", marginLeft: 6 }}>{String(data.error)}</span>}
+          {hasArgs && (
+            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+              {expanded ? <ChevronUpIcon size={12} /> : <ChevronDownIcon size={12} />}
+            </span>
+          )}
         </div>
+        {expanded && hasArgs && (
+          <div className="tool-card-body">
+            {JSON.stringify(argsObj, null, 2)}
+          </div>
+        )}
       </div>
     );
   }

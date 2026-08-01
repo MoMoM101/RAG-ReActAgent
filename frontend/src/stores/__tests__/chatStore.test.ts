@@ -77,6 +77,43 @@ describe("chatStore empty answer fallback", () => {
     expect(answer?.content).not.toContain("先搜索一下");
   });
 
+  it("updates parallel tool cards in place by call_id", async () => {
+    await useChatStore.getState().send("检查多个主题");
+
+    onEvent?.({
+      event: "tool_call",
+      data: { tool: "search_docs", args: { query: "规格" }, call_id: "call-1" },
+    });
+    onEvent?.({
+      event: "tool_call",
+      data: { tool: "search_docs", args: { query: "价格" }, call_id: "call-2" },
+    });
+    onEvent?.({
+      event: "tool_result",
+      data: { tool: "search_docs", call_id: "call-2", success: true, result_count: 3 },
+    });
+
+    let steps = useChatStore.getState().messages.at(-1)?.steps ?? [];
+    expect(steps).toHaveLength(2);
+    expect(steps[0].type).toBe("tool_call");
+    expect(steps[1].type).toBe("tool_result");
+    expect(steps[1].data).toMatchObject({
+      call_id: "call-2",
+      args: { query: "价格" },
+      result_count: 3,
+    });
+
+    onEvent?.({
+      event: "tool_result",
+      data: { tool: "search_docs", call_id: "call-1", success: true, result_count: 5 },
+    });
+
+    steps = useChatStore.getState().messages.at(-1)?.steps ?? [];
+    expect(steps).toHaveLength(2);
+    expect(steps.map((item) => item.type)).toEqual(["tool_result", "tool_result"]);
+    expect(steps.map((item) => item.data.result_count)).toEqual([5, 3]);
+  });
+
   it("replaces streamed text with the backend-normalized final markdown", async () => {
     await useChatStore.getState().send("总结一下");
 
@@ -94,6 +131,22 @@ describe("chatStore empty answer fallback", () => {
     const answer = useChatStore.getState().messages.at(-1);
     expect(answer?.content).toContain("连接已中断");
     expect(useChatStore.getState().sseState).toBe("error");
+  });
+
+  it("does not treat loop-limit status as a broken connection", async () => {
+    await useChatStore.getState().send("问题");
+
+    onEvent?.({
+      event: "status",
+      data: { code: "LOOP_LIMIT", message: "正在整理答案" },
+    });
+    onEvent?.({ event: "answer_chunk", data: { delta: "最终回答" } });
+    onEvent?.({ event: "done", data: {} });
+
+    const answer = useChatStore.getState().messages.at(-1);
+    expect(answer?.content).toBe("最终回答");
+    expect(answer?.content).not.toContain("连接已中断");
+    expect(useChatStore.getState().sseState).toBe("idle");
   });
 
   it("shows a fallback when the stream closes without a done event", async () => {

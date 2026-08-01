@@ -51,6 +51,22 @@ class TestLoadXlsx:
 
         assert load_xlsx(str(f)) == ""
 
+    def test_content_addressed_path_without_xlsx_suffix(self, tmp_path):
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        wb.active.append(["product", "price"])
+        wb.active.append(["XG7", 29999])
+        source = tmp_path / "source.xlsx"
+        wb.save(str(source))
+
+        stored = tmp_path / ("a" * 64)
+        stored.write_bytes(source.read_bytes())
+
+        text = load_xlsx(str(stored))
+        assert "XG7" in text
+        assert "29999" in text
+
     def test_escapes_markdown_cells(self, tmp_path):
         from openpyxl import Workbook
 

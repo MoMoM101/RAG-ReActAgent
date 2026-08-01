@@ -8,6 +8,58 @@ import pytest
 from api import chat as chat_api
 
 
+def test_calculator_results_reject_unproven_intermediate_values():
+    tool_messages = [
+        {
+            "name": "calculator",
+            "content": "Success",
+            "args": {"expression": "1280 * 12"},
+            "result_data": {"result": 15360},
+        },
+        {
+            "name": "calculator",
+            "content": "Success",
+            "args": {"expression": "34080 * (1 - 0.1)"},
+            "result_data": {"result": 30672},
+        },
+        {
+            "name": "calculator",
+            "content": "Success",
+            "args": {"expression": "7600 + 30672 + 8000"},
+            "result_data": {"result": 46272},
+        },
+    ]
+
+    assert chat_api._calculator_results(
+        tool_messages,
+        query="1台设备，1年订阅",
+        sources=[{"text": "硬件7600元；基础订阅1280元/月，一年按12个月；折扣0.1；实施费8000元。"}],
+    ) == [15360]
+
+
+def test_calculator_results_reject_failed_and_non_finite_values():
+    tool_messages = [
+        {
+            "name": "calculator",
+            "content": "Error: division by zero",
+            "args": {"expression": "7600 / 0"},
+            "result_data": {"result": 0},
+        },
+        {
+            "name": "calculator",
+            "content": "Success",
+            "args": {"expression": "7600 + 8000"},
+            "result_data": {"result": float("inf")},
+        },
+    ]
+
+    assert chat_api._calculator_results(
+        tool_messages,
+        query="实施费8000元",
+        sources=[{"text": "设备价格7600元。"}],
+    ) == []
+
+
 async def _grounded_events(*_args, **_kwargs):
     yield {"event": "answer_chunk", "data": {"delta": "Python 3.10 is required. [S1]"}}
     yield {"event": "sources", "data": [{

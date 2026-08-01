@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import uuid
 from contextlib import suppress
 from datetime import UTC
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent.calculation_provenance import expression_uses_known_values, numeric_values
 from agent.loop import run_agent_loop
 from config import settings
 from llm.base import ChatMessage, ToolCall
@@ -79,6 +81,59 @@ def _tool_message_content(m: "Message") -> str:
     if m.tool_result_json:
         return f"[历史工具结果: {m.tool_name}]\n{m.tool_result_json}"
     return m.content or ""
+
+
+def _record_tool_result(tool_messages: list[dict], data: dict) -> None:
+    """Attach a streamed result to the matching tool call."""
+    if not tool_messages:
+        return
+    call_id = data.get("call_id")
+    target = next(
+        (
+            item
+            for item in reversed(tool_messages)
+            if call_id and item.get("call_id") == call_id
+        ),
+        tool_messages[-1],
+    )
+    if data.get("success"):
+        result_count = data.get("result_count")
+        if isinstance(result_count, int) and not isinstance(result_count, bool):
+            target["content"] = f"Success: {result_count} results"
+        else:
+            target["content"] = "Success"
+    else:
+        target["content"] = f"Error: {data.get('error', 'unknown')}"
+    target["result_data"] = data.get("full_data")
+
+
+def _calculator_results(
+    tool_messages: list[dict],
+    *,
+    query: str = "",
+    sources: list[dict] | None = None,
+) -> list[int | float]:
+    """Collect calculator outputs whose literal inputs have known provenance."""
+    results: list[int | float] = []
+    known_values = numeric_values(query)
+    for source in sources or []:
+        known_values.update(numeric_values(str(source.get("text", ""))))
+    for message in tool_messages:
+        if message.get("name") != "calculator" or message.get("content") != "Success":
+            continue
+        data = message.get("result_data")
+        value = data.get("result") if isinstance(data, dict) else None
+        args = message.get("args")
+        expression = str(args.get("expression", "")) if isinstance(args, dict) else ""
+        if (
+            isinstance(value, int | float)
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and expression_uses_known_values(expression, known_values)
+        ):
+            results.append(value)
+            known_values.add(float(value))
+    return results
 
 
 async def _save_messages(
@@ -205,6 +260,12 @@ async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: 
                         assistant_content,
                         sources,
                         min_coverage=settings.grounding_min_coverage,
+                        query=user_message,
+                        calculation_results=_calculator_results(
+                            tool_messages,
+                            query=user_message,
+                            sources=sources,
+                        ),
                     )
                     verification_data = verification.to_dict(include_claims=True)
                     if (
@@ -264,17 +325,9 @@ async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: 
                 "content": "",  # filled by tool_result
             })
         elif event_type == "tool_result" and tool_messages:
-            # Update the last tool message with result content and full data
-            d = event["data"]
-            if d.get("success"):
-                result_count = d.get("result_count")
-                if isinstance(result_count, int) and not isinstance(result_count, bool):
-                    tool_messages[-1]["content"] = f"Success: {result_count} results"
-                else:
-                    tool_messages[-1]["content"] = "Success"
-            else:
-                tool_messages[-1]["content"] = f"Error: {d.get('error', 'unknown')}"
-            tool_messages[-1]["result_data"] = d.get("full_data")
+            # Parallel tools may finish out of order. Match the result to its
+            # originating call instead of assigning it to the latest call.
+            _record_tool_result(tool_messages, event["data"])
 
         # Check for client disconnect after each event
         if request is not None:
@@ -419,7 +472,8 @@ async def chat(request: Request, req: ChatRequest, db: AsyncSession = Depends(ge
         media_type="text/event-stream",
         headers={
             "X-Conversation-Id": conv_id,
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )

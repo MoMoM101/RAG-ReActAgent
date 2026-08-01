@@ -5,8 +5,10 @@ from __future__ import annotations
 import ast
 import asyncio
 import logging
+import math
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -134,10 +136,10 @@ class SearchDocsTool(BaseTool):
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "Search query"},
-            "top_k": {"type": "integer", "description": "Number of results (optional, uses default if not specified)"},
             "document_id": {"type": "string", "description": "Optional: search within a specific document only"},
         },
         "required": ["query"],
+        "additionalProperties": False,
     }
 
     async def execute(self, query: str, top_k: int = 0, document_id: str = "") -> ToolResult:
@@ -146,10 +148,16 @@ class SearchDocsTool(BaseTool):
         from reranker.factory import is_reranker_ready
 
         try:
+            configured_top_k = max(1, settings.retrieval_top_k)
+            effective_top_k = (
+                min(top_k, configured_top_k)
+                if top_k > 0
+                else configured_top_k
+            )
             results = await asyncio.wait_for(
                 hybrid_search(
                     query,
-                    top_k=top_k or settings.retrieval_top_k,
+                    top_k=effective_top_k,
                     document_id=document_id,
                     use_rerank=True,
                 ),
@@ -229,7 +237,10 @@ class ToolRegistry:
         return await self._execute_one(tool, **kwargs)
 
     async def execute_parallel(
-        self, calls: list[dict[str, Any]]
+        self,
+        calls: list[dict[str, Any]],
+        *,
+        on_result: Callable[[int, str, ToolResult, float], Awaitable[None]] | None = None,
     ) -> list[tuple[str, ToolResult, float]]:
         """Execute multiple tool calls with controlled concurrency.
 
@@ -259,6 +270,8 @@ class ToolRegistry:
                 result = await self.execute(tc["name"], **tc.get("arguments", {}))
                 elapsed = float(int((_time.time() - t0) * 1000))
                 serial_results.append((tc["name"], result, elapsed))
+                if on_result is not None:
+                    await on_result(len(serial_results) - 1, tc["name"], result, elapsed)
             return serial_results
 
         # Concurrent execution for parallel-safe read-only tools
@@ -280,6 +293,8 @@ class ToolRegistry:
             except Exception as e:
                 result = ToolResult(success=False, error=str(e))
             elapsed = int((_time.time() - t0) * 1000)
+            if on_result is not None:
+                await on_result(idx, tc["name"], result, elapsed)
             return (idx, tc["name"], result, elapsed)
 
         tasks = [_run_one(i, tc) for i, tc in enumerate(calls)]
@@ -384,6 +399,8 @@ class CalculatorTool(BaseTool):
 
         try:
             value = self._eval_node(tree.body)
+            if not math.isfinite(float(value)):
+                return ToolResult(success=False, error="计算结果不是有限数值")
             return ToolResult(success=True, data={"expression": expression, "result": value})
         except ZeroDivisionError:
             return ToolResult(success=False, error="除数不能为零")
@@ -392,7 +409,11 @@ class CalculatorTool(BaseTool):
 
     def _is_allowed(self, node):
         if isinstance(node, ast.Constant):
-            return isinstance(node.value, (int, float))
+            return (
+                isinstance(node.value, (int, float))
+                and not isinstance(node.value, bool)
+                and math.isfinite(float(node.value))
+            )
         if isinstance(node, ast.UnaryOp):
             return isinstance(node.op, ast.USub) and self._is_allowed(node.operand)
         if isinstance(node, ast.BinOp):

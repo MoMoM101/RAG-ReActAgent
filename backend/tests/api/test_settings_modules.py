@@ -22,10 +22,18 @@ def test_settings_facade_preserves_public_symbols_and_route():
     assert facade.EmbeddingSettings is EmbeddingSettings
     assert facade.SettingsResponse is SettingsResponse
     assert facade.TestConnectionRequest is ConnectionRequest
-
     paths = [route.path for route in facade.router.routes]
     assert paths.count("/api/settings/test-connection") == 1
 
+
+@pytest.mark.parametrize("top_k", [0, 21])
+def test_retrieval_top_k_rejects_values_outside_frontend_range(top_k):
+    with pytest.raises(ValidationError):
+        SettingsResponse(
+            llm=LLMSettings(),
+            embedding=EmbeddingSettings(),
+            retrieval_top_k=top_k,
+        )
 
 @pytest.mark.parametrize("model", [LLMSettings, EmbeddingSettings])
 def test_provider_and_url_validation_remains_shared(model):

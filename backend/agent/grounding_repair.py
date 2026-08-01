@@ -25,13 +25,17 @@ import re
 from dataclasses import dataclass, field
 
 from agent.verifier import (
+    _CITATION_ID_PATTERN,
     _CITATION_RE,
     _SUPPORT_THRESHOLD,
     Evidence,
     GroundingDecision,
     _claim_citations,
     _content_tokens,
+    _evidence_support_text,
     _numbers,
+    is_missing_information_statement,
+    relevant_missing_information_boundaries,
     verify_answer,
 )
 
@@ -39,11 +43,11 @@ logger = logging.getLogger(__name__)
 
 # Patterns for deterministic repair
 _POST_SENTENCE_PAT = re.compile(
-    r"([。！？!?；;])\s*(\[S\d+(?:\s*[,，]\s*S\d+)*\])",
+    rf"([。！？!?；;])\s*(\[{_CITATION_ID_PATTERN}(?:\s*[,，]\s*{_CITATION_ID_PATTERN})*\])",
     re.IGNORECASE,
 )
 _DUPLICATE_CITATION_PAT = re.compile(
-    r"(\[S\d+(?:\s*[,，]\s*S\d+)*\])(?:\s*\1)+",
+    rf"(\[{_CITATION_ID_PATTERN}(?:\s*[,，]\s*{_CITATION_ID_PATTERN})*\])(?:\s*\1)+",
     re.IGNORECASE,
 )
 
@@ -90,9 +94,10 @@ def _best_supporting_source(
 
     scored: list[tuple[float, Evidence]] = []
     for src in sources:
-        score = _source_coverage(claim_text, src.text)
+        source_text = _evidence_support_text(src)
+        score = _source_coverage(claim_text, source_text)
         if score >= min_score:
-            missing = claim_nums - _numbers(src.text)
+            missing = claim_nums - _numbers(source_text)
             if not missing:
                 scored.append((score, src))
 
@@ -200,8 +205,9 @@ def select_minimal_supporting_sources(
         src = evidence_by_id.get(cid.upper())
         if src is None:
             continue
-        score = _source_coverage(claim_text, src.text)
-        missing = claim_nums - _numbers(src.text)
+        source_text = _evidence_support_text(src)
+        score = _source_coverage(claim_text, source_text)
+        missing = claim_nums - _numbers(source_text)
         if score >= _SUPPORT_THRESHOLD and not missing:
             return [cid]  # single source is sufficient
 
@@ -234,9 +240,19 @@ def auto_cite_claim(
         return f"{claim} [{cid}]", True
 
 
+def _append_citation(claim: str, citation_id: str) -> str:
+    """Append one known-safe citation before terminal punctuation."""
+    cid = citation_id.upper()
+    end_punct = re.search(r"[。！？!?；;]$", claim)
+    if end_punct:
+        return claim[: end_punct.start()] + f" [{cid}]" + claim[end_punct.start():]
+    return f"{claim} [{cid}]"
+
+
 def repair_atomic_claim_citations(
     claim: str, sources: list[Evidence], valid_ids: set[str], *,
     min_score: float = 0.55, min_margin: float = 0.15,
+    missing_information_citation_id: str = "",
 ) -> tuple[str, list[str]]:
     """Apply all deterministic repairs to a single atomic claim.
 
@@ -265,6 +281,17 @@ def repair_atomic_claim_citations(
 
     # 4. Select minimal supporting sources (only if claim has multiple citations)
     citations = _claim_citations(current)
+    if (
+        missing_information_citation_id
+        and is_missing_information_statement(current)
+        and citations
+        and [citation.upper() for citation in citations]
+        != [missing_information_citation_id.upper()]
+    ):
+        current = _CITATION_RE.sub("", current).rstrip()
+        current = _append_citation(current, missing_information_citation_id)
+        changes.append("replaced_missing_information_citations")
+        citations = _claim_citations(current)
     if len(citations) > 1:
         minimal = select_minimal_supporting_sources(current, sources)
         if len(minimal) < len(citations):
@@ -278,10 +305,17 @@ def repair_atomic_claim_citations(
 
     # 5. Auto-cite unsupported claims
     if not _claim_citations(current):
-        fixed, changed = auto_cite_claim(current, sources, min_score, min_margin)
-        if changed:
-            changes.append("auto_cited")
-            current = fixed
+        if (
+            missing_information_citation_id
+            and is_missing_information_statement(current)
+        ):
+            current = _append_citation(current, missing_information_citation_id)
+            changes.append("auto_cited_missing_information")
+        else:
+            fixed, changed = auto_cite_claim(current, sources, min_score, min_margin)
+            if changed:
+                changes.append("auto_cited")
+                current = fixed
 
     return current, changes
 
@@ -308,6 +342,7 @@ def deterministic_repair(
     min_score: float = 0.55,
     min_margin: float = 0.15,
     re_verify: bool = True,
+    query: str = "",
 ) -> GroundingRepairResult:
     """Apply deterministic repairs when decision allows it.
 
@@ -340,6 +375,10 @@ def deterministic_repair(
     evidence = sources
     valid_ids = _get_valid_citation_ids(evidence)
     all_changes: list[str] = []
+    boundary_sources = relevant_missing_information_boundaries(query, evidence)
+    missing_information_citation_id = (
+        boundary_sources[0].citation_id if len(boundary_sources) == 1 else ""
+    )
 
     # Split answer into paragraphs, then sentence-level claims. A paragraph can
     # contain multiple independently verified facts with only a trailing cite;
@@ -352,10 +391,24 @@ def deterministic_repair(
             repaired_paragraphs.append(para)
             continue
 
-        # Skip structural lines (headings, labels)
-        if (
+        # A bold list label followed by factual text is not merely structural;
+        # it still needs claim-level citation repair.
+        bold_list_match = re.match(
+            r"^[-*+]\s+\*\*[^*]+\*\*(.*)$",
+            stripped,
+        )
+        factual_bold_list = bool(
+            bold_list_match
+            and bold_list_match.group(1).strip(" \t:\uff1a")
+        )
+        # Skip structural lines (headings and label-only rows).
+        if not factual_bold_list and (
             re.match(r"^(#{1,6}\s|[-*+]\s+\*\*.*\*\*|总结)", stripped)
             or re.fullmatch(r"(?:已确认|无法确认|注意)[：:]?", stripped)
+            or re.fullmatch(
+                r"\*\*(?:结论[：:]\s*)?(?:已确认|无法确认|注意)[。！？!?]?\*\*",
+                stripped,
+            )
         ):
             repaired_paragraphs.append(para)
             continue
@@ -375,6 +428,7 @@ def deterministic_repair(
             repaired, changes = repair_atomic_claim_citations(
                 unit.strip(), evidence, valid_ids,
                 min_score=min_score, min_margin=min_margin,
+                missing_information_citation_id=missing_information_citation_id,
             )
             all_changes.extend(changes)
             repaired_units.append(repaired)
@@ -384,8 +438,8 @@ def deterministic_repair(
 
     # Re-verify to confirm quality improved
     if re_verify and all_changes:
-        original_q = _quality(answer, evidence)
-        repaired_q = _quality(repaired_text, evidence)
+        original_q = _quality(answer, evidence, query=query)
+        repaired_q = _quality(repaired_text, evidence, query=query)
         if repaired_q <= original_q:
             logger.info(
                 "deterministic repair rejected: quality did not improve "
@@ -409,16 +463,20 @@ def deterministic_repair(
     )
 
 
-def _quality(text: str, sources: list[Evidence]) -> float:
+def _quality(text: str, sources: list[Evidence], *, query: str = "") -> float:
     """Composite quality score for comparing original vs. repaired answers."""
     try:
-        result = verify_answer(text, [{
-            "citation_id": s.citation_id,
-            "text": s.text,
-            "document_key": s.document_key,
-            "section_key": s.section_key,
-            "filename": s.filename,
-        } for s in sources])
+        result = verify_answer(
+            text,
+            [{
+                "citation_id": s.citation_id,
+                "text": s.text,
+                "document_key": s.document_key,
+                "section_key": s.section_key,
+                "filename": s.filename,
+            } for s in sources],
+            query=query,
+        )
         return (
             result.faithfulness * 0.40
             + result.citation_recall * 0.35

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { ToolCallCard } from "../ToolCallCard";
@@ -50,5 +50,23 @@ describe("ToolCallCard result summaries", () => {
 
     expect(screen.getByText("联网搜索失败")).toBeInTheDocument();
     expect(screen.getByText("timeout")).toBeInTheDocument();
+  });
+
+  it("keeps completed tool arguments expandable", () => {
+    render(<ToolCallCard step={{
+      type: "tool_result",
+      data: {
+        tool: "search_docs",
+        success: true,
+        result_count: 8,
+        args: { query: "价格", document_id: "pricing-doc" },
+      },
+      timestamp: Date.now(),
+    }} />);
+
+    fireEvent.click(screen.getByText("知识库检索：找到 8 条结果"));
+
+    expect(screen.getByText(/"query": "价格"/)).toBeInTheDocument();
+    expect(screen.getByText(/"document_id": "pricing-doc"/)).toBeInTheDocument();
   });
 });

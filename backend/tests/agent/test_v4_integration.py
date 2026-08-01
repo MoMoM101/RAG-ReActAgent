@@ -55,6 +55,90 @@ def _make_search_result() -> ToolResult:
 
 
 class TestGroundingEnforcementModes:
+    @pytest.mark.asyncio
+    async def test_mixed_failure_repairs_safe_missing_citations_before_llm_retry(
+        self,
+        make_fake_llm,
+    ):
+        from agent.verifier import GroundingDecision
+
+        draft = (
+            "- **Operations**: 03_operations_manual.docx contains maintenance steps."
+        )
+        make_fake_llm(
+            [
+                [LLMResponse(content="search")],
+                [
+                    LLMResponse(
+                        tool_calls=[
+                            _make_tool_call("search_docs", {"query": "operations"})
+                        ],
+                        is_final=True,
+                    ),
+                ],
+                [LLMResponse(content=draft)],
+            ]
+        )
+        result = ToolResult(
+            success=True,
+            data={
+                "count": 1,
+                "reranked": False,
+                "results": [
+                    {
+                        "chunk_id": "ops-1",
+                        "document_id": "ops-doc",
+                        "document_key": "ops-doc",
+                        "section_key": "maintenance steps",
+                        "filename": "03_operations_manual.docx",
+                        "text": (
+                            "03_operations_manual.docx contains maintenance steps."
+                        ),
+                        "score": 0.95,
+                    }
+                ],
+            },
+        )
+        decisions = [
+            GroundingDecision(
+                action="llm_repair",
+                reasons=["missing_citation", "unsupported_claim"],
+            ),
+            GroundingDecision(action="accept"),
+        ]
+
+        with (
+            patch("agent.loop.registry") as mock_registry,
+            patch(
+                "agent.loop.requires_whole_answer_validation",
+                return_value=True,
+            ),
+            patch(
+                "agent.verifier.needs_grounding_repair",
+                side_effect=decisions,
+            ),
+        ):
+            mock_registry.get_schemas.return_value = [
+                {"function": {"name": "search_docs", "description": "Search docs"}}
+            ]
+            mock_registry.execute_parallel = AsyncMock(
+                return_value=[("search_docs", result, 10.0)]
+            )
+            with patch.object(settings, "rag_answer_cache_enabled", False):
+                from agent.loop import run_agent_loop
+
+                events = []
+                async for event in run_agent_loop("map the operations document", []):
+                    events.append(event)
+
+        answer = "".join(
+            event["data"]["delta"]
+            for event in _events_by_type(events, "answer_chunk")
+        )
+        timing = _events_by_type(events, "timing")[-1]["data"]
+        assert answer.endswith("[S1]")
+        assert timing["repair_used"] == "deterministic"
+
     def test_stream_refusal_uses_selective_retry_policy(self):
         from agent.loop import _verify_stream_unit
         from agent.stream_verify import AtomicUnit, UnitVerdict
