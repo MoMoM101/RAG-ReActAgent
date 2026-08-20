@@ -1,7 +1,9 @@
 """Model-aware request token counting tests."""
 
+from unittest.mock import patch
+
 from agent.context import ContextManager
-from agent.token_counter import TiktokenCounter, count_message, count_tools
+from agent.token_counter import TiktokenCounter, Utf8ByteCounter, count_message, count_tools
 from llm.base import ChatMessage, ToolCall
 
 
@@ -22,6 +24,25 @@ def test_tool_schema_consumes_request_budget():
     tools = [{"type": "function", "function": {"name": "search_docs", "description": "Search documents"}}]
 
     assert count_tools(counter, tools) > 4
+
+
+def test_tiktoken_failure_uses_conservative_offline_fallback():
+    with patch("agent.token_counter.tiktoken.get_encoding", side_effect=OSError("offline")) as get_encoding:
+        counter = TiktokenCounter("gpt-4o")
+        get_encoding.assert_not_called()
+        measured = counter.count_text("中文 and English")
+
+    assert counter.name == "heuristic:utf8-bytes"
+    assert measured >= len("中文 and English")
+
+    truncated = counter.truncate_text("中文 and English" * 20, 30)
+    assert counter.count_text(truncated) <= 30
+
+
+def test_utf8_fallback_truncation_respects_tiny_budgets():
+    counter = Utf8ByteCounter()
+
+    assert counter.count_text(counter.truncate_text("很长的文本", 2)) <= 2
 
 
 def test_last_user_message_is_charged_once():

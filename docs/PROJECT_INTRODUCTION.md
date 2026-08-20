@@ -8,7 +8,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Faithfulness](https://img.shields.io/badge/Faithfulness-98.48%25-brightgreen)
 ![Citation](https://img.shields.io/badge/Citation_Precision-98.48%25-brightgreen)
-![Coverage](https://img.shields.io/badge/Backend_Coverage-72%25-blue)
+![Coverage](https://img.shields.io/badge/Backend_Coverage-73%25-blue)
 
 ## 一句话介绍
 
@@ -29,8 +29,8 @@ RAG Agent 是一个面向真实文档场景的开源 RAG 系统。它不仅能�
 | 检索 Recall@10 | **99.57%** | 严格 qrels 检索集 |
 | 检索 Hit@3 | **100.00%** | 前 3 条结果至少命中一条相关证据 |
 | 检索 MRR | **97.70%** | 首条相关结果排名表现 |
-| 后端代码覆盖率 | **72%** | 10,172 个可执行语句，含分支覆盖统计 |
-| 前端测试通过率 | **100%** | 64 / 64 Vitest 测试通过 |
+| 后端代码覆盖率 | **73%** | 11,128 个可执行语句，含分支覆盖统计 |
+| 前端测试通过率 | **100%** | 70 / 70 Vitest 测试通过 |
 
 > 指标来自仓库内可复现报告，不是人工估计值。完整口径见本文“测试与评测证据”。
 

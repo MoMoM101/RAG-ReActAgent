@@ -5,7 +5,7 @@
 ## 开始之前
 
 - Python 3.12；
-- Node.js 20 或更高版本；
+- Node.js 22.22 或更高版本；
 - npm；
 - 仅在运行 Compose 或 Docker E2E 时需要 Docker；
 - 完整问答测试需要可用的 LLM 与 Embedding 服务。
