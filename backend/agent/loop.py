@@ -1450,6 +1450,7 @@ async def run_agent_loop(
                 apply_query_safety_guard,
                 apply_zero_support_guard,
                 build_partial_comparison_fallback,
+                build_topical_evidence_fallback,
                 grounding_repair_instruction,
                 needs_grounding_repair,
                 select_better_grounded_answer,
@@ -1499,11 +1500,22 @@ async def run_agent_loop(
 
                 for r in decision.reasons:
                     _get_m().record_repair_trigger(r)
-                if "topical_false_refusal" in decision.reasons:
+                if (
+                    decision.action == "llm_repair"
+                    or "topical_false_refusal" in decision.reasons
+                ):
                     partial_fallback = build_partial_comparison_fallback(
                         grounding_query,
                         sources,
                     )
+                    if (
+                        not partial_fallback
+                        and "topical_false_refusal" in decision.reasons
+                    ):
+                        partial_fallback = build_topical_evidence_fallback(
+                            grounding_query,
+                            sources,
+                        )
                     if partial_fallback:
                         final_content = partial_fallback
                         repair_used = "deterministic_partial"
@@ -1680,9 +1692,15 @@ async def run_agent_loop(
                 has_context=bool(prepared_history),
             )
             if query_guarded_content != final_content:
-                comparison_fallback = build_partial_comparison_fallback(
-                    grounding_query,
-                    sources,
+                comparison_fallback = (
+                    build_partial_comparison_fallback(
+                        grounding_query,
+                        sources,
+                    )
+                    or build_topical_evidence_fallback(
+                        grounding_query,
+                        sources,
+                    )
                 )
                 final_content = comparison_fallback or query_guarded_content
                 repair_used = "deterministic_partial" if comparison_fallback else "safe_refusal"

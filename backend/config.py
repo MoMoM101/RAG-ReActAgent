@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     # Bounded LLM repair
     grounding_repair_enabled: bool = True
     grounding_repair_model: str = ""  # empty = reuse primary LLM
-    grounding_repair_timeout: float = 4.0
+    grounding_repair_timeout: float = 3.0
     grounding_repair_max_tokens: int = 350
     grounding_repair_max_attempts: int = 1
 

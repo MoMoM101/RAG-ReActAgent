@@ -223,6 +223,25 @@ def test_failed_deterministic_repair_escalates_to_llm():
     assert result.llm_reasons == ["missing_citation"]
 
 
+def test_ambiguous_citation_placement_keeps_fully_supported_answer_without_llm():
+    decision = GroundingDecision(
+        action="deterministic_repair",
+        reasons=["missing_citation"],
+    )
+    result = deterministic_repair(
+        "希腊沙拉含番茄。希腊沙拉不使用生菜 [S1]。",
+        _sources(
+            "希腊沙拉含番茄。希腊沙拉不使用生菜。",
+            "希腊沙拉含番茄。",
+        ),
+        decision,
+    )
+
+    assert not result.repaired
+    assert not result.needs_llm
+    assert result.llm_reasons == []
+
+
 def test_deterministic_repair_fixes_position_and_returns_repaired():
     decision = GroundingDecision(
         action="deterministic_repair",

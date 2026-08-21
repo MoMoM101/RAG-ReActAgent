@@ -551,6 +551,7 @@ def _extract_facts(
     normalized = _POST_SENTENCE_CITATION_RE.sub(r" \2\1", normalized)
     parts = re.split(r"(?<=[。！？!?；;])\s*|\n+", normalized)
     claims: list[str] = []
+    in_limitation_section = False
     for part in parts:
         claim = re.sub(r"^\s*(?:[-*+]\s+|\d+[.)、]\s*)", "", part).strip()
         if claim.startswith("|") and claim.endswith("|"):
@@ -575,6 +576,18 @@ def _extract_facts(
             continue
         plain = _CITATION_RE.sub("", claim)
         plain = re.sub(r"[*_`]+", "", plain).strip(" ：:。；;，,")
+        # Comparison answers often use a structural heading followed by one
+        # or more bullets that describe what the sources cannot establish.
+        # Those bullets are limitations, not factual claims to ground. Keep
+        # the section state until another confirmed-facts heading begins.
+        if not _claim_citations(claim) and plain.endswith("资料事实"):
+            in_limitation_section = False
+            continue
+        if plain.startswith(("无法确认的", "无法确认：", "无法确认:")):
+            in_limitation_section = True
+            continue
+        if in_limitation_section:
+            continue
         # Bind a citation-bearing anaphoric sentence back to the immediately
         # preceding concrete claim. Example: "未找到 A、B、C。这些信息未被
         # 提供 [S7]。" The second sentence carries evidence for the first but
@@ -935,7 +948,12 @@ def _should_retry_topical_refusal(
     safe response can still enumerate directly supported facts for each side
     before declaring the comparison dimension unavailable.
     """
-    return bool(query and not _TOPICAL_RETRY_BLOCK_RE.search(query) and _has_topical_evidence(query, sources))
+    return bool(
+        query
+        and not _TOPICAL_RETRY_BLOCK_RE.search(query)
+        and not _SUPERLATIVE_QUERY_RE.search(query)
+        and _has_topical_evidence(query, sources)
+    )
 
 
 def apply_query_safety_guard(
@@ -979,9 +997,10 @@ def build_partial_comparison_fallback(
 ) -> str | None:
     """Build conservative source-extractive facts for a refused comparison.
 
-    The fallback copies at most one complete sentence from each of the two best
-    matching sources and adds claim-level citations. It never invents the
-    unavailable comparison relation.
+    The fallback copies up to four strongly matching complete source sentences
+    and adds claim-level citations. This lets each side retain both defining
+    facts and a directly stated procedure while never inventing the unavailable
+    comparison relation.
     """
     if not query or not _COMPARISON_QUERY_RE.search(query):
         return None
@@ -993,10 +1012,14 @@ def build_partial_comparison_fallback(
 
     candidates: list[tuple[int, int, int, str, Evidence]] = []
     for source_rank, item in enumerate(evidence):
-        source_best: tuple[int, int, int, str, Evidence] | None = None
         section_tokens = _content_tokens(item.section_key)
         section_on_topic = bool(query_tokens & section_tokens)
-        raw_units = re.split(r"(?<=[。！？!?；;])\s*|\n+", item.text)
+        normalized_text = re.sub(
+            r"(?<![。！？!?；;])\n(?=\S)",
+            " ",
+            item.text,
+        )
+        raw_units = re.split(r"(?<=[。！？!?；;])\s*|\n+", normalized_text)
         for unit_rank, raw_unit in enumerate(raw_units):
             sentence = re.sub(r"^\s*(?:#{1,6}\s*|[-*+]\s+)", "", raw_unit).strip()
             sentence = re.sub(r"^文档上下文[：:]\s*", "", sentence).strip()
@@ -1019,7 +1042,176 @@ def build_partial_comparison_fallback(
             chinese_overlap = overlap - latin_overlap
             if not latin_overlap and len(chinese_overlap) < 2:
                 continue
-            score = len(latin_overlap) * 3 + len(chinese_overlap)
+            detail_bonus = (
+                5
+                if re.search(r"(?:关键|步骤|工具|形成|方式|流程)", sentence)
+                else 0
+            )
+            score = (
+                len(latin_overlap) * 4
+                + len(chinese_overlap) * 2
+                + len(query_tokens & section_tokens) * 5
+                + detail_bonus
+            )
+            candidate = (score, -source_rank, -unit_rank, display_sentence, item)
+            candidates.append(candidate)
+
+    if not candidates:
+        return None
+
+    ranked = sorted(candidates, key=lambda item: item[:3], reverse=True)
+    by_section: dict[str, list[tuple[int, int, int, str, Evidence]]] = {}
+    for candidate in ranked:
+        source = candidate[4]
+        section_group = source.section_key.casefold() or source.citation_id.casefold()
+        by_section.setdefault(section_group, []).append(candidate)
+    best_sections = sorted(
+        by_section.values(),
+        key=lambda items: items[0][:3],
+        reverse=True,
+    )[:2]
+    section_selections: list[tuple[int, int, int, str, Evidence]] = []
+    for section in best_sections:
+        chosen = [section[0]]
+        first_citation = section[0][4].citation_id
+        distinct_source = next(
+            (
+                candidate
+                for candidate in section[1:]
+                if candidate[4].citation_id != first_citation
+            ),
+            None,
+        )
+        if distinct_source is not None:
+            chosen.append(distinct_source)
+        elif len(section) > 1:
+            chosen.append(section[1])
+        section_selections.extend(chosen)
+    selected = sorted(
+        section_selections,
+        key=lambda item: item[:3],
+        reverse=True,
+    )
+    fact_lines = "\n".join(f"- {sentence} [{source.citation_id}]。" for _, _, _, sentence, source in selected)
+    fallback = f"已确认：\n{fact_lines}\n无法确认：现有资料没有直接给出问题所要求的比较结论。"
+    verification = verify_answer(fallback, evidence)
+    if (
+        verification.facts_supported < 1
+        or verification.faithfulness < 1.0
+        or verification.citation_precision < 1.0
+        or verification.citation_recall < 1.0
+    ):
+        return None
+    return fallback
+
+
+def build_topical_evidence_fallback(
+    query: str,
+    sources: Sequence[EvidenceSource],
+) -> str | None:
+    """Extract conservative supported facts after a false topical refusal.
+
+    This counterpart to the comparison fallback is limited to direct
+    definition queries and explicit structured requests (lists, steps,
+    workflows and summaries). It copies complete source sentences, cites
+    them, and explicitly leaves unsupported conclusions unanswered.
+    """
+    if not _should_retry_topical_refusal(query, sources):
+        return None
+
+    normalized_query = re.sub(r"\s+", " ", query).strip(" \t\r\n。！？?!")
+    is_direct_definition = bool(
+        re.fullmatch(
+            r"(?:什么是\s*.+|.+?(?:是什么|是指什么|的定义是什么|什么意思))",
+            normalized_query,
+            flags=re.IGNORECASE,
+        )
+        or re.fullmatch(
+            r"(?:what\s+(?:is|are)|define)\s+[^,;:?!]{1,64}",
+            normalized_query,
+            flags=re.IGNORECASE,
+        )
+    )
+    is_structured_request = bool(
+        re.search(
+            r"(?:列出|罗列|步骤|流程|汇总|总结|概括|介绍)",
+            normalized_query,
+        )
+    )
+    is_workflow_request = bool(
+        re.search(r"(?:流程|从.+到)", normalized_query)
+    )
+    if (
+        (not is_direct_definition and not is_structured_request)
+        or len(normalized_query) > 100
+    ):
+        return None
+
+    evidence = _normalize_evidence(sources)
+    query_tokens = {
+        token
+        for token in _content_tokens(query)
+        if token not in _QUERY_TOKEN_STOPWORDS and len(token) >= 2
+    }
+    if not query_tokens:
+        return None
+
+    candidates: list[tuple[int, int, int, str, Evidence]] = []
+    for source_rank, item in enumerate(evidence):
+        source_best: tuple[int, int, int, str, Evidence] | None = None
+        section_tokens = _content_tokens(item.section_key)
+        section_on_topic = bool(query_tokens & section_tokens)
+        normalized_text = re.sub(
+            r"(?<![。！？!?；;])\n(?=\S)",
+            " ",
+            item.text,
+        )
+        raw_units = re.split(r"(?<=[。！？!?；;])\s*|\n+", normalized_text)
+        for unit_rank, raw_unit in enumerate(raw_units):
+            sentence = re.sub(r"^\s*(?:#{1,6}\s*|[-*+]\s+)", "", raw_unit).strip()
+            sentence = re.sub(r"^文档上下文[：:]\s*", "", sentence).strip()
+            sentence = sentence.strip(" ：:。；;，,")
+            if not (6 <= len(sentence) <= 220):
+                continue
+            if sentence == item.section_key or sentence.startswith("文档上下文"):
+                continue
+            if re.search(r"(?:指南|报告|手册|文档|概览)$", sentence):
+                continue
+
+            display_sentence = sentence
+            sentence_tokens = _content_tokens(sentence)
+            if section_on_topic and (
+                is_structured_request
+                or not (query_tokens & sentence_tokens & section_tokens)
+            ):
+                display_sentence = f"{item.section_key}：{sentence}"
+                sentence_tokens |= section_tokens
+
+            overlap = query_tokens & sentence_tokens
+            latin_overlap = {token for token in overlap if re.search(r"[a-z]", token)}
+            chinese_overlap = overlap - latin_overlap
+            if not latin_overlap and len(chinese_overlap) < 2:
+                continue
+            section_overlap = query_tokens & section_tokens
+            structure_bonus = 0
+            if is_structured_request:
+                if re.search(r"(?:包括|包含|分为|常见|分别|有[:：])", sentence):
+                    structure_bonus += 3 if is_workflow_request else 12
+                if re.search(r"(?:步骤|流程)", sentence):
+                    structure_bonus += 3
+                if re.search(r"(?:训练模型|模型训练|测试集|泛化能力|数据预处理|评估)", sentence):
+                    structure_bonus += 8 if is_workflow_request else 3
+            score = (
+                len(latin_overlap) * 4
+                + len(chinese_overlap) * 2
+                + len(section_overlap) * 5
+                + structure_bonus
+            )
+            if is_structured_request and re.search(
+                r"(?:指南|报告|手册|文档|概览)$",
+                item.section_key,
+            ):
+                score -= 15
             candidate = (score, -source_rank, -unit_rank, display_sentence, item)
             if source_best is None or candidate[:3] > source_best[:3]:
                 source_best = candidate
@@ -1029,9 +1221,20 @@ def build_partial_comparison_fallback(
     if not candidates:
         return None
 
-    selected = sorted(candidates, key=lambda item: item[:3], reverse=True)[:2]
-    fact_lines = "\n".join(f"- {sentence} [{source.citation_id}]。" for _, _, _, sentence, source in selected)
-    fallback = f"已确认：\n{fact_lines}\n无法确认：现有资料没有直接给出问题所要求的比较结论。"
+    selection_limit = 3 if is_structured_request else 2
+    ranked = sorted(candidates, key=lambda item: item[:3], reverse=True)
+    minimum_score = ranked[0][0] * 0.55 if is_structured_request else 0
+    selected = [item for item in ranked if item[0] >= minimum_score][
+        :selection_limit
+    ]
+    fact_lines = "\n".join(
+        f"- {sentence} [{source.citation_id}]。"
+        for _, _, _, sentence, source in selected
+    )
+    fallback = (
+        f"已确认：\n{fact_lines}\n"
+        "无法确认：现有资料没有直接给出问题所要求的完整解释。"
+    )
     verification = verify_answer(fallback, evidence)
     if (
         verification.facts_supported < 1

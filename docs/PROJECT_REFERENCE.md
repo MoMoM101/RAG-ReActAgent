@@ -1,7 +1,7 @@
 # RAG Agent 项目参考
 
-> 面向版本：`v0.2.0-beta`  
-> 内容整理日期：2026-07-22  
+> 面向版本：`v0.2.1-beta`  
+> 内容整理日期：2026-08-21  
 > 本文将原 `docs/` 中的架构、配置、评测、运维与历史设计结论压缩为一个公开参考入口。代码、`backend/.env.example`、数据库迁移和自动化测试始终是行为事实的最终来源。
 
 ## 目录
@@ -30,7 +30,7 @@ RAG Agent 是一个本地知识库与智能对话系统。用户上传文档后�
 - 支持 PDF、Word、Excel、CSV、TXT、Markdown 和图片等输入；
 - 使用 Qdrant 语义检索与 SQLite BM25 关键词检索；
 - 支持可选 OCR、Cross-Encoder Reranker 和 Web Search；
-- 当前版本：v0.2.0-beta。
+- 当前版本：v0.2.1-beta。
 
 首版明确不承诺：
 
@@ -42,14 +42,16 @@ RAG Agent 是一个本地知识库与智能对话系统。用户上传文档后�
 
 ### 当前验证快照
 
-以下结果来自 2026-07-23 的工作区验证，对应当前版本代码：
+以下结果来自 2026-08-21 的发布候选工作区验证，对应当前版本代码：
 
 | 门禁 | 结果 |
 |---|---:|
-| 后端完整离线回归 | 920 passed / 11 skipped / 15 deselected |
+| 后端完整离线回归 | 1,026 passed / 11 skipped / 9 deselected |
+| 后端生产代码覆盖率 | 73.13%（含分支覆盖） |
 | Ruff | 通过 |
-| MyPy（243 个源文件） | 通过 |
-| 前端 Vitest | 64 passed（9 files） |
+| MyPy（246 个源文件） | 通过 |
+| Agent 专项测试 | 426 passed |
+| 前端 Vitest | 70 passed |
 | 前端 Oxlint | 通过 |
 | 前端生产构建 | 通过 |
 | Grounded-answer release gate | passed / 0 blockers |
@@ -533,7 +535,7 @@ pip install -r backend/requirements-rerank.txt
 
 ## 12. 已知限制与后续方向
 
-不阻塞 `v0.2.0-beta`：
+不阻塞 `v0.2.1-beta`：
 
 - 扩充复杂评测到至少 90 条，并固定 Dev/Test 分离；
 - 增加中文长 PDF、复杂表格、OCR、无答案查询的独立容量与延迟基准；

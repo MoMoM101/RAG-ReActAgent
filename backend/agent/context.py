@@ -7,15 +7,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-import tiktoken
-
 from agent.token_counter import TokenCounter, count_message, count_tools, get_token_counter
 from llm.base import ChatMessage
 
 logger = logging.getLogger(__name__)
 
 _template: str | None = None
-_legacy_encoder = tiktoken.get_encoding("cl100k_base")
 _UNTRUSTED_CLOSE = "\n</UNTRUSTED_RETRIEVED_CONTENT>"
 _HISTORY_SUMMARY_MAX_TOKENS = 512
 _STRUCTURED_RETRIEVAL_TOOLS = frozenset({"search_docs", "web_search"})
@@ -34,7 +31,11 @@ def _counter_from_settings() -> TokenCounter:
 
 def _estimate_tokens(text: str | None) -> int:
     """Backward-compatible text counter used by existing callers and tests."""
-    return len(_legacy_encoder.encode(text)) if text else 0
+    if not text:
+        return 0
+    # Resolve lazily so importing the agent never triggers tiktoken's first-use
+    # download. The cached counter has an offline-safe conservative fallback.
+    return get_token_counter("cl100k_base", provider="tiktoken").count_text(text)
 
 
 def _load_template() -> str:

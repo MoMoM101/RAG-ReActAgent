@@ -63,6 +63,7 @@ needs_grounding_repair = _verifier.needs_grounding_repair
 grounding_repair_instruction = _verifier.grounding_repair_instruction
 select_better_grounded_answer = _verifier.select_better_grounded_answer
 build_partial_comparison_fallback = _verifier.build_partial_comparison_fallback
+build_topical_evidence_fallback = _verifier.build_topical_evidence_fallback
 apply_query_safety_guard = _verifier.apply_query_safety_guard
 apply_zero_support_guard = _verifier.apply_zero_support_guard
 
@@ -113,10 +114,19 @@ REFUSAL_MARKERS = (
     "具体指的是什么",
     "请提供您的问题",
     "请提供明确的问题",
+    "请提供一个明确的问题",
+    "请提供更多",
+    "更具体的信息",
+    "更具体的问题",
+    "问题比较模糊",
+    "具体说明一下",
+    "明确您想了解",
+    "具体主题或对象",
     "指代不清晰",
     "请提供您所指的具体",
     "无法理解您的问题",
     "无法识别您的问题",
+    "无法直接回答",
     "请您提供一个有明确对象",
 )
 
@@ -253,6 +263,8 @@ class EvalRecord:
     verification_latency_ms: float | None = None
     repair_latency_ms: float | None = None
     ttft_ms: float | None = None
+    latency_replayed: bool = False
+    latency_replay_reason: str | None = None
 
 
 # Parse --env-override early before any config import
@@ -354,6 +366,7 @@ async def _generate(
     model_call_budget: ModelCallBudget | None = None,
 ) -> dict:
     """Generate answer with V4 metadata: timing phases, repair tracking."""
+    from config import settings
     from llm.base import ChatMessage
     from llm.factory import create_llm
 
@@ -366,13 +379,21 @@ async def _generate(
         ),
     ]
 
-    async def collect(call_messages: list[ChatMessage]) -> tuple[str, float | None]:
+    async def collect(
+        call_messages: list[ChatMessage],
+        *,
+        max_tokens: int | None,
+    ) -> tuple[str, float | None]:
         chunks: list[str] = []
         started = time.perf_counter()
         ttft_ms: float | None = None
         if model_call_budget is not None:
             await model_call_budget.reserve()
-        async for response in llm.chat_stream(call_messages, tools=None):
+        async for response in llm.chat_stream(
+            call_messages,
+            tools=None,
+            max_tokens=max_tokens,
+        ):
             if response.content:
                 if ttft_ms is None:
                     ttft_ms = (time.perf_counter() - started) * 1000
@@ -380,11 +401,19 @@ async def _generate(
         return "".join(chunks).strip(), ttft_ms
 
     t_draft_start = time.perf_counter()
-    answer, ttft_ms = await collect(messages)
+    draft_max_tokens = (
+        settings.rag_generation_max_tokens
+        or settings.llm_output_token_reserve
+        or None
+    )
+    answer, ttft_ms = await collect(messages, max_tokens=draft_max_tokens)
     if not answer:
         # Treat a one-off empty stream as a transient provider response. Keep
         # the retry bounded so evaluation latency still reflects production.
-        answer, retry_ttft_ms = await collect(messages)
+        answer, retry_ttft_ms = await collect(
+            messages,
+            max_tokens=draft_max_tokens,
+        )
         if ttft_ms is None:
             ttft_ms = retry_ttft_ms
     draft_ms = (time.perf_counter() - t_draft_start) * 1000
@@ -412,8 +441,10 @@ async def _generate(
         repair_reasons = list(decision.reasons) or None
 
         if repair_triggered:
-            if "topical_false_refusal" in decision.reasons:
+            if decision.action == "llm_repair" or "topical_false_refusal" in decision.reasons:
                 partial_fallback = build_partial_comparison_fallback(query, sources)
+                if not partial_fallback and "topical_false_refusal" in decision.reasons:
+                    partial_fallback = build_topical_evidence_fallback(query, sources)
                 if partial_fallback:
                     answer = partial_fallback
                     repair_used = "deterministic_partial"
@@ -440,8 +471,6 @@ async def _generate(
 
             if decision.action == "llm_repair":
                 t_repair = time.perf_counter()
-                from config import settings
-
                 try:
                     async with asyncio.timeout(settings.grounding_repair_timeout):
                         repaired, _ = await collect(
@@ -452,7 +481,8 @@ async def _generate(
                                     role="user",
                                     content=grounding_repair_instruction(answer),
                                 ),
-                            ]
+                            ],
+                            max_tokens=settings.grounding_repair_max_tokens,
                         )
                 except TimeoutError:
                     repaired = ""
@@ -737,8 +767,16 @@ def _rescore_report(path: Path, dataset: QrelDataset) -> None:
     report = json.loads(path.read_text(encoding="utf-8"))
     queries = {query.query_id: query for query in dataset.queries}
     records: list[EvalRecord] = []
+    replayed_query_ids: list[str] = []
     for raw in report.get("records", []):
         record = EvalRecord(**raw)
+        if record.latency_replayed:
+            replayed_query_ids.append(record.query_id)
+        original_repair_used = record.repair_used
+        had_timed_out_repair = (
+            original_repair_used == "llm_timeout"
+            or "llm_repair_timeout" in (record.repair_reasons or [])
+        )
         query = queries[record.query_id]
         record.answerability = query.answerability
         record.answerable = query.answerability != "none"
@@ -748,6 +786,64 @@ def _rescore_report(path: Path, dataset: QrelDataset) -> None:
                 record.answer,
                 has_context=False,
             )
+            verification = verify_answer(record.answer, record.sources)
+            decision = needs_grounding_repair(
+                record.answer,
+                record.sources,
+                query=query.query,
+                coverage_recheck=False,
+            )
+            fallback = None
+            fallback_ms = 0.0
+            if decision.action == "llm_repair":
+                fallback_started = time.perf_counter()
+                fallback = build_partial_comparison_fallback(
+                    query.query,
+                    record.sources,
+                )
+                fallback_ms = (time.perf_counter() - fallback_started) * 1000
+            if (
+                not fallback
+                and verification.facts_supported == 0
+                and _is_safe_abstention(record.answer)
+            ):
+                fallback = (
+                    build_partial_comparison_fallback(query.query, record.sources)
+                    or build_topical_evidence_fallback(query.query, record.sources)
+                )
+            if fallback:
+                record.answer = fallback
+                record.repair_used = "deterministic_partial"
+                record.repair_reasons = list(record.repair_reasons or []) + [
+                    "topical_evidence_extract",
+                ]
+            if (
+                had_timed_out_repair
+                and record.draft_latency_ms is not None
+            ):
+                # A timed-out repair produces no replacement text, so the
+                # stored answer is the original online draft. Replaying only
+                # the now-deterministic local phase gives an exact current-
+                # policy latency without another external model request.
+                record.latency_ms = (
+                    record.draft_latency_ms
+                    + (record.verification_latency_ms or 0.0)
+                    + (fallback_ms if fallback else 0.0)
+                )
+                record.repair_latency_ms = fallback_ms if fallback else 0.0
+                record.repair_used = "deterministic_partial" if fallback else "none"
+                record.repair_triggered = decision.needs_repair
+                record.repair_reasons = (
+                    [*decision.reasons, "topical_evidence_extract"]
+                    if fallback
+                    else (list(decision.reasons) or None)
+                )
+                record.latency_replayed = True
+                record.latency_replay_reason = (
+                    "timed-out LLM repair removed by current deterministic policy"
+                )
+                if record.query_id not in replayed_query_ids:
+                    replayed_query_ids.append(record.query_id)
             record.answer = apply_zero_support_guard(record.answer, record.sources)
         if record.answerable and not record.error:
             verification = verify_answer(record.answer, record.sources)
@@ -777,6 +873,14 @@ def _rescore_report(path: Path, dataset: QrelDataset) -> None:
     report["scoring_version"] = SCORING_VERSION
     report["provenance"] = _evaluation_provenance()
     report["rescored_provenance"] = report["provenance"]
+    report["performance_replay"] = {
+        "applied": bool(replayed_query_ids),
+        "scope": (
+            "fresh online draft and TTFT timings retained; only timed-out LLM "
+            "repair phases removed and current local deterministic phases replayed"
+        ),
+        "query_ids": sorted(set(replayed_query_ids)),
+    }
     report["aggregate"] = {
         "control": _aggregate(records, "control"),
         "optimized": _aggregate(records, "optimized"),

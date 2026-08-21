@@ -1,13 +1,23 @@
 [run]
 branch = True
 source = .
+relative_files = True
 omit =
     tests/*
+    */tests/*
     alembic/versions/*
+    */alembic/versions/*
     .venv/*
     */__pycache__/*
 
 [report]
+omit =
+    tests/*
+    */tests/*
+    alembic/versions/*
+    */alembic/versions/*
+    .venv/*
+    */__pycache__/*
 exclude_also =
     if TYPE_CHECKING:
     if __name__ == .__main__.:
