@@ -21,9 +21,8 @@ async def test_create_and_complete():
     async def _ok():
         return 42
 
-    tm.create(_ok, "test_ok")
-    # Task runs immediately with asyncio.create_task, wait briefly
-    await asyncio.sleep(0.1)
+    task = tm.create(_ok, "test_ok")
+    await task
 
     status = tm.get_status()
     assert len(status["running"]) == 0  # completed tasks are removed
@@ -39,8 +38,8 @@ async def test_create_and_fail():
     async def _fail():
         raise RuntimeError("boom")
 
-    tm.create(_fail, "test_fail")
-    await asyncio.sleep(0.1)
+    task = tm.create(_fail, "test_fail")
+    await task
 
     status = tm.get_status()
     failed = [h for h in status["history"] if h["name"].startswith("test_fail")]
