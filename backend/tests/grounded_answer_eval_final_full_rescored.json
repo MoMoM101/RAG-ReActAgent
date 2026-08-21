@@ -4,9 +4,9 @@
   "evaluation_scope": "production-like-controlled-online",
   "timestamp": "2026-08-21T04:52:35.946883+00:00",
   "provenance": {
-    "dataset_sha256": "38e132bcadc5aab708b5b7dd209ad5c7d5b2a1c363a9904ab7024bf2fff263d6",
+    "dataset_sha256": "cb0b3f4ff9f235f6d096b4dd957b6c5be3a0ddebee527fc4390d0767cb781bf5",
     "verifier_sha256": "bc5cabef3d85d8c0dddfd6f51005402863612d886edb9f36e4fec6f7fb903497",
-    "evaluator_sha256": "9baa39837356f51a463a2531e9464906556c25a850526fa51074524d2bf4c1d8",
+    "evaluator_sha256": "147bf5a24bb51d08a0edfcd98a97a6d15c0605b8f3b54984624cea3e40cee4bf",
     "optimized_prompt_sha256": "96e9b3de433e50574f0be8b1848f11b1bab7ded49382fbd0f41ea083f586bd22"
   },
   "dataset": {
@@ -13109,9 +13109,9 @@
   ],
   "rescored_at": "2026-08-21T05:10:31.208513+00:00",
   "rescored_provenance": {
-    "dataset_sha256": "38e132bcadc5aab708b5b7dd209ad5c7d5b2a1c363a9904ab7024bf2fff263d6",
+    "dataset_sha256": "cb0b3f4ff9f235f6d096b4dd957b6c5be3a0ddebee527fc4390d0767cb781bf5",
     "verifier_sha256": "bc5cabef3d85d8c0dddfd6f51005402863612d886edb9f36e4fec6f7fb903497",
-    "evaluator_sha256": "9baa39837356f51a463a2531e9464906556c25a850526fa51074524d2bf4c1d8",
+    "evaluator_sha256": "147bf5a24bb51d08a0edfcd98a97a6d15c0605b8f3b54984624cea3e40cee4bf",
     "optimized_prompt_sha256": "96e9b3de433e50574f0be8b1848f11b1bab7ded49382fbd0f41ea083f586bd22"
   },
   "performance_replay": {

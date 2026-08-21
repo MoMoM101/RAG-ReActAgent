@@ -72,11 +72,12 @@ jobs:
       - uses: actions/checkout@v7
         if: steps.secrets-check.outputs.skipped != 'true'
       - name: Run Docker E2E acceptance
+        id: docker-e2e
         if: steps.secrets-check.outputs.skipped != 'true'
         shell: pwsh
         run: ./scripts/docker_e2e_acceptance.ps1 -Clean
       - name: Upload report
-        if: always() && steps.secrets-check.outputs.skipped != 'true'
+        if: always() && steps.docker-e2e.outcome != 'skipped'
         uses: actions/upload-artifact@v7
         with:
           name: docker-e2e-report

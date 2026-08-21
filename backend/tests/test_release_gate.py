@@ -6,7 +6,11 @@ from pathlib import Path
 from release_gate import DEFAULT_REPORT, validate_release_report
 
 from tests.qrels_schema import QrelDataset, QrelQuery
-from tests.run_grounded_answer_eval import EVALUATION_SCOPE, SCORING_VERSION
+from tests.run_grounded_answer_eval import (
+    EVALUATION_SCOPE,
+    SCORING_VERSION,
+    _sha256_file,
+)
 
 
 def _dataset() -> QrelDataset:
@@ -117,6 +121,15 @@ def test_default_report_is_the_canonical_rescored_full_evaluation():
     assert DEFAULT_REPORT.name == "grounded_answer_eval_final_full_rescored.json"
 
 
+def test_provenance_hash_normalizes_text_line_endings(tmp_path):
+    lf_path = tmp_path / "lf.json"
+    crlf_path = tmp_path / "crlf.json"
+    lf_path.write_bytes(b'{"query":"value"}\n')
+    crlf_path.write_bytes(b'{"query":"value"}\r\n')
+
+    assert _sha256_file(lf_path) == _sha256_file(crlf_path)
+
+
 def test_tag_release_requires_real_docker_e2e_secrets():
     workflow = (
         Path(__file__).resolve().parents[2] / ".github" / "workflows" / "release-gate.yml"
@@ -131,3 +144,5 @@ def test_tag_release_requires_real_docker_e2e_secrets():
     assert "release-ready:" in workflow
     assert "grounded-answer-release-gate" in workflow
     assert "docker-e2e-acceptance" in workflow
+    assert "id: docker-e2e" in workflow
+    assert "steps.docker-e2e.outcome != 'skipped'" in workflow
