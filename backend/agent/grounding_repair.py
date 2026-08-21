@@ -454,12 +454,37 @@ def deterministic_repair(
                 llm_reasons=decision.reasons,
             )
 
+    needs_llm = not all_changes
+    if needs_llm and set(decision.reasons) <= {"missing_citation"}:
+        verification = verify_answer(
+            answer,
+            [
+                {
+                    "citation_id": source.citation_id,
+                    "text": source.text,
+                    "document_key": source.document_key,
+                    "section_key": source.section_key,
+                    "filename": source.filename,
+                }
+                for source in evidence
+            ],
+            query=query,
+        )
+        # If every extracted claim is supported, an ambiguous citation
+        # placement is a presentation defect rather than a grounding defect.
+        # Do not add a latency-sensitive LLM call that may rewrite otherwise
+        # correct content; retain the answer and surface its citation score.
+        needs_llm = not (
+            verification.facts_found > 0
+            and verification.facts_supported == verification.facts_found
+        )
+
     return GroundingRepairResult(
         repaired_text=repaired_text,
         changes=all_changes,
         repaired=bool(all_changes),
-        needs_llm=not all_changes,
-        llm_reasons=decision.reasons if not all_changes else [],
+        needs_llm=needs_llm,
+        llm_reasons=decision.reasons if needs_llm else [],
     )
 
 

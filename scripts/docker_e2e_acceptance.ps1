@@ -500,6 +500,29 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "docker compose not found" }
         Write-Host "  docker compose: $composeVersion"
 
+        # Compose normally appends port mappings from override files. Ensure
+        # the E2E override replaces the development ports instead, otherwise
+        # an unrelated local service on 8000/5173 can break an isolated run.
+        Set-ComposeEnvironment
+        $composeConfigOutput = & docker compose @ComposeArgs config --format json 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "docker compose config failed: $composeConfigOutput"
+        }
+        $composeConfig = ($composeConfigOutput -join "`n") | ConvertFrom-Json
+        $backendPublishedPorts = @(
+            $composeConfig.services.backend.ports | ForEach-Object { "$($_.published)" }
+        )
+        $frontendPublishedPorts = @(
+            $composeConfig.services.frontend.ports | ForEach-Object { "$($_.published)" }
+        )
+        if ($backendPublishedPorts.Count -ne 1 -or $backendPublishedPorts[0] -ne "$BackendPort") {
+            throw "Unexpected backend published ports: $($backendPublishedPorts -join ', ')"
+        }
+        if ($frontendPublishedPorts.Count -ne 1 -or $frontendPublishedPorts[0] -ne "$FrontendPort") {
+            throw "Unexpected frontend published ports: $($frontendPublishedPorts -join ', ')"
+        }
+        Write-Host "  Compose port overrides verified"
+
         # Read manifest
         $manifest = Get-Content $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 

@@ -8,6 +8,7 @@ GHCR_COMPOSE = Path(__file__).resolve().parent.parent.parent / "docker-compose.g
 BACKEND_DOCKERFILE = Path(__file__).resolve().parent.parent / "Dockerfile"
 BACKEND_DOCKERIGNORE = Path(__file__).resolve().parent.parent / ".dockerignore"
 E2E_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "docker_e2e_acceptance.ps1"
+E2E_COMPOSE = Path(__file__).resolve().parent.parent.parent / "docker-compose.e2e.yml"
 
 
 def test_docker_compose_exists():
@@ -101,3 +102,14 @@ def test_e2e_copies_consistency_check_into_runtime_container():
     script = E2E_SCRIPT.read_text(encoding="utf-8")
     assert "docker cp $ConsistencyScriptPath" in script
     assert 'RAG_AGENT_APP_ROOT=/app python $containerScript' in script
+
+
+def test_e2e_overrides_development_port_mappings():
+    """E2E must replace, not append to, the development host ports."""
+    compose = E2E_COMPOSE.read_text(encoding="utf-8")
+    script = E2E_SCRIPT.read_text(encoding="utf-8")
+
+    assert compose.count("ports: !override") == 2
+    assert "Compose port overrides verified" in script
+    assert "Unexpected backend published ports" in script
+    assert "Unexpected frontend published ports" in script
