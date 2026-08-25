@@ -81,6 +81,10 @@ _ANAPHORIC_EVIDENCE_RE = re.compile(
     r"^(?:这些|上述|相关)(?:信息|内容|资料).{0,32}"
     r"(?:未|没有|无法).{0,16}(?:提供|找到|确认)"
 )
+_SOURCE_ATTRIBUTION_OUTRO_RE = re.compile(
+    r"^(?:以上|上述|这些|相关)?信息(?:均|主要)?来源于"
+    r".{1,48}(?:文档|文件|资料|知识库)$"
+)
 _LIMITATION_RE = re.compile(
     r"^(?:但)?(?:现有)?资料(?:中)?(?:不足|未|没有)"
     r"|^.+(?:未在|没有在)(?:现有)?资料(?:中)?(?:提及|说明|提供)"
@@ -588,6 +592,16 @@ def _extract_facts(
             in_limitation_section = True
             continue
         if in_limitation_section:
+            continue
+        # A closing source-attribution sentence only describes the provenance
+        # of already cited claims. It is structural metadata, not another
+        # knowledge claim. Keep scoring it when it is the answer itself (for
+        # example, when the user asks which document contains information).
+        if (
+            claims
+            and any(_claim_citations(existing) for existing in claims)
+            and _SOURCE_ATTRIBUTION_OUTRO_RE.fullmatch(plain)
+        ):
             continue
         # Bind a citation-bearing anaphoric sentence back to the immediately
         # preceding concrete claim. Example: "未找到 A、B、C。这些信息未被
