@@ -198,6 +198,36 @@ def test_trailing_source_sections_are_parsed_independently_of_format(source_disp
 
 
 @pytest.mark.parametrize(
+    "source_display",
+    [
+        "来源：[docker_acceptance_policy.md](S1)",
+        "**Sources: [docker_acceptance_policy.md](S1)**",
+        "参考来源：[S1](docker_acceptance_policy.md)",
+        "来源：docker_acceptance_policy.md [S1]",
+    ],
+)
+def test_inline_source_sections_normalize_markdown_links(source_display: str):
+    answer = f"""根据文档内容，企业年度订阅可以在合同生效后的七个自然日内申请全额退款 [S1]。
+
+{source_display}"""
+
+    result = verify_answer(
+        answer,
+        [{
+            "citation_id": "S1",
+            "filename": "docker_acceptance_policy.md",
+            "text": "企业年度订阅可以在合同生效后的七个自然日内申请全额退款。",
+        }],
+    )
+
+    assert result.facts_found == 1
+    assert result.facts_supported == 1
+    assert result.faithfulness == 1.0
+    assert result.citation_precision == 1.0
+    assert result.citation_recall == 1.0
+
+
+@pytest.mark.parametrize(
     "legend",
     [
         "- [S1] 来自文件 `docker_acceptance_product.txt` 的内容。",
@@ -260,6 +290,43 @@ def test_standalone_source_section_is_not_silently_removed():
     )
 
     assert result.facts_found == 1
+
+
+def test_standalone_inline_source_link_is_not_silently_removed():
+    result = verify_answer(
+        "来源：[docker_acceptance_policy.md](S1)",
+        [{"citation_id": "S1", "text": "企业年度订阅退款政策。"}],
+    )
+
+    assert result.facts_found == 1
+
+
+def test_inline_source_label_cannot_hide_a_numeric_fact():
+    answer = """退款政策已经发布 [S1]。
+
+来源：企业年度订阅的退款期限为 30 天 [S1]。"""
+
+    result = verify_answer(
+        answer,
+        [{"citation_id": "S1", "text": "退款政策已经发布。"}],
+    )
+
+    assert result.facts_found == 2
+    assert any("30 天" in claim for claim in result.unsupported_claims)
+
+
+def test_inline_source_link_is_not_hidden_when_more_prose_follows():
+    answer = """退款政策已经发布 [S1]。
+
+来源：[docker_acceptance_policy.md](S1)
+额外状态为离线模式。"""
+
+    result = verify_answer(
+        answer,
+        [{"citation_id": "S1", "text": "退款政策已经发布。"}],
+    )
+
+    assert any("额外状态为离线模式" in claim for claim in result.unsupported_claims)
 
 
 def test_substantive_text_after_source_heading_is_still_verified():

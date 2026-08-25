@@ -94,6 +94,20 @@ _SOURCE_SECTION_HEADING_RE = re.compile(
     r"\s*[:：]?\s*(?:\*{1,2}|_{1,2})?\s*$",
     re.IGNORECASE,
 )
+_INLINE_SOURCE_SECTION_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:\*{1,2}|_{1,2})?\s*"
+    r"(?:(?:参考|引用|资料|信息)?来源(?:列表)?|sources?|references?)"
+    r"\s*[:：]\s*(?P<payload>.+?)\s*(?:\*{1,2}|_{1,2})?\s*$",
+    re.IGNORECASE,
+)
+_SOURCE_ID_TARGET_LINK_RE = re.compile(
+    rf"\[(?P<label>[^\]\r\n]+)\]\(\s*(?P<id>{_CITATION_ID_PATTERN})\s*\)",
+    re.IGNORECASE,
+)
+_SOURCE_ID_LABEL_LINK_RE = re.compile(
+    rf"\[(?P<id>{_CITATION_ID_PATTERN})\]\((?P<target>[^)\r\n]+)\)",
+    re.IGNORECASE,
+)
 _SOURCE_DESCRIPTOR_RE = re.compile(
     r"(?:https?://|www\.|`[^`]+`|\[[^]]+\]\([^)]+\)|"
     r"\.(?:md|txt|pdf|docx?|xlsx?|pptx?|csv|html?|json|ya?ml)\b|"
@@ -551,11 +565,31 @@ class VerificationResult:
 def _source_display_line(line: str, *, explicit_section: bool) -> bool:
     """Return whether a line is a citation legend entry, not answer prose."""
     candidate = re.sub(r"^\s*(?:>\s*)?(?:[-*+]\s+|\d+[.)、]\s*)", "", line).strip()
+    candidate = _SOURCE_ID_TARGET_LINK_RE.sub(
+        lambda match: f"[{match.group('id')}] {match.group('label')}",
+        candidate,
+    )
+    candidate = _SOURCE_ID_LABEL_LINK_RE.sub(
+        lambda match: f"[{match.group('id')}] {match.group('target')}",
+        candidate,
+    )
+    candidate = candidate.strip(" *_")
     if candidate.startswith("|") and candidate.endswith("|"):
         candidate = candidate.strip("|").strip()
     citation = _CITATION_RE.match(candidate)
     if not citation:
-        return False
+        # Source sections sometimes put a normal citation after a filename,
+        # for example ``guide.md [S1]``. Keep this path stricter than a
+        # citation-leading legend so factual prose cannot masquerade as a
+        # source entry merely by mentioning a document.
+        plain_candidate = _CITATION_RE.sub("", candidate).strip(" \t|:：-–—")
+        return bool(
+            explicit_section
+            and _claim_citations(candidate)
+            and _SOURCE_DESCRIPTOR_RE.search(plain_candidate)
+            and not _NUMBER_RE.search(plain_candidate)
+            and not plain_candidate.endswith(("。", "！", "!", "？", "?", "；", ";"))
+        )
     remainder = candidate[citation.end() :].strip(" \t|:：-–—")
     if not remainder:
         return True
@@ -582,6 +616,28 @@ def _strip_trailing_source_display(text: str) -> str:
     """
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized.split("\n")
+
+    # A model may render the heading and entry on one final line, including a
+    # Markdown link whose target is the source id: ``来源：[guide.md](S1)``.
+    # Normalize that link into the same internal legend form used below.
+    last_line_index = next(
+        (index for index in range(len(lines) - 1, -1, -1) if lines[index].strip()),
+        None,
+    )
+    if last_line_index is not None:
+        inline_section = _INLINE_SOURCE_SECTION_RE.fullmatch(lines[last_line_index])
+        if inline_section:
+            body = "\n".join(lines[:last_line_index]).rstrip()
+            if (
+                body
+                and _CITATION_RE.search(body)
+                and _source_display_line(
+                    inline_section.group("payload"),
+                    explicit_section=True,
+                )
+            ):
+                normalized = body
+                lines = normalized.split("\n")
 
     for index in range(len(lines) - 1, -1, -1):
         if not _SOURCE_SECTION_HEADING_RE.fullmatch(lines[index]):
