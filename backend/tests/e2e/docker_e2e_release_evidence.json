@@ -1,0 +1,90 @@
+{
+  "evidence_schema_version": "1.0",
+  "run_id": "ragagent-e2e-20260825-053810-3b0d875e",
+  "timestamp": "2026-08-25T05:38:10.7391215Z",
+  "git_commit": "4402af6460b93c37e573c4e2eb81a5394be3a900",
+  "source_digest_sha256": "8dab062e24caab469fc1f9f066800300fde9743281e9c6ebcd6530006bd401d3",
+  "overall": "passed",
+  "failed_stage": null,
+  "stages": {
+    "config_check": {
+      "status": "passed",
+      "started": "2026-08-25T05:38:11.0353067Z",
+      "elapsed_s": 3.48,
+      "error": ""
+    },
+    "build": {
+      "status": "passed",
+      "started": "2026-08-25T05:38:14.5334366Z",
+      "elapsed_s": 127.04,
+      "error": ""
+    },
+    "health": {
+      "status": "passed",
+      "started": "2026-08-25T05:40:21.5753150Z",
+      "elapsed_s": 7.42,
+      "error": ""
+    },
+    "secrets_check": {
+      "status": "passed",
+      "started": "2026-08-25T05:40:28.9979048Z",
+      "elapsed_s": 0.65,
+      "error": ""
+    },
+    "auth_check": {
+      "status": "passed",
+      "started": "2026-08-25T05:40:29.6503236Z",
+      "elapsed_s": 0.31,
+      "error": ""
+    },
+    "upload": {
+      "status": "passed",
+      "started": "2026-08-25T05:40:29.9602411Z",
+      "elapsed_s": 5.81,
+      "error": ""
+    },
+    "consistency": {
+      "status": "passed",
+      "started": "2026-08-25T05:40:35.7686946Z",
+      "elapsed_s": 2.41,
+      "error": ""
+    },
+    "sse_qa": {
+      "status": "passed",
+      "started": "2026-08-25T05:40:38.1790555Z",
+      "elapsed_s": 15.84,
+      "error": ""
+    },
+    "restart_persistence": {
+      "status": "passed",
+      "started": "2026-08-25T05:40:54.0176127Z",
+      "elapsed_s": 13.71,
+      "error": ""
+    },
+    "backup_restore": {
+      "status": "passed",
+      "started": "2026-08-25T05:41:07.7300877Z",
+      "elapsed_s": 14.51,
+      "error": ""
+    },
+    "degradation": {
+      "status": "passed",
+      "started": "2026-08-25T05:41:22.2441224Z",
+      "elapsed_s": 10.54,
+      "error": ""
+    },
+    "smoke": {
+      "status": "passed",
+      "started": "2026-08-25T05:41:32.7827435Z",
+      "elapsed_s": 11.14,
+      "error": ""
+    }
+  },
+  "config_snapshot": {
+    "llm_provider": "missing",
+    "llm_model_sha256": "missing",
+    "embedding_provider": "missing",
+    "embedding_model_sha256": "missing",
+    "secret_key": "missing"
+  }
+}
