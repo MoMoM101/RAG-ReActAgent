@@ -32,6 +32,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The evidence records the exact tested commit. Tag validation must
+          # have its ancestry available instead of the default shallow clone.
+          fetch-depth: 0
       - name: Validate sanitized local Docker E2E evidence
         run: >-
           python backend/release_evidence.py validate
