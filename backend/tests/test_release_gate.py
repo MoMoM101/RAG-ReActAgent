@@ -142,3 +142,4 @@ def test_tag_release_requires_source_bound_docker_e2e_evidence():
     assert "release-ready:" in workflow
     assert "grounded-answer-release-gate" in workflow
     assert "docker-e2e-evidence" in workflow
+    assert "fetch-depth: 0" in workflow

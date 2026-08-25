@@ -1,6 +1,6 @@
 # RAG Agent：可验证、可恢复、可扩展的本地知识库智能体
 
-> 项目阶段：`v0.2.1-beta`  
+> 项目阶段：`v0.2.1-beta`（发布标签 `v0.2.1-beta.2`）  
 > 核心定位：将本地文档转化为可检索、可引用、可验证的智能问答知识库。
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
