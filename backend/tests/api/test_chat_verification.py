@@ -94,6 +94,60 @@ async def test_verification_event_precedes_done_and_is_persisted(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_done_repairs_supported_post_stream_citation_gap(monkeypatch):
+    async def partial_citation_events(*_args, **_kwargs):
+        yield {
+            "event": "answer_chunk",
+            "data": {
+                "delta": (
+                    "标准工单响应时限为四小时 [S1]。"
+                    "紧急工单首次响应时限为三十分钟。"
+                ),
+            },
+        }
+        yield {"event": "sources", "data": [{
+            "citation_id": "S1",
+            "document_id": "doc-1",
+            "document_key": "product",
+            "section_key": "sla",
+            "filename": "product.txt",
+            "text": (
+                "标准工单响应时限为四小时。"
+                "紧急工单应在三十分钟内首次响应。"
+            ),
+        }]}
+        yield {"event": "done", "data": {}}
+
+    save = AsyncMock()
+    monkeypatch.setattr(chat_api, "run_agent_loop", partial_citation_events)
+    monkeypatch.setattr(chat_api, "_save_messages", save)
+    monkeypatch.setattr(chat_api.settings, "grounding_verification_enabled", True)
+    monkeypatch.setattr(chat_api.settings, "grounding_enforcement", "strict")
+    monkeypatch.setattr(
+        chat_api.settings,
+        "grounding_deterministic_repair_enabled",
+        True,
+    )
+
+    chunks = [chunk async for chunk in chat_api.sse_generator(
+        "两个工单响应时限分别是多少？", [], "conv-1",
+    )]
+    replacement = next(
+        chunk for chunk in chunks if chunk.startswith("event: answer_replace")
+    )
+    replacement_text = json.loads(replacement.split("data: ", 1)[1])["content"]
+    verification_chunk = next(
+        chunk for chunk in chunks if chunk.startswith("event: verification")
+    )
+    verification = json.loads(verification_chunk.split("data: ", 1)[1])
+
+    assert "三十分钟 [S1]" in replacement_text
+    assert verification["citation_recall"] == 1.0
+    assert verification["citation_precision"] == 1.0
+    assert save.await_args.args[1] == replacement_text
+
+
+@pytest.mark.asyncio
 async def test_strict_mode_appends_warning_for_unsupported_answer(monkeypatch):
     async def unsupported_events(*_args, **_kwargs):
         yield {"event": "answer_chunk", "data": {"delta": "Python 2.7 is required. [S1]"}}

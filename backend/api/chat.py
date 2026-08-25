@@ -136,6 +136,89 @@ def _calculator_results(
     return results
 
 
+def _repair_post_stream_citations(
+    answer: str,
+    sources: list[dict],
+    *,
+    query: str,
+    calculation_results: tuple[int | float, ...] = (),
+):
+    """Fill safe citation-only gaps left by incremental stream verification.
+
+    Streaming verification evaluates atomic units as they arrive. The final
+    markdown normalization can still expose a supported but uncited atomic
+    claim. Reuse the deterministic repair policy before persisting/scoring the
+    final answer; never invoke another model or rewrite factual content here.
+    """
+    from agent.grounding_repair import deterministic_repair
+    from agent.verifier import Evidence, needs_grounding_repair, verify_answer
+
+    verification = verify_answer(
+        answer,
+        sources,
+        min_coverage=settings.grounding_min_coverage,
+        query=query,
+        calculation_results=calculation_results,
+    )
+    if (
+        not settings.grounding_deterministic_repair_enabled
+        or verification.citation_recall >= 1.0
+    ):
+        return answer, verification, False
+
+    decision = needs_grounding_repair(
+        answer,
+        sources,
+        query=query,
+        calculation_results=calculation_results,
+        coverage_recheck=False,
+    )
+    if decision.action != "deterministic_repair":
+        return answer, verification, False
+
+    evidence = [
+        Evidence(
+            citation_id=str(source.get("citation_id", "")),
+            text=str(source.get("text", "")),
+            document_key=str(source.get("document_key", "")),
+            section_key=str(source.get("section_key", "")),
+            filename=str(source.get("filename", "")),
+        )
+        for source in sources
+        if source.get("citation_id") and source.get("text")
+    ]
+    if not evidence:
+        return answer, verification, False
+
+    repair = deterministic_repair(
+        answer,
+        evidence,
+        decision,
+        min_score=settings.grounding_auto_cite_min_score,
+        min_margin=settings.grounding_auto_cite_min_margin,
+        query=query,
+    )
+    if not repair.repaired or repair.repaired_text == answer:
+        return answer, verification, False
+
+    repaired_verification = verify_answer(
+        repair.repaired_text,
+        sources,
+        min_coverage=settings.grounding_min_coverage,
+        query=query,
+        calculation_results=calculation_results,
+    )
+    improved = (
+        repaired_verification.citation_recall > verification.citation_recall
+        and repaired_verification.faithfulness >= verification.faithfulness
+        and repaired_verification.citation_precision >= verification.citation_precision
+        and repaired_verification.facts_supported >= verification.facts_supported
+    )
+    if not improved:
+        return answer, verification, False
+    return repair.repaired_text, repaired_verification, True
+
+
 async def _save_messages(
     conv_id: str,
     assistant_content: str,
@@ -254,19 +337,24 @@ async def sse_generator(user_message: str, history: list[ChatMessage], conv_id: 
                 and not skip_verification
             ):
                 try:
-                    from agent.verifier import verify_answer
-
-                    verification = verify_answer(
-                        assistant_content,
-                        sources,
-                        min_coverage=settings.grounding_min_coverage,
+                    calculation_results = tuple(_calculator_results(
+                        tool_messages,
                         query=user_message,
-                        calculation_results=_calculator_results(
-                            tool_messages,
+                        sources=sources,
+                    ))
+                    assistant_content, verification, citations_repaired = (
+                        _repair_post_stream_citations(
+                            assistant_content,
+                            sources,
                             query=user_message,
-                            sources=sources,
-                        ),
+                            calculation_results=calculation_results,
+                        )
                     )
+                    if citations_repaired:
+                        yield (
+                            "event: answer_replace\ndata: "
+                            f"{json.dumps({'content': assistant_content}, ensure_ascii=False)}\n\n"
+                        )
                     verification_data = verification.to_dict(include_claims=True)
                     if (
                         settings.grounding_enforcement == "strict"
