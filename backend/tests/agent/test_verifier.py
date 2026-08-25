@@ -97,8 +97,8 @@ def test_knowledge_base_leadin_is_not_scored_as_an_uncited_claim():
 
     result = verify_answer(answer, sources)
 
-    assert result.facts_found == 3
-    assert result.facts_supported == 3
+    assert result.facts_found == 2
+    assert result.facts_supported == 2
     assert result.faithfulness == 1.0
     assert result.citation_precision == 1.0
     assert result.citation_recall == 1.0
@@ -111,6 +111,32 @@ def test_source_attribution_outro_is_not_scored_after_cited_claims():
 - 紧急工单应在三十分钟内首次响应 [S1]。
 
 以上信息来源于星河知识平台的产品说明文档。"""
+    sources = [{
+        "citation_id": "S1",
+        "filename": "docker_acceptance_product.txt",
+        "text": (
+            "星河知识平台的标准工单响应时限为四小时，"
+            "紧急工单应在三十分钟内首次响应。"
+        ),
+    }]
+
+    result = verify_answer(answer, sources)
+
+    assert result.facts_found == 2
+    assert result.facts_supported == 2
+    assert result.faithfulness == 1.0
+    assert result.citation_precision == 1.0
+    assert result.citation_recall == 1.0
+
+
+def test_source_legend_entry_is_not_scored_after_cited_claims():
+    answer = """根据知识库中的信息：
+
+- 星河知识平台的标准工单响应时限为四小时 [S1]。
+- 紧急工单应在三十分钟内首次响应 [S1]。
+
+来源：
+- [S1] 来自文件 `docker_acceptance_product.txt` 的内容。"""
     sources = [{
         "citation_id": "S1",
         "filename": "docker_acceptance_product.txt",

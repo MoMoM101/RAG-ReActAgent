@@ -85,6 +85,11 @@ _SOURCE_ATTRIBUTION_OUTRO_RE = re.compile(
     r"^(?:以上|上述|这些|相关)?信息(?:均|主要)?来源于"
     r".{1,48}(?:文档|文件|资料|知识库)$"
 )
+_SOURCE_LEGEND_ENTRY_RE = re.compile(
+    rf"^\s*\[{_CITATION_ID_PATTERN}\]\s*"
+    r"(?:(?:[:：]\s*)|(?:来自文件\s+)).+$",
+    re.IGNORECASE,
+)
 _LIMITATION_RE = re.compile(
     r"^(?:但)?(?:现有)?资料(?:中)?(?:不足|未|没有)"
     r"|^.+(?:未在|没有在)(?:现有)?资料(?:中)?(?:提及|说明|提供)"
@@ -601,6 +606,18 @@ def _extract_facts(
             claims
             and any(_claim_citations(existing) for existing in claims)
             and _SOURCE_ATTRIBUTION_OUTRO_RE.fullmatch(plain)
+        ):
+            continue
+        # Models occasionally append a textual source legend even though the
+        # SSE response already carries structured source cards. Once cited
+        # claims exist, entries such as "[S1]: guide.md 文件" or
+        # "[S1] 来自文件 guide.md 的内容" are display metadata rather than
+        # additional factual claims. The prior-claim requirement prevents a
+        # standalone answer about a file source from being silently ignored.
+        if (
+            claims
+            and any(_claim_citations(existing) for existing in claims)
+            and _SOURCE_LEGEND_ENTRY_RE.fullmatch(claim)
         ):
             continue
         # Bind a citation-bearing anaphoric sentence back to the immediately
