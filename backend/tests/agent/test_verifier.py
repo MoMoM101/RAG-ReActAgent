@@ -104,6 +104,45 @@ def test_knowledge_base_leadin_is_not_scored_as_an_uncited_claim():
     assert result.citation_recall == 1.0
 
 
+def test_source_attribution_outro_is_not_scored_after_cited_claims():
+    answer = """根据知识库中的信息：
+
+- 星河知识平台的标准工单响应时限为四小时 [S1]。
+- 紧急工单应在三十分钟内首次响应 [S1]。
+
+以上信息来源于星河知识平台的产品说明文档。"""
+    sources = [{
+        "citation_id": "S1",
+        "filename": "docker_acceptance_product.txt",
+        "text": (
+            "星河知识平台的标准工单响应时限为四小时，"
+            "紧急工单应在三十分钟内首次响应。"
+        ),
+    }]
+
+    result = verify_answer(answer, sources)
+
+    assert result.facts_found == 2
+    assert result.facts_supported == 2
+    assert result.faithfulness == 1.0
+    assert result.citation_precision == 1.0
+    assert result.citation_recall == 1.0
+
+
+def test_source_attribution_answer_is_still_scored_when_it_stands_alone():
+    result = verify_answer(
+        "以上信息来源于星河知识平台的产品说明文档。",
+        [{
+            "citation_id": "S1",
+            "filename": "docker_acceptance_product.txt",
+            "text": "星河知识平台产品说明文档。",
+        }],
+    )
+
+    assert result.facts_found == 1
+    assert result.citation_recall == 0.0
+
+
 def test_budget_answer_ignores_structural_prose_and_trusted_calculation_summaries():
     answer = """根据知识库中的信息，我们找到了相关的定价详情。
 下面是根据客户需要的1台设备、75个节点来计算未税首年总预算。
