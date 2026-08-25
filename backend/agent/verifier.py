@@ -81,13 +81,20 @@ _ANAPHORIC_EVIDENCE_RE = re.compile(
     r"^(?:这些|上述|相关)(?:信息|内容|资料).{0,32}"
     r"(?:未|没有|无法).{0,16}(?:提供|找到|确认)"
 )
-_SOURCE_ATTRIBUTION_OUTRO_RE = re.compile(
-    r"^(?:以上|上述|这些|相关)?信息(?:均|主要)?来源于"
-    r".{1,48}(?:文档|文件|资料|知识库)$"
+_SOURCE_ATTRIBUTION_SUFFIX_RE = re.compile(
+    r"(?:以上|上述|这些|相关)?信息(?:均|主要)?来源于"
+    r".{1,48}(?:文档|文件|资料|知识库)[。.]?\s*$"
 )
-_SOURCE_LEGEND_ENTRY_RE = re.compile(
-    rf"^\s*\[{_CITATION_ID_PATTERN}\]\s*"
-    r"(?:(?:[:：]\s*)|(?:来自文件\s+)).+$",
+_SOURCE_SECTION_HEADING_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:\*{1,2}|_{1,2})?\s*"
+    r"(?:(?:参考|引用|资料|信息)?来源(?:列表)?|sources?|references?)"
+    r"\s*[:：]?\s*(?:\*{1,2}|_{1,2})?\s*$",
+    re.IGNORECASE,
+)
+_SOURCE_DESCRIPTOR_RE = re.compile(
+    r"(?:https?://|www\.|`[^`]+`|\[[^]]+\]\([^)]+\)|"
+    r"\.(?:md|txt|pdf|docx?|xlsx?|pptx?|csv|html?|json|ya?ml)\b|"
+    r"文件|文档|资料|来源|链接|知识库|网页|页面|章节|内容|file|document|source|link)",
     re.IGNORECASE,
 )
 _LIMITATION_RE = re.compile(
@@ -538,6 +545,81 @@ class VerificationResult:
         return data
 
 
+def _source_display_line(line: str, *, explicit_section: bool) -> bool:
+    """Return whether a line is a citation legend entry, not answer prose."""
+    candidate = re.sub(r"^\s*(?:>\s*)?(?:[-*+]\s+|\d+[.)、]\s*)", "", line).strip()
+    if candidate.startswith("|") and candidate.endswith("|"):
+        candidate = candidate.strip("|").strip()
+    citation = _CITATION_RE.match(candidate)
+    if not citation:
+        return False
+    remainder = candidate[citation.end() :].strip(" \t|:：-–—")
+    if not remainder:
+        return True
+    if _SOURCE_DESCRIPTOR_RE.search(remainder):
+        return True
+    # Explicit sections may use a plain document title. Accept only a compact
+    # title-shaped value; numbers and sentence punctuation make it answer prose
+    # that must remain visible to the verifier.
+    return (
+        explicit_section
+        and len(remainder) <= 80
+        and not _NUMBER_RE.search(remainder)
+        and not remainder.endswith(("。", ".", "！", "!", "？", "?", "；", ";"))
+    )
+
+
+def _strip_trailing_source_display(text: str) -> str:
+    """Separate answer prose from an optional trailing source-display area.
+
+    Source cards are already carried in structured response data. Models may
+    repeat them as Markdown headings, citation legends, or a provenance outro.
+    Remove that presentation-only suffix only when cited answer prose precedes
+    it. This keeps standalone answers about filenames and documents verifiable.
+    """
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+
+    for index in range(len(lines) - 1, -1, -1):
+        if not _SOURCE_SECTION_HEADING_RE.fullmatch(lines[index]):
+            continue
+        body = "\n".join(lines[:index]).rstrip()
+        source_lines = [line for line in lines[index + 1 :] if line.strip()]
+        if (
+            body
+            and _CITATION_RE.search(body)
+            and source_lines
+            and all(_source_display_line(line, explicit_section=True) for line in source_lines)
+        ):
+            normalized = body
+        break
+
+    # Also accept an unheaded, blank-line-separated legend. Requiring both a
+    # cited body and file/link-shaped entries makes this intentionally stricter
+    # than an explicit Sources section.
+    paragraphs = re.split(r"\n\s*\n", normalized.rstrip())
+    if len(paragraphs) > 1:
+        body = "\n\n".join(paragraphs[:-1]).rstrip()
+        source_lines = [line for line in paragraphs[-1].split("\n") if line.strip()]
+        if (
+            _CITATION_RE.search(body)
+            and source_lines
+            and all(_source_display_line(line, explicit_section=False) for line in source_lines)
+        ):
+            normalized = body
+
+    # A final provenance sentence is display metadata only if cited factual
+    # content comes before it. The same sentence remains a claim when it is the
+    # answer itself (for example, to "which document contains this?").
+    outro = _SOURCE_ATTRIBUTION_SUFFIX_RE.search(normalized)
+    if outro:
+        body = normalized[: outro.start()].rstrip()
+        if _CITATION_RE.search(body):
+            normalized = body
+
+    return normalized
+
+
 def _extract_facts(
     text: str,
     calculation_results: set[float] | None = None,
@@ -546,6 +628,7 @@ def _extract_facts(
 ) -> list[str]:
     """Extract factual claims from prose and Markdown list items."""
     normalized = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+    normalized = _strip_trailing_source_display(normalized)
     normalized = re.sub(r"^\s{0,3}#{1,6}\s+.*$", " ", normalized, flags=re.MULTILINE)
     normalized = re.sub(
         r"^\s*\|.*\|\s*\n\s*\|\s*:?-{3,}.*\|\s*$",
@@ -597,28 +680,6 @@ def _extract_facts(
             in_limitation_section = True
             continue
         if in_limitation_section:
-            continue
-        # A closing source-attribution sentence only describes the provenance
-        # of already cited claims. It is structural metadata, not another
-        # knowledge claim. Keep scoring it when it is the answer itself (for
-        # example, when the user asks which document contains information).
-        if (
-            claims
-            and any(_claim_citations(existing) for existing in claims)
-            and _SOURCE_ATTRIBUTION_OUTRO_RE.fullmatch(plain)
-        ):
-            continue
-        # Models occasionally append a textual source legend even though the
-        # SSE response already carries structured source cards. Once cited
-        # claims exist, entries such as "[S1]: guide.md 文件" or
-        # "[S1] 来自文件 guide.md 的内容" are display metadata rather than
-        # additional factual claims. The prior-claim requirement prevents a
-        # standalone answer about a file source from being silently ignored.
-        if (
-            claims
-            and any(_claim_citations(existing) for existing in claims)
-            and _SOURCE_LEGEND_ENTRY_RE.fullmatch(claim)
-        ):
             continue
         # Bind a citation-bearing anaphoric sentence back to the immediately
         # preceding concrete claim. Example: "未找到 A、B、C。这些信息未被

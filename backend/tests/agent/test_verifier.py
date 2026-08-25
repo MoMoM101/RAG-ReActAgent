@@ -1,5 +1,7 @@
 """Grounded-answer claim and citation verification tests."""
 
+import pytest
+
 from agent.verifier import (
     apply_query_safety_guard,
     apply_zero_support_guard,
@@ -155,6 +157,59 @@ def test_source_legend_entry_is_not_scored_after_cited_claims():
     assert result.citation_recall == 1.0
 
 
+@pytest.mark.parametrize(
+    "source_display",
+    [
+        "## 参考来源\n- [S1] `docker_acceptance_product.txt`",
+        "**引用来源：**\n1. [S1]: 星河知识平台产品说明",
+        "Sources:\n[S1] docker_acceptance_product.txt",
+        "REFERENCES\n- [S1] https://example.test/product",
+    ],
+)
+def test_trailing_source_sections_are_parsed_independently_of_format(source_display: str):
+    answer = f"""星河知识平台的标准工单响应时限为四小时 [S1]。
+紧急工单应在三十分钟内首次响应 [S1]。
+
+{source_display}"""
+    sources = [{
+        "citation_id": "S1",
+        "text": (
+            "星河知识平台的标准工单响应时限为四小时，"
+            "紧急工单应在三十分钟内首次响应。"
+        ),
+    }]
+
+    result = verify_answer(answer, sources)
+
+    assert result.facts_found == 2
+    assert result.facts_supported == 2
+    assert result.citation_precision == 1.0
+    assert result.citation_recall == 1.0
+
+
+@pytest.mark.parametrize(
+    "legend",
+    [
+        "- [S1] 来自文件 `docker_acceptance_product.txt` 的内容。",
+        "[S1] https://example.test/product",
+        "1. [S1] product-guide.pdf",
+    ],
+)
+def test_unheaded_source_legend_requires_a_separate_trailing_block(legend: str):
+    answer = f"""星河知识平台的标准工单响应时限为四小时 [S1]。
+
+{legend}"""
+
+    result = verify_answer(
+        answer,
+        [{"citation_id": "S1", "text": "星河知识平台的标准工单响应时限为四小时。"}],
+    )
+
+    assert result.facts_found == 1
+    assert result.facts_supported == 1
+    assert result.citation_recall == 1.0
+
+
 def test_source_attribution_answer_is_still_scored_when_it_stands_alone():
     result = verify_answer(
         "以上信息来源于星河知识平台的产品说明文档。",
@@ -167,6 +222,44 @@ def test_source_attribution_answer_is_still_scored_when_it_stands_alone():
 
     assert result.facts_found == 1
     assert result.citation_recall == 0.0
+
+
+def test_standalone_source_section_is_not_silently_removed():
+    result = verify_answer(
+        "来源：\n- [S1] 来自文件 `docker_acceptance_product.txt` 的内容。",
+        [{"citation_id": "S1", "text": "星河知识平台产品说明文档。"}],
+    )
+
+    assert result.facts_found == 1
+
+
+def test_substantive_text_after_source_heading_is_still_verified():
+    answer = """星河知识平台的标准工单响应时限为 4 小时 [S1]。
+
+来源：
+- [S1] `docker_acceptance_product.txt`
+- [S1] 星河知识平台的标准工单响应时限为 8 小时。"""
+
+    result = verify_answer(
+        answer,
+        [{"citation_id": "S1", "text": "星河知识平台的标准工单响应时限为 4 小时。"}],
+    )
+
+    assert "[S1] 星河知识平台的标准工单响应时限为 8 小时。" in result.unsupported_claims
+
+
+def test_unheaded_citation_bearing_fact_is_not_mistaken_for_a_source_legend():
+    answer = """星河知识平台的标准工单响应时限为 4 小时 [S1]。
+
+[S1] 星河知识平台的标准工单响应时限为 8 小时。"""
+
+    result = verify_answer(
+        answer,
+        [{"citation_id": "S1", "text": "星河知识平台的标准工单响应时限为 4 小时。"}],
+    )
+
+    assert result.facts_found == 2
+    assert "星河知识平台的标准工单响应时限为 8 小时。" in result.unsupported_claims
 
 
 def test_budget_answer_ignores_structural_prose_and_trusted_calculation_summaries():
