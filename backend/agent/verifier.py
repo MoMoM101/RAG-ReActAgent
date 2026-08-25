@@ -87,7 +87,8 @@ _LIMITATION_RE = re.compile(
     r"|^.+(?:现有)?资料(?:中)?(?:未|没有)(?:提及|说明|提供|涉及)",
 )
 _EVIDENCE_LEAD_RE = re.compile(
-    r"^(?:根据|参考)(?:现有)?(?:检索)?(?:来源|资料|内容)"
+    r"^(?:根据|参考)(?:现有)?(?:检索)?"
+    r"(?:来源|资料|内容|知识库(?:中的)?信息)"
     rf"(?:\s*\[{_CITATION_ID_PATTERN}(?:\s*[,，]\s*{_CITATION_ID_PATTERN})*\])?[，,:：]?\s*",
     re.IGNORECASE,
 )
