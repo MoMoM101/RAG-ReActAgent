@@ -130,19 +130,15 @@ def test_provenance_hash_normalizes_text_line_endings(tmp_path):
     assert _sha256_file(lf_path) == _sha256_file(crlf_path)
 
 
-def test_tag_release_requires_real_docker_e2e_secrets():
+def test_tag_release_requires_source_bound_docker_e2e_evidence():
     workflow = (
         Path(__file__).resolve().parents[2] / ".github" / "workflows" / "release-gate.yml"
     ).read_text(encoding="utf-8")
 
-    assert "IS_TAG_RELEASE: ${{ github.ref_type == 'tag' }}" in workflow
-    assert '[ -z "$E2E_ADMIN_PASSWORD" ]' in workflow
-    assert '[ -z "$E2E_JWT_SECRET" ]' in workflow
-    assert '[ -z "$SECRET_KEY" ]' in workflow
-    assert "tag releases require real Docker E2E" in workflow
-    assert "exit 1" in workflow
+    assert "python backend/release_evidence.py validate" in workflow
+    assert "docker_e2e_release_evidence.json" in workflow
+    assert "LLM_API_KEY" not in workflow
+    assert "EMBEDDING_API_KEY" not in workflow
     assert "release-ready:" in workflow
     assert "grounded-answer-release-gate" in workflow
-    assert "docker-e2e-acceptance" in workflow
-    assert "id: docker-e2e" in workflow
-    assert "steps.docker-e2e.outcome != 'skipped'" in workflow
+    assert "docker-e2e-evidence" in workflow

@@ -102,9 +102,11 @@ $ComposeEnv = @{
 # ─── Result tracking hashtable ────────────────────────────────────────────────
 
 $Result = [ordered]@{
+    evidence_schema_version = "1.0"
     run_id       = $RunId
     timestamp    = (Get-Date).ToUniversalTime().ToString("o")
     git_commit   = ""
+    source_digest_sha256 = ""
     overall      = "running"
     failed_stage = $null
     stages       = [ordered]@{}
@@ -166,10 +168,19 @@ function Invoke-Stage {
 
 function Get-GitCommit {
     try {
-        $commit = & git -C $RepoRoot rev-parse --short HEAD 2>$null
+        $commit = & git -C $RepoRoot rev-parse HEAD 2>$null
         if ($LASTEXITCODE -eq 0) { return $commit.Trim() }
     } catch {}
     return "unknown"
+}
+
+function Get-SourceDigest {
+    $validator = Join-Path (Join-Path $RepoRoot "backend") "release_evidence.py"
+    try {
+        $digest = & python $validator digest --require-clean 2>$null
+        if ($LASTEXITCODE -eq 0 -and $digest) { return $digest.Trim() }
+    } catch {}
+    throw "Could not compute the release source digest"
 }
 
 function Get-FirstNonNull {
@@ -457,6 +468,7 @@ function Write-Reports {
 # ─── Pre-flight: record git commit ───────────────────────────────────────────
 
 $Result.git_commit = Get-GitCommit
+$Result.source_digest_sha256 = Get-SourceDigest
 
 # ─── Build config_snapshot ────────────────────────────────────────────────────
 
