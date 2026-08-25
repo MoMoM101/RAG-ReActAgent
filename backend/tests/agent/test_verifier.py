@@ -106,13 +106,23 @@ def test_knowledge_base_leadin_is_not_scored_as_an_uncited_claim():
     assert result.citation_recall == 1.0
 
 
-def test_source_attribution_outro_is_not_scored_after_cited_claims():
-    answer = """根据知识库中的信息：
+@pytest.mark.parametrize(
+    "outro",
+    [
+        "以上信息来源于星河知识平台的产品说明文档。",
+        "以上信息来源于星河知识平台的产品说明。",
+        "上述内容均来自《星河知识平台产品说明》。",
+        "**这些资料引自内部产品手册。**",
+        "相关信息由星河知识平台官方页面提供。",
+    ],
+)
+def test_source_attribution_outro_is_not_scored_after_cited_claims(outro: str):
+    answer = f"""根据知识库中的信息：
 
 - 星河知识平台的标准工单响应时限为四小时 [S1]。
 - 紧急工单应在三十分钟内首次响应 [S1]。
 
-以上信息来源于星河知识平台的产品说明文档。"""
+{outro}"""
     sources = [{
         "citation_id": "S1",
         "filename": "docker_acceptance_product.txt",
@@ -222,6 +232,25 @@ def test_source_attribution_answer_is_still_scored_when_it_stands_alone():
 
     assert result.facts_found == 1
     assert result.citation_recall == 0.0
+
+
+def test_non_anaphoric_source_fact_after_cited_body_is_still_scored():
+    result = verify_answer(
+        "设备状态正常 [S1]。系统信息来源于监控传感器。",
+        [{"citation_id": "S1", "text": "设备状态正常，系统信息来源于监控传感器。"}],
+    )
+
+    assert result.facts_found == 2
+    assert result.citation_recall == 0.5
+
+
+def test_source_attribution_sentence_is_not_hidden_when_more_prose_follows():
+    result = verify_answer(
+        "设备状态正常 [S1]。以上信息来源于产品说明。额外状态为离线模式。",
+        [{"citation_id": "S1", "text": "设备状态正常，信息来自产品说明。"}],
+    )
+
+    assert result.facts_found == 3
 
 
 def test_standalone_source_section_is_not_silently_removed():
