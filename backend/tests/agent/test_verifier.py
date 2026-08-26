@@ -1487,3 +1487,56 @@ def test_subject_before_evidence_limit_is_not_scored_as_a_fact():
     assert result.facts_found == 1
     assert result.faithfulness == 1.0
     assert result.citation_recall == 1.0
+
+
+@pytest.mark.parametrize(
+    "closing",
+    [
+        "如果您有更多问题或需要进一步的帮助，请随时告诉我。",
+        "如有其他疑问，请随时联系我。",
+        "若您还需要更多帮助，欢迎继续提问。",
+        "Feel free to ask if you have any other questions.",
+        "Let me know if you need further help.",
+    ],
+)
+def test_non_factual_conversational_closing_is_not_scored(closing: str):
+    answer = f"企业年度订阅可在七个自然日内申请全额退款 [S1]。\n\n{closing}"
+    sources = [
+        {
+            "citation_id": "S1",
+            "text": "企业年度订阅可在合同生效后的七个自然日内申请全额退款。",
+        }
+    ]
+
+    result = verify_answer(answer, sources)
+
+    assert result.facts_found == 1
+    assert result.facts_supported == 1
+    assert result.faithfulness == 1.0
+    assert result.citation_precision == 1.0
+    assert result.citation_recall == 1.0
+
+
+@pytest.mark.parametrize(
+    "unsupported_claim",
+    [
+        "如有其他问题，支持团队将在两小时内回复。",
+        "如果您需要进一步帮助，退款期限仍为三十天。",
+        "请随时告诉我，企业订阅支持无条件退款。",
+    ],
+)
+def test_polite_conditional_factual_claim_is_still_scored(unsupported_claim: str):
+    answer = f"企业年度订阅可在七个自然日内申请全额退款 [S1]。{unsupported_claim}"
+    sources = [
+        {
+            "citation_id": "S1",
+            "text": "企业年度订阅可在合同生效后的七个自然日内申请全额退款。",
+        }
+    ]
+
+    result = verify_answer(answer, sources)
+
+    assert result.facts_found == 2
+    assert result.facts_supported == 1
+    assert result.faithfulness == 0.5
+    assert result.citation_recall == 0.5

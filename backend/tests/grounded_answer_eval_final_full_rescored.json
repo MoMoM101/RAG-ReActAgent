@@ -5,7 +5,7 @@
   "timestamp": "2026-08-21T04:52:35.946883+00:00",
   "provenance": {
     "dataset_sha256": "cb0b3f4ff9f235f6d096b4dd957b6c5be3a0ddebee527fc4390d0767cb781bf5",
-    "verifier_sha256": "97a01235763a3e49853aca8c053dce091f7d2622a4f3b5f26a9144cd189ea49f",
+    "verifier_sha256": "bbd283a9bad83dfd239355eec4d5f512507e4bdb0148537dd9185a0edca27b47",
     "evaluator_sha256": "147bf5a24bb51d08a0edfcd98a97a6d15c0605b8f3b54984624cea3e40cee4bf",
     "optimized_prompt_sha256": "96e9b3de433e50574f0be8b1848f11b1bab7ded49382fbd0f41ea083f586bd22"
   },
@@ -13107,10 +13107,10 @@
       "latency_replay_reason": null
     }
   ],
-  "rescored_at": "2026-08-26T04:45:07.546719+00:00",
+  "rescored_at": "2026-08-26T05:45:56.701133+00:00",
   "rescored_provenance": {
     "dataset_sha256": "cb0b3f4ff9f235f6d096b4dd957b6c5be3a0ddebee527fc4390d0767cb781bf5",
-    "verifier_sha256": "97a01235763a3e49853aca8c053dce091f7d2622a4f3b5f26a9144cd189ea49f",
+    "verifier_sha256": "bbd283a9bad83dfd239355eec4d5f512507e4bdb0148537dd9185a0edca27b47",
     "evaluator_sha256": "147bf5a24bb51d08a0edfcd98a97a6d15c0605b8f3b54984624cea3e40cee4bf",
     "optimized_prompt_sha256": "96e9b3de433e50574f0be8b1848f11b1bab7ded49382fbd0f41ea083f586bd22"
   },
