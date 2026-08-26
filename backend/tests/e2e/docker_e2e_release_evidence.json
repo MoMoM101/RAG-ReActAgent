@@ -1,0 +1,90 @@
+{
+  "evidence_schema_version": "1.0",
+  "run_id": "ragagent-e2e-20260826-040902-a4a46b63",
+  "timestamp": "2026-08-26T04:09:02.7117885Z",
+  "git_commit": "59056bc1eb4420503bb6e7e3a9a1ef815ceb65ca",
+  "source_digest_sha256": "494f7d1a7ec753b64ad16ff86028990e2c9babedfa69fe68658c20c97efa168e",
+  "overall": "passed",
+  "failed_stage": null,
+  "stages": {
+    "config_check": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:03.6653134Z",
+      "elapsed_s": 3.11,
+      "error": ""
+    },
+    "build": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:06.7870699Z",
+      "elapsed_s": 5.83,
+      "error": ""
+    },
+    "health": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:12.6221675Z",
+      "elapsed_s": 7.36,
+      "error": ""
+    },
+    "secrets_check": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:19.9821067Z",
+      "elapsed_s": 0.62,
+      "error": ""
+    },
+    "auth_check": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:20.6027127Z",
+      "elapsed_s": 0.31,
+      "error": ""
+    },
+    "upload": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:20.9175260Z",
+      "elapsed_s": 5.39,
+      "error": ""
+    },
+    "consistency": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:26.3087737Z",
+      "elapsed_s": 1.93,
+      "error": ""
+    },
+    "sse_qa": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:28.2416216Z",
+      "elapsed_s": 13.77,
+      "error": ""
+    },
+    "restart_persistence": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:42.0078994Z",
+      "elapsed_s": 14.86,
+      "error": ""
+    },
+    "backup_restore": {
+      "status": "passed",
+      "started": "2026-08-26T04:09:56.8713309Z",
+      "elapsed_s": 16.1,
+      "error": ""
+    },
+    "degradation": {
+      "status": "passed",
+      "started": "2026-08-26T04:10:12.9754540Z",
+      "elapsed_s": 10.3,
+      "error": ""
+    },
+    "smoke": {
+      "status": "passed",
+      "started": "2026-08-26T04:10:23.2743858Z",
+      "elapsed_s": 11.42,
+      "error": ""
+    }
+  },
+  "config_snapshot": {
+    "llm_provider": "configured",
+    "llm_model_sha256": "4d43a29ac4c39ea60ac763496997977889909b6705b20fc3442cfe085667f08e",
+    "embedding_provider": "configured",
+    "embedding_model_sha256": "dce9bd426d820e00565a7c9cbcd1338635dc1b085563d18d10ddc1df81c8e6a5",
+    "secret_key": "configured"
+  }
+}
