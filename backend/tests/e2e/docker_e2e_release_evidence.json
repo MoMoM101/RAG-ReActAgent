@@ -1,82 +1,82 @@
 {
   "evidence_schema_version": "1.0",
-  "run_id": "ragagent-e2e-20260826-040902-a4a46b63",
-  "timestamp": "2026-08-26T04:09:02.7117885Z",
-  "git_commit": "59056bc1eb4420503bb6e7e3a9a1ef815ceb65ca",
-  "source_digest_sha256": "494f7d1a7ec753b64ad16ff86028990e2c9babedfa69fe68658c20c97efa168e",
+  "run_id": "ragagent-e2e-20260826-055621-8fe84c38",
+  "timestamp": "2026-08-26T05:56:21.8002810Z",
+  "git_commit": "18faedd5f1ffcd3c9e05c502172e82800af8e745",
+  "source_digest_sha256": "2bd6056dd4783213908f57fff39bf8d2bc59782a22c05284785ce7b7ffb52572",
   "overall": "passed",
   "failed_stage": null,
   "stages": {
     "config_check": {
       "status": "passed",
-      "started": "2026-08-26T04:09:03.6653134Z",
-      "elapsed_s": 3.11,
+      "started": "2026-08-26T05:56:22.1273136Z",
+      "elapsed_s": 2.55,
       "error": ""
     },
     "build": {
       "status": "passed",
-      "started": "2026-08-26T04:09:06.7870699Z",
-      "elapsed_s": 5.83,
+      "started": "2026-08-26T05:56:24.6865051Z",
+      "elapsed_s": 3.79,
       "error": ""
     },
     "health": {
       "status": "passed",
-      "started": "2026-08-26T04:09:12.6221675Z",
-      "elapsed_s": 7.36,
+      "started": "2026-08-26T05:56:28.4754685Z",
+      "elapsed_s": 7.08,
       "error": ""
     },
     "secrets_check": {
       "status": "passed",
-      "started": "2026-08-26T04:09:19.9821067Z",
-      "elapsed_s": 0.62,
+      "started": "2026-08-26T05:56:35.5516449Z",
+      "elapsed_s": 0.63,
       "error": ""
     },
     "auth_check": {
       "status": "passed",
-      "started": "2026-08-26T04:09:20.6027127Z",
-      "elapsed_s": 0.31,
+      "started": "2026-08-26T05:56:36.1855305Z",
+      "elapsed_s": 0.3,
       "error": ""
     },
     "upload": {
       "status": "passed",
-      "started": "2026-08-26T04:09:20.9175260Z",
-      "elapsed_s": 5.39,
+      "started": "2026-08-26T05:56:36.4870151Z",
+      "elapsed_s": 5.34,
       "error": ""
     },
     "consistency": {
       "status": "passed",
-      "started": "2026-08-26T04:09:26.3087737Z",
-      "elapsed_s": 1.93,
+      "started": "2026-08-26T05:56:41.8287191Z",
+      "elapsed_s": 2.0,
       "error": ""
     },
     "sse_qa": {
       "status": "passed",
-      "started": "2026-08-26T04:09:28.2416216Z",
-      "elapsed_s": 13.77,
+      "started": "2026-08-26T05:56:43.8299221Z",
+      "elapsed_s": 86.07,
       "error": ""
     },
     "restart_persistence": {
       "status": "passed",
-      "started": "2026-08-26T04:09:42.0078994Z",
-      "elapsed_s": 14.86,
+      "started": "2026-08-26T05:58:09.9014560Z",
+      "elapsed_s": 15.66,
       "error": ""
     },
     "backup_restore": {
       "status": "passed",
-      "started": "2026-08-26T04:09:56.8713309Z",
-      "elapsed_s": 16.1,
+      "started": "2026-08-26T05:58:25.5594389Z",
+      "elapsed_s": 15.31,
       "error": ""
     },
     "degradation": {
       "status": "passed",
-      "started": "2026-08-26T04:10:12.9754540Z",
+      "started": "2026-08-26T05:58:40.8743854Z",
       "elapsed_s": 10.3,
       "error": ""
     },
     "smoke": {
       "status": "passed",
-      "started": "2026-08-26T04:10:23.2743858Z",
-      "elapsed_s": 11.42,
+      "started": "2026-08-26T05:58:51.1779516Z",
+      "elapsed_s": 3.57,
       "error": ""
     }
   },
