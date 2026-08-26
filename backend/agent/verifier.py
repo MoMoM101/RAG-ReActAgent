@@ -73,6 +73,23 @@ _NON_FACTUAL_ADVICE_RE = re.compile(
     r"^(?:对于.{0,32}[，,]\s*)?建议(?:您|客户|用户)?"
     r"(?:联系|查阅|咨询|提供|补充|上传|确认|核实|参考)"
 )
+_NON_FACTUAL_CONVERSATIONAL_CLOSING_RE = re.compile(
+    r"^(?:"
+    r"(?:如果|如|若)(?:您)?(?:还有|有)?(?:更多|其他|任何)?(?:问题|疑问)"
+    r"(?:或(?:者)?(?:还)?需要(?:进一步|更多|其他)?(?:的)?(?:帮助|协助))?"
+    r"[，,]\s*(?:请|欢迎)?(?:随时)?"
+    r"(?:告诉我|联系我|继续提问|提出(?:问题)?|询问|咨询)(?:即可|就好|都可以)?"
+    r"|(?:如果|如|若)(?:您)?(?:还)?需要(?:进一步|更多|其他)?(?:的)?(?:帮助|协助)"
+    r"[，,]\s*(?:请|欢迎)?(?:随时)?"
+    r"(?:告诉我|联系我|继续提问|提出(?:问题)?|询问|咨询)(?:即可|就好|都可以)?"
+    r"|(?:欢迎|请)(?:您)?(?:随时)?"
+    r"(?:继续提问|提出(?:更多|其他)?问题|联系我|告诉我)"
+    r"|feel free to (?:ask|reach out|contact me)"
+    r"(?: if you have (?:(?:more|other|any)\s+){1,2}questions)?"
+    r"|let me know if you (?:have (?:more|other|any) questions|need (?:more|further) help)"
+    r")[。.!！]?$",
+    re.IGNORECASE,
+)
 _RUNTIME_FALLBACK_RE = re.compile(
     r"^(?:本轮检索已完成，但计算器步骤未完整执行|"
     r"已获得\s*\d+\s*个可信计算结果|请重试本问题)"
@@ -767,6 +784,7 @@ def _extract_facts(
             or _NON_FACTUAL_TRANSITION_RE.search(plain)
             or _NON_FACTUAL_REQUEST_RE.search(plain)
             or _NON_FACTUAL_ADVICE_RE.search(plain)
+            or _NON_FACTUAL_CONVERSATIONAL_CLOSING_RE.fullmatch(plain)
             or _RUNTIME_FALLBACK_RE.search(plain)
             or plain.endswith(("资料事实", "已确认", "无法确认"))
             or (
