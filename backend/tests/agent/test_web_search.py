@@ -228,3 +228,217 @@ class TestWebSearchMain:
                 assert result.success is True
                 assert result.data["count"] == 3
                 mock_ddg.assert_not_called()
+
+
+def _youcom_web_payload():
+    import json
+
+    return json.dumps({
+        "results": {
+            "web": [
+                {
+                    "title": "You R1",
+                    "description": "D1",
+                    "url": "https://you.example/1",
+                },
+                {
+                    "title": "You R2",
+                    "snippets": ["S2-first"],
+                    "url": "https://you.example/2",
+                },
+            ],
+        },
+    })
+
+
+class TestSearchYouCom:
+    """_search_youcom with mocked HTTP — MCP JSON-RPC over httpx."""
+
+    @pytest.fixture
+    def tool(self):
+        return WebSearchTool()
+
+    @pytest.mark.asyncio
+    async def test_youcom_success_parses_results(self, tool):
+        """Plain-JSON initialize + tools/call responses → ToolResult(success=True)."""
+        import json
+
+        init_resp = MagicMock()
+        init_resp.headers = {"content-type": "application/json", "mcp-session-id": "sess-1"}
+        init_resp.text = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}})
+
+        search_resp = MagicMock()
+        search_resp.headers = {"content-type": "application/json"}
+        search_resp.text = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {"content": [{"type": "text", "text": _youcom_web_payload()}]},
+        })
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=[init_resp, search_resp])
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await tool._search_youcom("test query", 5)
+
+        assert result.success is True
+        assert result.data["count"] == 2
+        assert result.data["results"][0]["title"] == "You R1"
+        assert result.data["results"][0]["snippet"] == "D1"
+        assert result.data["results"][1]["snippet"] == "S2-first"
+        # Session id from the initialize response is passed on the call
+        second_call = mock_client.post.await_args_list[1]
+        assert second_call.kwargs["headers"]["Mcp-Session-Id"] == "sess-1"
+        assert second_call.kwargs["json"]["params"]["name"] == "you-search"
+
+    @pytest.mark.asyncio
+    async def test_youcom_sse_response_parses_results(self, tool):
+        """SSE tools/call response → last data: message parsed."""
+        import json
+
+        init_resp = MagicMock()
+        init_resp.headers = {"content-type": "application/json"}
+        init_resp.text = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}})
+
+        search_resp = MagicMock()
+        search_resp.headers = {"content-type": "text/event-stream"}
+        message = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {"content": [{"type": "text", "text": _youcom_web_payload()}]},
+        })
+        search_resp.text = f"event: message\ndata: {message}\n\n"
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=[init_resp, search_resp])
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await tool._search_youcom("test query", 5)
+
+        assert result.success is True
+        assert result.data["count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_youcom_timeout_raises_retryable(self, tool):
+        """asyncio.TimeoutError → RetryableError."""
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=TimeoutError("timed out"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            pytest.raises(RetryableError, match="You.com"),
+        ):
+            await tool._search_youcom("test query", 3)
+
+    @pytest.mark.asyncio
+    async def test_youcom_jsonrpc_error_returns_toolresult(self, tool):
+        """JSON-RPC error in the tools/call response → ToolResult(success=False)."""
+        import json
+
+        init_resp = MagicMock()
+        init_resp.headers = {"content-type": "application/json"}
+        init_resp.text = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}})
+
+        search_resp = MagicMock()
+        search_resp.headers = {"content-type": "application/json"}
+        search_resp.text = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "error": {"code": -32000, "message": "rate limited"},
+        })
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=[init_resp, search_resp])
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await tool._search_youcom("test query", 3)
+
+        assert result.success is False
+        assert "rate limited" in result.error
+
+
+class TestWebSearchYouComFallback:
+    """Opt-in You.com source tests at the execute() level."""
+
+    @pytest.fixture
+    def tool(self):
+        return WebSearchTool()
+
+    @pytest.mark.asyncio
+    async def test_youcom_success_skips_bing(self, tool):
+        """You.com enabled and returns results → Bing/DDG not called."""
+        from config import settings
+        settings.web_search_enabled = True
+        settings.web_search_youcom_enabled = True
+
+        youcom_result = ToolResult(
+            success=True,
+            data={"count": 1, "results": [
+                {"title": "You R1", "snippet": "D1", "url": "https://you.example/1"},
+            ]},
+        )
+        with (
+            patch.object(tool, "_search_youcom", AsyncMock(return_value=youcom_result)),
+            patch.object(tool, "_search_bing") as mock_bing,
+            patch.object(tool, "_search_ddgs") as mock_ddg,
+        ):
+            result = await tool.execute("test query")
+            assert result.success is True
+            assert result.data["results"][0]["title"] == "You R1"
+            mock_bing.assert_not_called()
+            mock_ddg.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_youcom_failure_falls_back_to_bing(self, tool):
+        """You.com returns empty → chain falls back to Bing."""
+        from config import settings
+        settings.web_search_enabled = True
+        settings.web_search_youcom_enabled = True
+
+        youcom_empty = ToolResult(success=True, data={"count": 0, "results": []})
+        bing_result = ToolResult(
+            success=True,
+            data={"count": 2, "results": [
+                {"title": "Bing R1", "snippet": "S1", "url": "https://a.com"},
+                {"title": "Bing R2", "snippet": "S2", "url": "https://b.com"},
+            ]},
+        )
+        with (
+            patch.object(tool, "_search_youcom", AsyncMock(return_value=youcom_empty)),
+            patch.object(tool, "_search_bing", AsyncMock(return_value=bing_result)),
+            patch.object(tool, "_search_ddgs") as mock_ddg,
+        ):
+            result = await tool.execute("test query")
+            assert result.success is True
+            assert result.data["results"][0]["title"] == "Bing R1"
+            mock_ddg.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_youcom_disabled_bing_still_used(self, tool):
+        """You.com disabled (default) → existing Bing→DDG behavior unchanged."""
+        from config import settings
+        settings.web_search_enabled = True
+        settings.web_search_youcom_enabled = False
+
+        bing_result = ToolResult(
+            success=True,
+            data={"count": 1, "results": [
+                {"title": "Bing R1", "snippet": "S1", "url": "https://a.com"},
+            ]},
+        )
+        with (
+            patch.object(tool, "_search_youcom") as mock_youcom,
+            patch.object(tool, "_search_bing", AsyncMock(return_value=bing_result)),
+        ):
+            result = await tool.execute("test query")
+            assert result.success is True
+            assert result.data["results"][0]["title"] == "Bing R1"
+            mock_youcom.assert_not_called()

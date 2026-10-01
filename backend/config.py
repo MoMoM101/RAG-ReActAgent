@@ -157,6 +157,12 @@ class Settings(BaseSettings):
     web_search_enabled: bool = False
     web_search_max_results: int = 5
     web_search_proxy: str = ""
+    # You.com 联网搜索源（可选，默认关闭）。
+    # 免费档 MCP 端点无需 API Key；如需完整工具集可设置 API Key 并改用
+    # https://api.you.com/mcp
+    web_search_youcom_enabled: bool = False
+    web_search_youcom_url: str = "https://api.you.com/mcp?profile=free"
+    web_search_youcom_api_key: str = ""
 
     # OCR (optional; set OCR_ENABLED=true and install requirements-ocr.txt to enable)
     ocr_enabled: bool = False
