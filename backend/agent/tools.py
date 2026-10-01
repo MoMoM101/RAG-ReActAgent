@@ -561,6 +561,22 @@ class WebSearchTool(BaseTool):
             return ToolResult(success=False, error="联网搜索未启用")
 
         max_r = max_results or settings.web_search_max_results
+
+        # Optional: You.com via its hosted MCP server (keyless free profile by default)
+        if settings.web_search_youcom_enabled:
+            youcom_error = ""
+            try:
+                youcom_result = await self._search_youcom(query, max_r)
+            except RetryableError as e:
+                youcom_error = str(e)
+            except Exception as e:
+                youcom_error = str(e)[:200]
+            else:
+                if youcom_result.success and youcom_result.data and youcom_result.data.get("count", 0) > 0:
+                    return youcom_result
+                youcom_error = youcom_result.error or "You.com 返回 0 条结果"
+            logger.warning("You.com 搜索失败，回退到 Bing/DDG 链路: %s", youcom_error)
+
         bing_retryable = False
         bing_error = ""
 
@@ -712,6 +728,105 @@ class WebSearchTool(BaseTool):
         except Exception as e:
             _raise_if_retryable(e, "WebSearch-DDG")
             return ToolResult(success=False, error=str(e)[:200])
+
+    async def _search_youcom(self, query: str, max_results: int) -> ToolResult:
+        """Optional: You.com search via its hosted MCP server (free profile is keyless)."""
+        import json
+
+        import httpx
+
+        from config import settings
+
+        url = settings.web_search_youcom_url
+        headers = {"Accept": "application/json, text/event-stream"}
+        if settings.web_search_youcom_api_key:
+            headers["Authorization"] = f"Bearer {settings.web_search_youcom_api_key}"
+
+        def _parse_message(resp: httpx.Response) -> dict:
+            """Parse a JSON-RPC response body (plain JSON or SSE stream)."""
+            if resp.headers.get("content-type", "").startswith("text/event-stream"):
+                for line in reversed(resp.text.splitlines()):
+                    if line.startswith("data:"):
+                        return json.loads(line[len("data:"):].strip())
+                raise ValueError("SSE 响应中没有 data 消息")
+            return json.loads(resp.text)
+
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(15, connect=5)) as client:
+                init_resp = await asyncio.wait_for(
+                    client.post(
+                        url,
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "initialize",
+                            "params": {
+                                "protocolVersion": "2025-06-18",
+                                "capabilities": {},
+                                "clientInfo": {"name": "rag-agent", "version": "0.2.1"},
+                            },
+                        },
+                        headers=headers,
+                    ),
+                    timeout=18,
+                )
+                init_resp.raise_for_status()
+                session_id = init_resp.headers.get("mcp-session-id", "")
+
+                call_headers = dict(headers)
+                if session_id:
+                    call_headers["Mcp-Session-Id"] = session_id
+
+                search_resp = await asyncio.wait_for(
+                    client.post(
+                        url,
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 2,
+                            "method": "tools/call",
+                            "params": {
+                                "name": "you-search",
+                                "arguments": {"query": query, "count": max_results},
+                            },
+                        },
+                        headers=call_headers,
+                    ),
+                    timeout=18,
+                )
+                search_resp.raise_for_status()
+        except TimeoutError as e:
+            raise RetryableError("You.com 搜索超时") from e
+        except Exception as e:
+            _raise_if_retryable(e, "WebSearch-YouCom")
+            return ToolResult(success=False, error=str(e)[:200])
+
+        try:
+            message = _parse_message(search_resp)
+            payload = message.get("result", {})
+            if message.get("error") or payload.get("isError"):
+                return ToolResult(
+                    success=False,
+                    error=str(message.get("error") or "you-search 调用失败")[:200],
+                )
+            content = payload.get("content", [])
+            body = content[0].get("text", "") if content else ""
+            data = json.loads(body) if body else {}
+            web = data.get("results", {}).get("web", [])
+            results = []
+            for r in web:
+                snippets = r.get("snippets") or []
+                results.append({
+                    "title": r.get("title", ""),
+                    "snippet": r.get("description") or (snippets[0] if snippets else ""),
+                    "url": r.get("url", ""),
+                })
+        except Exception as e:
+            return ToolResult(success=False, error=f"You.com 响应解析失败: {e}")
+
+        return ToolResult(
+            success=True,
+            data={"count": len(results), "results": results[:max_results]},
+        )
 
 
 class RecallMemoryTool(BaseTool):

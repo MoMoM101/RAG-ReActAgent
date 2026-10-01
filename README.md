@@ -250,7 +250,7 @@ MRR 为 **97.70%**。
 | 工具 | 用途 | 说明 |
 |---|---|---|
 | `search_docs` | 检索本地知识库 | Qdrant + BM25 混合检索 |
-| `web_search` | 联网检索 | KB 不足时 Agent 自主升级，结果纳入 WS 引证体系 |
+| `web_search` | 联网检索 | KB 不足时 Agent 自主升级，结果纳入 WS 引证体系；默认 Bing→DDG 链路，可选 You.com 源（`WEB_SEARCH_YOUCOM_ENABLED`，免费档无需 API Key） |
 | `calculator` | 数学计算 | 安全沙箱，支持四则运算和常用函数 |
 | `list_documents` | 查看知识库文档 | 返回文件名、类型、状态和上传时间 |
 | `get_document_info` | 获取单个文档详情 | 分块数、状态、错误信息 |

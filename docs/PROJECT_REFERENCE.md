@@ -301,6 +301,7 @@ proxy_send_timeout 300s;
 | `OPTIONAL_MODEL_NOTICE_SECONDS` | 默认 180 秒提示阈值 |
 | `OPTIONAL_MODEL_POLL_SECONDS` | 默认 5 秒状态轮询 |
 | `WEB_SEARCH_ENABLED` | 默认关闭 |
+| `WEB_SEARCH_YOUCOM_ENABLED` | 默认关闭；开启后 web_search 优先调用 You.com 托管 MCP（免费档无需 API Key），失败自动回退 Bing→DDG |
 | `SERVER_HOST` | 默认 `127.0.0.1` |
 | `ALLOW_REMOTE_ACCESS` | 默认 `false` |
 | `LOG_LEVEL` | 日志级别 |
